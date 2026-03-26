@@ -91,6 +91,8 @@ export interface StoreEmployeeApiData {
     introduction?: string;
     photos?: string;
     honor?: string;
+    isleave?: boolean;
+    isfreeze?: boolean;
 }
 export interface AreaApiData {
     id: number;
