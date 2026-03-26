@@ -37,8 +37,20 @@ export class SyncService {
     private readonly lefthandApi: LefthandApiService,
   ) {}
 
+  // 非門市部門列表（用於判斷 person_type）
+  private readonly NON_STORE_DEPARTMENTS = [
+    '加工部', '企劃部', '總經理室', '營運部', '商城倉管部', 
+    '工程部', '教育訓練部', '商城門市', '倉管部', '行政部'
+  ];
+
+  // 排除關鍵字（這些名稱的員工要標記為 excluded）
+  private readonly EXCLUDED_KEYWORDS = [
+    '不指定店員', '不指定人員', '測試', 'test', 'mock', '系統'
+  ];
+
   /**
    * 執行員工主檔全量同步（從左手系統 API）
+   * 依照「人員資料一致性規則」執行
    */
   async syncEmployees(triggeredBy?: string): Promise<SyncLog> {
     const syncLog = await this.createSyncLog('employee_full', 'lefthand_api', triggeredBy);
@@ -46,18 +58,23 @@ export class SyncService {
     try {
       await this.updateSyncLog(syncLog.id, { status: 'running' });
 
-      // 第一步：取得全部員工基本資料
-      this.logger.log('Step 1: Fetching all employees...');
+      let totalSkipped = 0;
+      const skippedReasons: { name: string; reason: string }[] = [];
+
+      // ========================================
+      // Step 1: getallemployees 取得正式員工候選母體
+      // ========================================
+      this.logger.log('Step 1: Fetching all employees from getallemployees...');
       const employeesResult = await this.lefthandApi.getAllEmployees();
 
       if (!employeesResult.success) {
         throw new Error(`Failed to fetch employees: ${employeesResult.message}`);
       }
 
-      const employees = employeesResult.data;
-      this.logger.log(`Fetched ${employees.length} employees from API`);
+      const rawEmployees = employeesResult.data;
+      this.logger.log(`Fetched ${rawEmployees.length} raw employees from API`);
 
-      if (employees.length === 0) {
+      if (rawEmployees.length === 0) {
         await this.updateSyncLog(syncLog.id, {
           status: 'completed',
           finished_at: new Date().toISOString(),
@@ -66,11 +83,53 @@ export class SyncService {
         return this.getSyncLog(syncLog.id);
       }
 
-      // 第二步：取得門市資料（包含更詳細的員工資訊）
-      this.logger.log('Step 2: Fetching stores with employee details...');
+      // ========================================
+      // Step 2: 過濾正式人員條件
+      // 必要條件：同時有 employeeappnumber + employeeerpid
+      // ========================================
+      this.logger.log('Step 2: Filtering employees (must have both appnumber and erpid)...');
+      const validEmployees = rawEmployees.filter((emp: EmployeeApiData) => {
+        // 必須同時有 employeeappnumber 和 employeeerpid
+        if (!emp.employeeappnumber || !emp.employeeerpid) {
+          totalSkipped++;
+          skippedReasons.push({
+            name: emp.employeename || 'Unknown',
+            reason: `缺少必要欄位: appnumber=${emp.employeeappnumber}, erpid=${emp.employeeerpid}`,
+          });
+          return false;
+        }
+        return true;
+      });
+
+      this.logger.log(`Valid employees after filtering: ${validEmployees.length} (skipped: ${totalSkipped})`);
+
+      // ========================================
+      // Step 3: 排除/標記特殊帳號
+      // ========================================
+      this.logger.log('Step 3: Marking excluded/special accounts...');
+      const processedEmployees = validEmployees.map((emp: EmployeeApiData) => {
+        const name = emp.employeename || '';
+        const isExcluded = this.EXCLUDED_KEYWORDS.some(keyword => 
+          name.toLowerCase().includes(keyword.toLowerCase())
+        );
+
+        return {
+          ...emp,
+          _isExcluded: isExcluded,
+          _excludeReason: isExcluded ? '符合排除關鍵字' : null,
+        };
+      });
+
+      const excludedCount = processedEmployees.filter((e: any) => e._isExcluded).length;
+      this.logger.log(`Excluded accounts: ${excludedCount}`);
+
+      // ========================================
+      // Step 4: 取得門市資料，用於判斷 groupname 和 person_type
+      // ========================================
+      this.logger.log('Step 4: Fetching store data for groupname mapping...');
       const storesResult = await this.lefthandApi.getAllStoresWithEmployees();
       
-      // 建立員工詳細資料對照表
+      // 建立 erpid -> 員工詳細資料 對照表
       const employeeDetailsMap = new Map<string, any>();
       
       if (storesResult.success) {
@@ -82,56 +141,113 @@ export class SyncService {
           if (store.employees) {
             for (const emp of store.employees) {
               employeeDetailsMap.set(emp.erpid, {
-                store_name: store.name,
-                store_erpid: store.erpid,
+                groupname: store.name,
+                grouperpid: store.erpid,
                 region: store.city,
                 role: emp.role,
                 jobtitle: emp.jobtitle,
+                isleave: emp.isleave,
+                isfreeze: emp.isfreeze,
               });
             }
           }
         }
       }
 
-      // 第三步：批量 Upsert 員工資料
-      this.logger.log('Step 3: Upserting employees to database...');
-      const employeesToUpsert = employees.map((emp: EmployeeApiData) => {
-        const details = employeeDetailsMap.get(emp.employeeerpid || '') || {};
+      this.logger.log(`Employee details map size: ${employeeDetailsMap.size}`);
+
+      // ========================================
+      // Step 5: 組合最終員工資料，判斷 person_type
+      // ========================================
+      this.logger.log('Step 5: Building final employee records with person_type...');
+      const employeesToUpsert = processedEmployees.map((emp: any) => {
+        const details = employeeDetailsMap.get(emp.employeeerpid) || {};
+        const groupname = details.groupname || '';
         
+        // 判斷 person_type
+        let personType: 'store' | 'nonstore' | 'special' | 'excluded' = 'store';
+        let isStoreStaff = true;
+
+        if (emp._isExcluded) {
+          personType = 'excluded';
+          isStoreStaff = false;
+        } else if (this.NON_STORE_DEPARTMENTS.some(dept => groupname.includes(dept))) {
+          personType = 'nonstore';
+          isStoreStaff = false;
+        }
+
+        // 判斷是否在官網展示（有在 getstoredatas 中出現）
+        const isDisplayedOnWebsite = employeeDetailsMap.has(emp.employeeerpid);
+
         return {
           employeeappnumber: emp.employeeappnumber,
           employeeerpid: emp.employeeerpid,
           name: emp.employeename,
           role: details.role,
           title: details.jobtitle,
-          store_name: details.store_name,
-          department: details.region,
-          is_active: true,
-          is_leave: false,
+          store_name: groupname,
+          department: details.region || groupname,
+          is_active: !details.isleave && !details.isfreeze && !emp._isExcluded,
+          is_leave: details.isleave || false,
+          person_type: personType,
+          is_store_staff: isStoreStaff,
+          is_displayed_on_website: isDisplayedOnWebsite,
           source_payload: {
-            ...emp,
-            ...details,
+            employeeappnumber: emp.employeeappnumber,
+            employeeerpid: emp.employeeerpid,
+            employeename: emp.employeename,
+            employeeimage: emp.employeeimage,
+            groupname: groupname,
+            grouperpid: details.grouperpid,
+            jobtitle: details.jobtitle,
+            role: details.role,
+            person_type: personType,
+            is_store_staff: isStoreStaff,
+            is_displayed_on_website: isDisplayedOnWebsite,
             synced_at: new Date().toISOString(),
           },
         };
       });
 
+      // ========================================
+      // Step 6: 批量 Upsert 到資料庫
+      // ========================================
+      this.logger.log('Step 6: Upserting employees to database...');
       const result = await this.employeesService.bulkUpsert(employeesToUpsert as any);
 
-      // 更新同步日誌
+      // ========================================
+      // Step 7: 更新同步日誌
+      // ========================================
+      const syncDetails = {
+        total_raw: rawEmployees.length,
+        total_valid: validEmployees.length,
+        total_excluded: excludedCount,
+        skipped_samples: skippedReasons.slice(0, 10),
+        person_type_breakdown: {
+          store: employeesToUpsert.filter((e: any) => e.person_type === 'store').length,
+          nonstore: employeesToUpsert.filter((e: any) => e.person_type === 'nonstore').length,
+          excluded: employeesToUpsert.filter((e: any) => e.person_type === 'excluded').length,
+        },
+      };
+
       await this.updateSyncLog(syncLog.id, {
         status: result.failed > 0 ? 'partial' : 'completed',
         finished_at: new Date().toISOString(),
-        total_fetched: employees.length,
+        total_fetched: rawEmployees.length,
         total_created: result.created,
         total_updated: result.updated,
+        total_skipped: totalSkipped,
         total_failed: result.failed,
-        error_details: result.errors.length > 0 ? { errors: result.errors.slice(0, 10) } : undefined,
+        error_details: {
+          ...syncDetails,
+          upsert_errors: result.errors.slice(0, 10),
+        },
       });
 
       this.logger.log(
-        `Employee sync completed: ${result.created} created, ${result.updated} updated, ${result.failed} failed`,
+        `Employee sync completed: ${result.created} created, ${result.updated} updated, ${totalSkipped} skipped, ${result.failed} failed`,
       );
+      this.logger.log(`Person type breakdown: store=${syncDetails.person_type_breakdown.store}, nonstore=${syncDetails.person_type_breakdown.nonstore}, excluded=${syncDetails.person_type_breakdown.excluded}`);
 
       return this.getSyncLog(syncLog.id);
     } catch (error) {

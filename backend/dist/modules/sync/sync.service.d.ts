@@ -30,6 +30,8 @@ export declare class SyncService {
     private readonly logger;
     private readonly SYNC_LOGS_TABLE;
     constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, storesService: StoresService, lefthandApi: LefthandApiService);
+    private readonly NON_STORE_DEPARTMENTS;
+    private readonly EXCLUDED_KEYWORDS;
     syncEmployees(triggeredBy?: string): Promise<SyncLog>;
     private syncStore;
     syncDailyData(triggeredBy?: string): Promise<SyncLog>;

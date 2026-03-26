@@ -26,19 +26,28 @@ let SyncService = SyncService_1 = class SyncService {
         this.lefthandApi = lefthandApi;
         this.logger = new common_1.Logger(SyncService_1.name);
         this.SYNC_LOGS_TABLE = 'sync_logs';
+        this.NON_STORE_DEPARTMENTS = [
+            '加工部', '企劃部', '總經理室', '營運部', '商城倉管部',
+            '工程部', '教育訓練部', '商城門市', '倉管部', '行政部'
+        ];
+        this.EXCLUDED_KEYWORDS = [
+            '不指定店員', '不指定人員', '測試', 'test', 'mock', '系統'
+        ];
     }
     async syncEmployees(triggeredBy) {
         const syncLog = await this.createSyncLog('employee_full', 'lefthand_api', triggeredBy);
         try {
             await this.updateSyncLog(syncLog.id, { status: 'running' });
-            this.logger.log('Step 1: Fetching all employees...');
+            let totalSkipped = 0;
+            const skippedReasons = [];
+            this.logger.log('Step 1: Fetching all employees from getallemployees...');
             const employeesResult = await this.lefthandApi.getAllEmployees();
             if (!employeesResult.success) {
                 throw new Error(`Failed to fetch employees: ${employeesResult.message}`);
             }
-            const employees = employeesResult.data;
-            this.logger.log(`Fetched ${employees.length} employees from API`);
-            if (employees.length === 0) {
+            const rawEmployees = employeesResult.data;
+            this.logger.log(`Fetched ${rawEmployees.length} raw employees from API`);
+            if (rawEmployees.length === 0) {
                 await this.updateSyncLog(syncLog.id, {
                     status: 'completed',
                     finished_at: new Date().toISOString(),
@@ -46,7 +55,32 @@ let SyncService = SyncService_1 = class SyncService {
                 });
                 return this.getSyncLog(syncLog.id);
             }
-            this.logger.log('Step 2: Fetching stores with employee details...');
+            this.logger.log('Step 2: Filtering employees (must have both appnumber and erpid)...');
+            const validEmployees = rawEmployees.filter((emp) => {
+                if (!emp.employeeappnumber || !emp.employeeerpid) {
+                    totalSkipped++;
+                    skippedReasons.push({
+                        name: emp.employeename || 'Unknown',
+                        reason: `缺少必要欄位: appnumber=${emp.employeeappnumber}, erpid=${emp.employeeerpid}`,
+                    });
+                    return false;
+                }
+                return true;
+            });
+            this.logger.log(`Valid employees after filtering: ${validEmployees.length} (skipped: ${totalSkipped})`);
+            this.logger.log('Step 3: Marking excluded/special accounts...');
+            const processedEmployees = validEmployees.map((emp) => {
+                const name = emp.employeename || '';
+                const isExcluded = this.EXCLUDED_KEYWORDS.some(keyword => name.toLowerCase().includes(keyword.toLowerCase()));
+                return {
+                    ...emp,
+                    _isExcluded: isExcluded,
+                    _excludeReason: isExcluded ? '符合排除關鍵字' : null,
+                };
+            });
+            const excludedCount = processedEmployees.filter((e) => e._isExcluded).length;
+            this.logger.log(`Excluded accounts: ${excludedCount}`);
+            this.logger.log('Step 4: Fetching store data for groupname mapping...');
             const storesResult = await this.lefthandApi.getAllStoresWithEmployees();
             const employeeDetailsMap = new Map();
             if (storesResult.success) {
@@ -55,47 +89,91 @@ let SyncService = SyncService_1 = class SyncService {
                     if (store.employees) {
                         for (const emp of store.employees) {
                             employeeDetailsMap.set(emp.erpid, {
-                                store_name: store.name,
-                                store_erpid: store.erpid,
+                                groupname: store.name,
+                                grouperpid: store.erpid,
                                 region: store.city,
                                 role: emp.role,
                                 jobtitle: emp.jobtitle,
+                                isleave: emp.isleave,
+                                isfreeze: emp.isfreeze,
                             });
                         }
                     }
                 }
             }
-            this.logger.log('Step 3: Upserting employees to database...');
-            const employeesToUpsert = employees.map((emp) => {
-                const details = employeeDetailsMap.get(emp.employeeerpid || '') || {};
+            this.logger.log(`Employee details map size: ${employeeDetailsMap.size}`);
+            this.logger.log('Step 5: Building final employee records with person_type...');
+            const employeesToUpsert = processedEmployees.map((emp) => {
+                const details = employeeDetailsMap.get(emp.employeeerpid) || {};
+                const groupname = details.groupname || '';
+                let personType = 'store';
+                let isStoreStaff = true;
+                if (emp._isExcluded) {
+                    personType = 'excluded';
+                    isStoreStaff = false;
+                }
+                else if (this.NON_STORE_DEPARTMENTS.some(dept => groupname.includes(dept))) {
+                    personType = 'nonstore';
+                    isStoreStaff = false;
+                }
+                const isDisplayedOnWebsite = employeeDetailsMap.has(emp.employeeerpid);
                 return {
                     employeeappnumber: emp.employeeappnumber,
                     employeeerpid: emp.employeeerpid,
                     name: emp.employeename,
                     role: details.role,
                     title: details.jobtitle,
-                    store_name: details.store_name,
-                    department: details.region,
-                    is_active: true,
-                    is_leave: false,
+                    store_name: groupname,
+                    department: details.region || groupname,
+                    is_active: !details.isleave && !details.isfreeze && !emp._isExcluded,
+                    is_leave: details.isleave || false,
+                    person_type: personType,
+                    is_store_staff: isStoreStaff,
+                    is_displayed_on_website: isDisplayedOnWebsite,
                     source_payload: {
-                        ...emp,
-                        ...details,
+                        employeeappnumber: emp.employeeappnumber,
+                        employeeerpid: emp.employeeerpid,
+                        employeename: emp.employeename,
+                        employeeimage: emp.employeeimage,
+                        groupname: groupname,
+                        grouperpid: details.grouperpid,
+                        jobtitle: details.jobtitle,
+                        role: details.role,
+                        person_type: personType,
+                        is_store_staff: isStoreStaff,
+                        is_displayed_on_website: isDisplayedOnWebsite,
                         synced_at: new Date().toISOString(),
                     },
                 };
             });
+            this.logger.log('Step 6: Upserting employees to database...');
             const result = await this.employeesService.bulkUpsert(employeesToUpsert);
+            const syncDetails = {
+                total_raw: rawEmployees.length,
+                total_valid: validEmployees.length,
+                total_excluded: excludedCount,
+                skipped_samples: skippedReasons.slice(0, 10),
+                person_type_breakdown: {
+                    store: employeesToUpsert.filter((e) => e.person_type === 'store').length,
+                    nonstore: employeesToUpsert.filter((e) => e.person_type === 'nonstore').length,
+                    excluded: employeesToUpsert.filter((e) => e.person_type === 'excluded').length,
+                },
+            };
             await this.updateSyncLog(syncLog.id, {
                 status: result.failed > 0 ? 'partial' : 'completed',
                 finished_at: new Date().toISOString(),
-                total_fetched: employees.length,
+                total_fetched: rawEmployees.length,
                 total_created: result.created,
                 total_updated: result.updated,
+                total_skipped: totalSkipped,
                 total_failed: result.failed,
-                error_details: result.errors.length > 0 ? { errors: result.errors.slice(0, 10) } : undefined,
+                error_details: {
+                    ...syncDetails,
+                    upsert_errors: result.errors.slice(0, 10),
+                },
             });
-            this.logger.log(`Employee sync completed: ${result.created} created, ${result.updated} updated, ${result.failed} failed`);
+            this.logger.log(`Employee sync completed: ${result.created} created, ${result.updated} updated, ${totalSkipped} skipped, ${result.failed} failed`);
+            this.logger.log(`Person type breakdown: store=${syncDetails.person_type_breakdown.store}, nonstore=${syncDetails.person_type_breakdown.nonstore}, excluded=${syncDetails.person_type_breakdown.excluded}`);
             return this.getSyncLog(syncLog.id);
         }
         catch (error) {
