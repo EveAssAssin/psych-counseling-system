@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/
 import { EmployeeInsightService } from './employee-insight.service';
 
 @ApiTags('employee-insight')
-@Controller('api/v1/employee-insight')
+@Controller('v1/employee-insight')
 export class EmployeeInsightController {
   constructor(private readonly insightService: EmployeeInsightService) {}
 

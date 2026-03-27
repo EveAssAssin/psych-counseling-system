@@ -193,7 +193,7 @@ export class EmployeeInsightService {
         name: employee.name,
         app_number: employee.employeeappnumber,
         erp_id: employee.employeeerpid || '',
-        department: employee.department || '',
+        department: employee.department || employee.sed -i '' "s/employee\.department || employee\.groupname || ''/employee.department || ''/g" ~/Downloads/psych-system-v3/backend/src/modules/insight/employee-insight.service.tsgroupname || '',
         store_name: employee.store_name || '',
         title: employee.title || '',
         is_active: employee.is_active,
@@ -465,7 +465,7 @@ ${analysisInput}
   private prepareAnalysisInput(employee: any, data: any, timeline: TimelineEvent[]): string {
     let input = `【員工基本資料】
 姓名：${employee.name}
-部門：${employee.department || '未知'}
+部門：${employee.department || employee.groupname || '未知'}
 門市：${employee.store_name || '未知'}
 職稱：${employee.title || '未知'}
 狀態：${employee.is_active ? '在職' : '離職'}
