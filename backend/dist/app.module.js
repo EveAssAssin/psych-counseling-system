@@ -21,6 +21,7 @@ const risk_flags_module_1 = require("./modules/risk-flags/risk-flags.module");
 const sync_module_1 = require("./modules/sync/sync.module");
 const query_module_1 = require("./modules/query/query.module");
 const scheduler_module_1 = require("./modules/scheduler/scheduler.module");
+const official_channel_module_1 = require("./modules/official-channel/official-channel.module");
 const health_controller_1 = require("./health.controller");
 let AppModule = class AppModule {
 };
@@ -43,6 +44,7 @@ exports.AppModule = AppModule = __decorate([
             sync_module_1.SyncModule,
             query_module_1.QueryModule,
             scheduler_module_1.SchedulerModule,
+            official_channel_module_1.OfficialChannelModule,
         ],
         controllers: [health_controller_1.HealthController],
     })
