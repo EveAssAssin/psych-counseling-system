@@ -124,26 +124,35 @@ export class SyncService {
       this.logger.log(`Excluded accounts: ${excludedCount}`);
 
       // ========================================
-      // Step 4: 取得門市資料，用於判斷 groupname 和 person_type
+      // Step 4: 使用 getemployeebyerps 批量補查員工詳細資料
+      // 因為 getstoredatas 只回傳「需要顯示在官網的員工」
       // ========================================
-      this.logger.log('Step 4: Fetching store data for groupname mapping...');
-      const storesResult = await this.lefthandApi.getAllStoresWithEmployees();
+      this.logger.log('Step 4: Fetching employee details via getemployeebyerps...');
       
       // 建立 erpid -> 員工詳細資料 對照表
       const employeeDetailsMap = new Map<string, any>();
       
-      if (storesResult.success) {
-        for (const store of storesResult.data) {
-          // 同步門市資料
-          await this.syncStore(store);
+      // 取得所有員工的 erpid
+      const allErpIds = processedEmployees
+        .filter((emp: any) => emp.employeeerpid)
+        .map((emp: any) => emp.employeeerpid);
+      
+      this.logger.log(`Total ERP IDs to query: ${allErpIds.length}`);
+      
+      // 分批查詢（每批 50 個，避免 API 超時或限制）
+      const batchSize = 50;
+      for (let i = 0; i < allErpIds.length; i += batchSize) {
+        const batchErpIds = allErpIds.slice(i, i + batchSize);
+        this.logger.log(`Querying batch ${Math.floor(i / batchSize) + 1}: ${batchErpIds.length} employees`);
+        
+        try {
+          const detailsResult = await this.lefthandApi.getEmployeesByErpIds(batchErpIds);
           
-          // 收集員工詳細資料
-          if (store.employees) {
-            for (const emp of store.employees) {
+          if (detailsResult.success && detailsResult.data) {
+            for (const emp of detailsResult.data) {
               employeeDetailsMap.set(emp.erpid, {
-                groupname: store.name,
-                grouperpid: store.erpid,
-                region: store.city,
+                groupname: emp.groupname,
+                grouperpid: emp.grouperpid,
                 role: emp.role,
                 jobtitle: emp.jobtitle,
                 isleave: emp.isleave,
@@ -151,7 +160,12 @@ export class SyncService {
               });
             }
           }
+        } catch (error) {
+          this.logger.warn(`Failed to fetch batch ${Math.floor(i / batchSize) + 1}:`, error.message);
         }
+        
+        // 避免 API 過載，每批之間暫停 100ms
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       this.logger.log(`Employee details map size: ${employeeDetailsMap.size}`);
