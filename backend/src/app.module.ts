@@ -18,6 +18,7 @@ import { RiskFlagsModule } from './modules/risk-flags/risk-flags.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { QueryModule } from './modules/query/query.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
+import { OfficialChannelModule } from './modules/official-channel/official-channel.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -46,6 +47,7 @@ import { HealthController } from './health.controller';
     SyncModule,
     QueryModule,
     SchedulerModule,
+    OfficialChannelModule,
   ],
   controllers: [HealthController],
 })

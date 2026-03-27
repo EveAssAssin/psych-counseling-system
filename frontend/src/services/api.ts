@@ -225,6 +225,29 @@ export const syncApi = {
 };
 
 // ============================================
+// Official Channel API
+// ============================================
+export const officialChannelApi = {
+  search: (params: {
+    employee_id?: string;
+    employee_app_number?: string;
+    channel?: string;
+    limit?: number;
+    offset?: number;
+  }) => api.get('/official-channel', { params }),
+
+  getByEmployeeId: (employeeId: string, limit?: number) => 
+    api.get(`/official-channel/employee/${employeeId}`, { params: { limit } }),
+
+  getByAppNumber: (appNumber: string, limit?: number) =>
+    api.get(`/official-channel/by-app-number/${appNumber}`, { params: { limit } }),
+
+  getStats: () => api.get('/official-channel/stats'),
+
+  getById: (id: string) => api.get(`/official-channel/${id}`),
+};
+
+// ============================================
 // Health API
 // ============================================
 export const healthApi = {
