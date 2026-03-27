@@ -12,6 +12,7 @@ const config_1 = require("@nestjs/config");
 const sync_controller_1 = require("./sync.controller");
 const sync_service_1 = require("./sync.service");
 const lefthand_api_service_1 = require("./lefthand-api.service");
+const ticket_api_service_1 = require("./ticket-api.service");
 const employees_module_1 = require("../employees/employees.module");
 const stores_module_1 = require("../stores/stores.module");
 const supabase_module_1 = require("../supabase/supabase.module");
@@ -27,8 +28,8 @@ exports.SyncModule = SyncModule = __decorate([
             stores_module_1.StoresModule,
         ],
         controllers: [sync_controller_1.SyncController],
-        providers: [sync_service_1.SyncService, lefthand_api_service_1.LefthandApiService],
-        exports: [sync_service_1.SyncService, lefthand_api_service_1.LefthandApiService],
+        providers: [sync_service_1.SyncService, lefthand_api_service_1.LefthandApiService, ticket_api_service_1.TicketApiService],
+        exports: [sync_service_1.SyncService, lefthand_api_service_1.LefthandApiService, ticket_api_service_1.TicketApiService],
     })
 ], SyncModule);
 //# sourceMappingURL=sync.module.js.map

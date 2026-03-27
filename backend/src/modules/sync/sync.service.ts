@@ -4,6 +4,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeesService } from '../employees/employees.service';
 import { StoresService } from '../stores/stores.service';
 import { LefthandApiService, EmployeeApiData, StoreApiData } from './lefthand-api.service';
+import { TicketApiService, OfficialChannelMessage } from './ticket-api.service';
 
 export interface SyncLog {
   id: string;
@@ -35,6 +36,7 @@ export class SyncService {
     private readonly employeesService: EmployeesService,
     private readonly storesService: StoresService,
     private readonly lefthandApi: LefthandApiService,
+    private readonly ticketApi: TicketApiService,
   ) {}
 
   // 非門市部門列表（用於判斷 person_type）
@@ -446,5 +448,254 @@ export class SyncService {
       limit,
       useAdmin: true,
     });
+  }
+
+  // ============================================
+  // 官方頻道訊息同步（工單系統 API）
+  // ============================================
+
+  private readonly OCM_TABLE = 'official_channel_messages';
+  private readonly SYNC_CURSORS_TABLE = 'sync_cursors';
+
+  /**
+   * 同步官方頻道訊息（LINE 訊息 + 工單留言）
+   * 每日早上 5:00 執行，只抓取增量資料
+   */
+  async syncOfficialChannelMessages(triggeredBy?: string): Promise<SyncLog> {
+    const syncLog = await this.createSyncLog('official_channel', 'ticket-system', triggeredBy);
+
+    try {
+      await this.updateSyncLog(syncLog.id, { status: 'running' });
+
+      let totalFetched = 0;
+      let totalCreated = 0;
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+      let totalFailed = 0;
+
+      // ========================================
+      // Step 1: 取得上次同步時間
+      // ========================================
+      const lineLastSync = await this.getSyncCursor('official-channel-line');
+      const commentsLastSync = await this.getSyncCursor('official-channel-comments');
+
+      // 預設取昨天 00:00 到今天 00:00 的資料
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+      
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+
+      const defaultAfter = yesterday.toISOString();
+      const defaultBefore = today.toISOString();
+
+      // ========================================
+      // Step 2: 同步 LINE 訊息
+      // ========================================
+      this.logger.log('Step 1: Syncing LINE official channel messages...');
+      const lineUpdatedAfter = lineLastSync?.last_record_time || defaultAfter;
+      
+      try {
+        const lineMessages = await this.ticketApi.getAllOfficialChannelMessages({
+          updated_after: lineUpdatedAfter,
+        });
+
+        this.logger.log(`Fetched ${lineMessages.length} LINE messages`);
+        totalFetched += lineMessages.length;
+
+        const lineResult = await this.upsertOfficialChannelMessages(lineMessages, 'ticket-system-line');
+        totalCreated += lineResult.created;
+        totalUpdated += lineResult.updated;
+        totalSkipped += lineResult.skipped;
+        totalFailed += lineResult.failed;
+
+        // 更新同步游標
+        if (lineMessages.length > 0) {
+          const lastMessageTime = lineMessages.reduce((max, msg) => 
+            msg.updated_at > max ? msg.updated_at : max, lineMessages[0].updated_at);
+          await this.updateSyncCursor('official-channel-line', lastMessageTime, lineMessages.length);
+        }
+      } catch (error) {
+        this.logger.error('Failed to sync LINE messages:', error.message);
+        totalFailed++;
+      }
+
+      // ========================================
+      // Step 3: 同步工單留言
+      // ========================================
+      this.logger.log('Step 2: Syncing ticket comments...');
+      const commentsUpdatedAfter = commentsLastSync?.last_record_time || defaultAfter;
+
+      try {
+        const comments = await this.ticketApi.getAllTicketComments({
+          updated_after: commentsUpdatedAfter,
+        });
+
+        this.logger.log(`Fetched ${comments.length} ticket comments`);
+        totalFetched += comments.length;
+
+        const commentsResult = await this.upsertOfficialChannelMessages(comments, 'ticket-system-comments');
+        totalCreated += commentsResult.created;
+        totalUpdated += commentsResult.updated;
+        totalSkipped += commentsResult.skipped;
+        totalFailed += commentsResult.failed;
+
+        // 更新同步游標
+        if (comments.length > 0) {
+          const lastMessageTime = comments.reduce((max, msg) => 
+            msg.updated_at > max ? msg.updated_at : max, comments[0].updated_at);
+          await this.updateSyncCursor('official-channel-comments', lastMessageTime, comments.length);
+        }
+      } catch (error) {
+        this.logger.error('Failed to sync ticket comments:', error.message);
+        totalFailed++;
+      }
+
+      // ========================================
+      // Step 4: 更新同步日誌
+      // ========================================
+      await this.updateSyncLog(syncLog.id, {
+        status: totalFailed > 0 ? 'partial' : 'completed',
+        finished_at: new Date().toISOString(),
+        total_fetched: totalFetched,
+        total_created: totalCreated,
+        total_updated: totalUpdated,
+        total_skipped: totalSkipped,
+        total_failed: totalFailed,
+      });
+
+      this.logger.log(
+        `Official channel sync completed: ${totalCreated} created, ${totalUpdated} updated, ${totalSkipped} skipped, ${totalFailed} failed`,
+      );
+
+      return this.getSyncLog(syncLog.id);
+    } catch (error) {
+      this.logger.error('Official channel sync failed:', error);
+
+      await this.updateSyncLog(syncLog.id, {
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: error.message,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * 批量 Upsert 官方頻道訊息
+   */
+  private async upsertOfficialChannelMessages(
+    messages: OfficialChannelMessage[],
+    sourceSystem: string,
+  ): Promise<{ created: number; updated: number; skipped: number; failed: number }> {
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const msg of messages) {
+      try {
+        // 用 employee_app_number 查找員工
+        const employee = await this.employeesService.findByAppNumber(msg.employee_app_number);
+
+        // 檢查是否已存在
+        const existing = await this.supabase.findOne(
+          this.OCM_TABLE,
+          { source_record_id: msg.source_record_id },
+          { useAdmin: true },
+        );
+
+        const record = {
+          source_record_id: msg.source_record_id,
+          source_system: sourceSystem,
+          employee_id: employee?.id || null,
+          employee_app_number: msg.employee_app_number,
+          employee_erp_id: msg.employee_erp_id,
+          employee_name: msg.employee_name,
+          group_name: msg.group_name,
+          channel: msg.channel,
+          thread_id: msg.thread_id,
+          direction: msg.direction,
+          message_time: msg.message_time,
+          message_text: msg.message_text,
+          message_type: msg.message_type || 'text',
+          ticket_no: msg.ticket_no || null,
+          author_name: msg.author_name || null,
+          author_role: msg.author_role || null,
+          agent_type: msg.agent_type || 'human',
+          source_updated_at: msg.updated_at,
+          synced_at: new Date().toISOString(),
+        };
+
+        if (existing) {
+          await this.supabase.update(
+            this.OCM_TABLE,
+            { source_record_id: msg.source_record_id },
+            record,
+            { useAdmin: true },
+          );
+          updated++;
+        } else {
+          await this.supabase.create(this.OCM_TABLE, record, { useAdmin: true });
+          created++;
+        }
+
+        // 如果找不到員工，記錄 warning
+        if (!employee) {
+          this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
+          skipped++;
+        }
+      } catch (error) {
+        this.logger.error(`Failed to upsert message ${msg.source_record_id}:`, error.message);
+        failed++;
+      }
+    }
+
+    return { created, updated, skipped, failed };
+  }
+
+  /**
+   * 取得同步游標
+   */
+  private async getSyncCursor(syncType: string): Promise<{ last_record_time: string | null } | null> {
+    return this.supabase.findOne(
+      this.SYNC_CURSORS_TABLE,
+      { sync_type: syncType },
+      { useAdmin: true },
+    );
+  }
+
+  /**
+   * 更新同步游標
+   */
+  private async updateSyncCursor(syncType: string, lastRecordTime: string, count: number): Promise<void> {
+    const existing = await this.getSyncCursor(syncType);
+
+    if (existing) {
+      await this.supabase.update(
+        this.SYNC_CURSORS_TABLE,
+        { sync_type: syncType },
+        {
+          last_synced_at: new Date().toISOString(),
+          last_record_time: lastRecordTime,
+          total_synced: (existing as any).total_synced + count,
+        },
+        { useAdmin: true },
+      );
+    } else {
+      await this.supabase.create(
+        this.SYNC_CURSORS_TABLE,
+        {
+          sync_type: syncType,
+          last_synced_at: new Date().toISOString(),
+          last_record_time: lastRecordTime,
+          total_synced: count,
+        },
+        { useAdmin: true },
+      );
+    }
   }
 }

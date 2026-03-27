@@ -4,11 +4,7 @@ export declare class SyncController {
     constructor(syncService: SyncService);
     syncEmployees(triggeredBy?: string): Promise<import("./sync.service").SyncLog>;
     syncDailyData(triggeredBy?: string): Promise<import("./sync.service").SyncLog>;
-    syncOfficialChannel(triggeredBy?: string): Promise<{
-        fetched: number;
-        created: number;
-        failed: number;
-    }>;
+    syncOfficialChannel(triggeredBy?: string): Promise<import("./sync.service").SyncLog>;
     getSyncLogs(limit?: number): Promise<import("./sync.service").SyncLog[]>;
     getSyncLog(id: string): Promise<import("./sync.service").SyncLog>;
 }

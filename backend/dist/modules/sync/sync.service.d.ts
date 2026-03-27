@@ -3,6 +3,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeesService } from '../employees/employees.service';
 import { StoresService } from '../stores/stores.service';
 import { LefthandApiService } from './lefthand-api.service';
+import { TicketApiService } from './ticket-api.service';
 export interface SyncLog {
     id: string;
     sync_type: string;
@@ -27,9 +28,10 @@ export declare class SyncService {
     private readonly employeesService;
     private readonly storesService;
     private readonly lefthandApi;
+    private readonly ticketApi;
     private readonly logger;
     private readonly SYNC_LOGS_TABLE;
-    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, storesService: StoresService, lefthandApi: LefthandApiService);
+    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, storesService: StoresService, lefthandApi: LefthandApiService, ticketApi: TicketApiService);
     private readonly NON_STORE_DEPARTMENTS;
     private readonly EXCLUDED_KEYWORDS;
     syncEmployees(triggeredBy?: string): Promise<SyncLog>;
@@ -45,4 +47,10 @@ export declare class SyncService {
     private updateSyncLog;
     getSyncLog(id: string): Promise<SyncLog>;
     getRecentSyncLogs(limit?: number): Promise<SyncLog[]>;
+    private readonly OCM_TABLE;
+    private readonly SYNC_CURSORS_TABLE;
+    syncOfficialChannelMessages(triggeredBy?: string): Promise<SyncLog>;
+    private upsertOfficialChannelMessages;
+    private getSyncCursor;
+    private updateSyncCursor;
 }

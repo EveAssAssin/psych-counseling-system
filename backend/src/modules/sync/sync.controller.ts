@@ -22,10 +22,10 @@ export class SyncController {
   }
 
   @Post('official-channel')
-  @ApiOperation({ summary: '同步官方頻道對話' })
+  @ApiOperation({ summary: '同步官方頻道訊息（LINE + 工單留言）' })
   @ApiResponse({ status: 201, description: '同步結果' })
   async syncOfficialChannel(@Query('triggered_by') triggeredBy?: string) {
-    return this.syncService.syncOfficialChannelConversations(triggeredBy);
+    return this.syncService.syncOfficialChannelMessages(triggeredBy);
   }
 
   @Get('logs')

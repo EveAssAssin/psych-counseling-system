@@ -17,13 +17,15 @@ const supabase_service_1 = require("../supabase/supabase.service");
 const employees_service_1 = require("../employees/employees.service");
 const stores_service_1 = require("../stores/stores.service");
 const lefthand_api_service_1 = require("./lefthand-api.service");
+const ticket_api_service_1 = require("./ticket-api.service");
 let SyncService = SyncService_1 = class SyncService {
-    constructor(configService, supabase, employeesService, storesService, lefthandApi) {
+    constructor(configService, supabase, employeesService, storesService, lefthandApi, ticketApi) {
         this.configService = configService;
         this.supabase = supabase;
         this.employeesService = employeesService;
         this.storesService = storesService;
         this.lefthandApi = lefthandApi;
+        this.ticketApi = ticketApi;
         this.logger = new common_1.Logger(SyncService_1.name);
         this.SYNC_LOGS_TABLE = 'sync_logs';
         this.NON_STORE_DEPARTMENTS = [
@@ -33,6 +35,8 @@ let SyncService = SyncService_1 = class SyncService {
         this.EXCLUDED_KEYWORDS = [
             '不指定店員', '不指定人員', '測試', 'test', 'mock', '系統'
         ];
+        this.OCM_TABLE = 'official_channel_messages';
+        this.SYNC_CURSORS_TABLE = 'sync_cursors';
     }
     async syncEmployees(triggeredBy) {
         const syncLog = await this.createSyncLog('employee_full', 'lefthand_api', triggeredBy);
@@ -80,18 +84,23 @@ let SyncService = SyncService_1 = class SyncService {
             });
             const excludedCount = processedEmployees.filter((e) => e._isExcluded).length;
             this.logger.log(`Excluded accounts: ${excludedCount}`);
-            this.logger.log('Step 4: Fetching store data for groupname mapping...');
-            const storesResult = await this.lefthandApi.getAllStoresWithEmployees();
+            this.logger.log('Step 4: Fetching employee details via getemployeebyerps...');
             const employeeDetailsMap = new Map();
-            if (storesResult.success) {
-                for (const store of storesResult.data) {
-                    await this.syncStore(store);
-                    if (store.employees) {
-                        for (const emp of store.employees) {
+            const allErpIds = processedEmployees
+                .filter((emp) => emp.employeeerpid)
+                .map((emp) => emp.employeeerpid);
+            this.logger.log(`Total ERP IDs to query: ${allErpIds.length}`);
+            const batchSize = 50;
+            for (let i = 0; i < allErpIds.length; i += batchSize) {
+                const batchErpIds = allErpIds.slice(i, i + batchSize);
+                this.logger.log(`Querying batch ${Math.floor(i / batchSize) + 1}: ${batchErpIds.length} employees`);
+                try {
+                    const detailsResult = await this.lefthandApi.getEmployeesByErpIds(batchErpIds);
+                    if (detailsResult.success && detailsResult.data) {
+                        for (const emp of detailsResult.data) {
                             employeeDetailsMap.set(emp.erpid, {
-                                groupname: store.name,
-                                grouperpid: store.erpid,
-                                region: store.city,
+                                groupname: emp.groupname,
+                                grouperpid: emp.grouperpid,
                                 role: emp.role,
                                 jobtitle: emp.jobtitle,
                                 isleave: emp.isleave,
@@ -100,6 +109,10 @@ let SyncService = SyncService_1 = class SyncService {
                         }
                     }
                 }
+                catch (error) {
+                    this.logger.warn(`Failed to fetch batch ${Math.floor(i / batchSize) + 1}:`, error.message);
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
             this.logger.log(`Employee details map size: ${employeeDetailsMap.size}`);
             this.logger.log('Step 5: Building final employee records with person_type...');
@@ -291,6 +304,162 @@ let SyncService = SyncService_1 = class SyncService {
             useAdmin: true,
         });
     }
+    async syncOfficialChannelMessages(triggeredBy) {
+        const syncLog = await this.createSyncLog('official_channel', 'ticket-system', triggeredBy);
+        try {
+            await this.updateSyncLog(syncLog.id, { status: 'running' });
+            let totalFetched = 0;
+            let totalCreated = 0;
+            let totalUpdated = 0;
+            let totalSkipped = 0;
+            let totalFailed = 0;
+            const lineLastSync = await this.getSyncCursor('official-channel-line');
+            const commentsLastSync = await this.getSyncCursor('official-channel-comments');
+            const now = new Date();
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            yesterday.setHours(0, 0, 0, 0);
+            const today = new Date(now);
+            today.setHours(0, 0, 0, 0);
+            const defaultAfter = yesterday.toISOString();
+            const defaultBefore = today.toISOString();
+            this.logger.log('Step 1: Syncing LINE official channel messages...');
+            const lineUpdatedAfter = lineLastSync?.last_record_time || defaultAfter;
+            try {
+                const lineMessages = await this.ticketApi.getAllOfficialChannelMessages({
+                    updated_after: lineUpdatedAfter,
+                });
+                this.logger.log(`Fetched ${lineMessages.length} LINE messages`);
+                totalFetched += lineMessages.length;
+                const lineResult = await this.upsertOfficialChannelMessages(lineMessages, 'ticket-system-line');
+                totalCreated += lineResult.created;
+                totalUpdated += lineResult.updated;
+                totalSkipped += lineResult.skipped;
+                totalFailed += lineResult.failed;
+                if (lineMessages.length > 0) {
+                    const lastMessageTime = lineMessages.reduce((max, msg) => msg.updated_at > max ? msg.updated_at : max, lineMessages[0].updated_at);
+                    await this.updateSyncCursor('official-channel-line', lastMessageTime, lineMessages.length);
+                }
+            }
+            catch (error) {
+                this.logger.error('Failed to sync LINE messages:', error.message);
+                totalFailed++;
+            }
+            this.logger.log('Step 2: Syncing ticket comments...');
+            const commentsUpdatedAfter = commentsLastSync?.last_record_time || defaultAfter;
+            try {
+                const comments = await this.ticketApi.getAllTicketComments({
+                    updated_after: commentsUpdatedAfter,
+                });
+                this.logger.log(`Fetched ${comments.length} ticket comments`);
+                totalFetched += comments.length;
+                const commentsResult = await this.upsertOfficialChannelMessages(comments, 'ticket-system-comments');
+                totalCreated += commentsResult.created;
+                totalUpdated += commentsResult.updated;
+                totalSkipped += commentsResult.skipped;
+                totalFailed += commentsResult.failed;
+                if (comments.length > 0) {
+                    const lastMessageTime = comments.reduce((max, msg) => msg.updated_at > max ? msg.updated_at : max, comments[0].updated_at);
+                    await this.updateSyncCursor('official-channel-comments', lastMessageTime, comments.length);
+                }
+            }
+            catch (error) {
+                this.logger.error('Failed to sync ticket comments:', error.message);
+                totalFailed++;
+            }
+            await this.updateSyncLog(syncLog.id, {
+                status: totalFailed > 0 ? 'partial' : 'completed',
+                finished_at: new Date().toISOString(),
+                total_fetched: totalFetched,
+                total_created: totalCreated,
+                total_updated: totalUpdated,
+                total_skipped: totalSkipped,
+                total_failed: totalFailed,
+            });
+            this.logger.log(`Official channel sync completed: ${totalCreated} created, ${totalUpdated} updated, ${totalSkipped} skipped, ${totalFailed} failed`);
+            return this.getSyncLog(syncLog.id);
+        }
+        catch (error) {
+            this.logger.error('Official channel sync failed:', error);
+            await this.updateSyncLog(syncLog.id, {
+                status: 'failed',
+                finished_at: new Date().toISOString(),
+                error_message: error.message,
+            });
+            throw error;
+        }
+    }
+    async upsertOfficialChannelMessages(messages, sourceSystem) {
+        let created = 0;
+        let updated = 0;
+        let skipped = 0;
+        let failed = 0;
+        for (const msg of messages) {
+            try {
+                const employee = await this.employeesService.findByAppNumber(msg.employee_app_number);
+                const existing = await this.supabase.findOne(this.OCM_TABLE, { source_record_id: msg.source_record_id }, { useAdmin: true });
+                const record = {
+                    source_record_id: msg.source_record_id,
+                    source_system: sourceSystem,
+                    employee_id: employee?.id || null,
+                    employee_app_number: msg.employee_app_number,
+                    employee_erp_id: msg.employee_erp_id,
+                    employee_name: msg.employee_name,
+                    group_name: msg.group_name,
+                    channel: msg.channel,
+                    thread_id: msg.thread_id,
+                    direction: msg.direction,
+                    message_time: msg.message_time,
+                    message_text: msg.message_text,
+                    message_type: msg.message_type || 'text',
+                    ticket_no: msg.ticket_no || null,
+                    author_name: msg.author_name || null,
+                    author_role: msg.author_role || null,
+                    agent_type: msg.agent_type || 'human',
+                    source_updated_at: msg.updated_at,
+                    synced_at: new Date().toISOString(),
+                };
+                if (existing) {
+                    await this.supabase.update(this.OCM_TABLE, { source_record_id: msg.source_record_id }, record, { useAdmin: true });
+                    updated++;
+                }
+                else {
+                    await this.supabase.create(this.OCM_TABLE, record, { useAdmin: true });
+                    created++;
+                }
+                if (!employee) {
+                    this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
+                    skipped++;
+                }
+            }
+            catch (error) {
+                this.logger.error(`Failed to upsert message ${msg.source_record_id}:`, error.message);
+                failed++;
+            }
+        }
+        return { created, updated, skipped, failed };
+    }
+    async getSyncCursor(syncType) {
+        return this.supabase.findOne(this.SYNC_CURSORS_TABLE, { sync_type: syncType }, { useAdmin: true });
+    }
+    async updateSyncCursor(syncType, lastRecordTime, count) {
+        const existing = await this.getSyncCursor(syncType);
+        if (existing) {
+            await this.supabase.update(this.SYNC_CURSORS_TABLE, { sync_type: syncType }, {
+                last_synced_at: new Date().toISOString(),
+                last_record_time: lastRecordTime,
+                total_synced: existing.total_synced + count,
+            }, { useAdmin: true });
+        }
+        else {
+            await this.supabase.create(this.SYNC_CURSORS_TABLE, {
+                sync_type: syncType,
+                last_synced_at: new Date().toISOString(),
+                last_record_time: lastRecordTime,
+                total_synced: count,
+            }, { useAdmin: true });
+        }
+    }
 };
 exports.SyncService = SyncService;
 exports.SyncService = SyncService = SyncService_1 = __decorate([
@@ -299,6 +468,7 @@ exports.SyncService = SyncService = SyncService_1 = __decorate([
         supabase_service_1.SupabaseService,
         employees_service_1.EmployeesService,
         stores_service_1.StoresService,
-        lefthand_api_service_1.LefthandApiService])
+        lefthand_api_service_1.LefthandApiService,
+        ticket_api_service_1.TicketApiService])
 ], SyncService);
 //# sourceMappingURL=sync.service.js.map

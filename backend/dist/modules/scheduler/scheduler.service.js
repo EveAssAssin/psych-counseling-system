@@ -58,6 +58,18 @@ let SchedulerService = SchedulerService_1 = class SchedulerService {
             this.logger.error('Daily employee sync failed:', error);
         }
     }
+    async dailyOfficialChannelSync() {
+        if (!this.isEnabled)
+            return;
+        this.logger.log('Starting daily official channel sync');
+        try {
+            const result = await this.syncService.syncOfficialChannelMessages();
+            this.logger.log(`Daily official channel sync completed: ${result.total_created} created, ${result.total_updated} updated`);
+        }
+        catch (error) {
+            this.logger.error('Daily official channel sync failed:', error);
+        }
+    }
     async dailyDataSync() {
         if (!this.isEnabled)
             return;
@@ -127,6 +139,10 @@ let SchedulerService = SchedulerService_1 = class SchedulerService {
         this.logger.log('Manual daily sync triggered');
         return this.syncService.syncDailyData('manual');
     }
+    async triggerOfficialChannelSync() {
+        this.logger.log('Manual official channel sync triggered');
+        return this.syncService.syncOfficialChannelMessages('manual');
+    }
 };
 exports.SchedulerService = SchedulerService;
 __decorate([
@@ -141,6 +157,12 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], SchedulerService.prototype, "dailyEmployeeSync", null);
+__decorate([
+    (0, schedule_1.Cron)('30 5 * * *'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], SchedulerService.prototype, "dailyOfficialChannelSync", null);
 __decorate([
     (0, schedule_1.Cron)('0 6 * * *'),
     __metadata("design:type", Function),

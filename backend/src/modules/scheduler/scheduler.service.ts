@@ -62,6 +62,23 @@ export class SchedulerService implements OnModuleInit {
   }
 
   /**
+   * 每日 05:30 執行官方頻道訊息同步（LINE + 工單留言）
+   */
+  @Cron('30 5 * * *')
+  async dailyOfficialChannelSync() {
+    if (!this.isEnabled) return;
+
+    this.logger.log('Starting daily official channel sync');
+
+    try {
+      const result = await this.syncService.syncOfficialChannelMessages();
+      this.logger.log(`Daily official channel sync completed: ${result.total_created} created, ${result.total_updated} updated`);
+    } catch (error) {
+      this.logger.error('Daily official channel sync failed:', error);
+    }
+  }
+
+  /**
    * 每日 06:00 執行多來源資料同步
    */
   @Cron('0 6 * * *')
@@ -175,5 +192,13 @@ export class SchedulerService implements OnModuleInit {
   async triggerDailySync(): Promise<any> {
     this.logger.log('Manual daily sync triggered');
     return this.syncService.syncDailyData('manual');
+  }
+
+  /**
+   * 手動觸發官方頻道同步
+   */
+  async triggerOfficialChannelSync(): Promise<any> {
+    this.logger.log('Manual official channel sync triggered');
+    return this.syncService.syncOfficialChannelMessages('manual');
   }
 }

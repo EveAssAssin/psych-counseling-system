@@ -27,7 +27,7 @@ let SyncController = class SyncController {
         return this.syncService.syncDailyData(triggeredBy);
     }
     async syncOfficialChannel(triggeredBy) {
-        return this.syncService.syncOfficialChannelConversations(triggeredBy);
+        return this.syncService.syncOfficialChannelMessages(triggeredBy);
     }
     async getSyncLogs(limit) {
         return this.syncService.getRecentSyncLogs(limit);
@@ -57,7 +57,7 @@ __decorate([
 ], SyncController.prototype, "syncDailyData", null);
 __decorate([
     (0, common_1.Post)('official-channel'),
-    (0, swagger_1.ApiOperation)({ summary: '同步官方頻道對話' }),
+    (0, swagger_1.ApiOperation)({ summary: '同步官方頻道訊息（LINE + 工單留言）' }),
     (0, swagger_1.ApiResponse)({ status: 201, description: '同步結果' }),
     __param(0, (0, common_1.Query)('triggered_by')),
     __metadata("design:type", Function),
