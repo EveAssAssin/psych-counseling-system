@@ -87,17 +87,55 @@ export class EmployeesService {
     const offset = dto.offset || 0;
 
     const client = this.supabase.getAdminClient();
-    let query = client.from(this.TABLE).select('*', { count: 'exact' });
-
-    // 關鍵字搜尋
+    
+    // 如果有搜尋關鍵字，使用 filter 方式
     if (dto.q) {
-      const searchTerm = `%${dto.q}%`;
-      query = query.or(
-        `name.ilike.${searchTerm},employeeappnumber.ilike.${searchTerm},employeeerpid.ilike.${searchTerm}`,
-      );
+      // 先取得所有符合其他條件的員工，再用 JavaScript 過濾
+      let query = client.from(this.TABLE).select('*');
+      
+      if (dto.store_id) {
+        query = query.eq('store_id', dto.store_id);
+      }
+      if (dto.department) {
+        query = query.eq('department', dto.department);
+      }
+      if (dto.is_active !== undefined) {
+        query = query.eq('is_active', dto.is_active);
+      }
+
+      const { data: allData, error } = await query.order('name', { ascending: true });
+
+      if (error) {
+        this.logger.error('Error searching employees:', error);
+        throw error;
+      }
+
+      // JavaScript 過濾中文名字
+      const searchTerm = dto.q.toLowerCase();
+      const filtered = (allData || []).filter((emp: Employee) => {
+        return (
+          emp.name?.toLowerCase().includes(searchTerm) ||
+          emp.employeeappnumber?.toLowerCase().includes(searchTerm) ||
+          emp.employeeerpid?.toLowerCase().includes(searchTerm) ||
+          emp.store_name?.toLowerCase().includes(searchTerm) ||
+          emp.department?.toLowerCase().includes(searchTerm)
+        );
+      });
+
+      // 分頁
+      const paged = filtered.slice(offset, offset + limit);
+
+      return {
+        data: paged,
+        total: filtered.length,
+        limit,
+        offset,
+      };
     }
 
-    // 篩選條件
+    // 沒有搜尋關鍵字，使用原本的查詢方式
+    let query = client.from(this.TABLE).select('*', { count: 'exact' });
+
     if (dto.store_id) {
       query = query.eq('store_id', dto.store_id);
     }
@@ -108,7 +146,6 @@ export class EmployeesService {
       query = query.eq('is_active', dto.is_active);
     }
 
-    // 排序與分頁
     query = query
       .order('name', { ascending: true })
       .range(offset, offset + limit - 1);

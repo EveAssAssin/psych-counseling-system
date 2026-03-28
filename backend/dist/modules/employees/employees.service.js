@@ -47,11 +47,39 @@ let EmployeesService = EmployeesService_1 = class EmployeesService {
         const limit = dto.limit || 20;
         const offset = dto.offset || 0;
         const client = this.supabase.getAdminClient();
-        let query = client.from(this.TABLE).select('*', { count: 'exact' });
         if (dto.q) {
-            const searchTerm = `%${dto.q}%`;
-            query = query.or(`name.ilike.${searchTerm},employeeappnumber.ilike.${searchTerm},employeeerpid.ilike.${searchTerm}`);
+            let query = client.from(this.TABLE).select('*');
+            if (dto.store_id) {
+                query = query.eq('store_id', dto.store_id);
+            }
+            if (dto.department) {
+                query = query.eq('department', dto.department);
+            }
+            if (dto.is_active !== undefined) {
+                query = query.eq('is_active', dto.is_active);
+            }
+            const { data: allData, error } = await query.order('name', { ascending: true });
+            if (error) {
+                this.logger.error('Error searching employees:', error);
+                throw error;
+            }
+            const searchTerm = dto.q.toLowerCase();
+            const filtered = (allData || []).filter((emp) => {
+                return (emp.name?.toLowerCase().includes(searchTerm) ||
+                    emp.employeeappnumber?.toLowerCase().includes(searchTerm) ||
+                    emp.employeeerpid?.toLowerCase().includes(searchTerm) ||
+                    emp.store_name?.toLowerCase().includes(searchTerm) ||
+                    emp.department?.toLowerCase().includes(searchTerm));
+            });
+            const paged = filtered.slice(offset, offset + limit);
+            return {
+                data: paged,
+                total: filtered.length,
+                limit,
+                offset,
+            };
         }
+        let query = client.from(this.TABLE).select('*', { count: 'exact' });
         if (dto.store_id) {
             query = query.eq('store_id', dto.store_id);
         }
