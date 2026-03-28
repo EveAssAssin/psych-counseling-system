@@ -6,30 +6,26 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EmployeeInsightModule = void 0;
+exports.ReviewsModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
-const employee_insight_controller_1 = require("./employee-insight.controller");
-const employee_insight_service_1 = require("./employee-insight.service");
+const reviews_controller_1 = require("./reviews.controller");
+const reviews_service_1 = require("./reviews.service");
 const supabase_module_1 = require("../supabase/supabase.module");
 const employees_module_1 = require("../employees/employees.module");
-const official_channel_module_1 = require("../official-channel/official-channel.module");
-const reviews_module_1 = require("../reviews/reviews.module");
-let EmployeeInsightModule = class EmployeeInsightModule {
+let ReviewsModule = class ReviewsModule {
 };
-exports.EmployeeInsightModule = EmployeeInsightModule;
-exports.EmployeeInsightModule = EmployeeInsightModule = __decorate([
+exports.ReviewsModule = ReviewsModule;
+exports.ReviewsModule = ReviewsModule = __decorate([
     (0, common_1.Module)({
         imports: [
             config_1.ConfigModule,
             supabase_module_1.SupabaseModule,
             employees_module_1.EmployeesModule,
-            official_channel_module_1.OfficialChannelModule,
-            reviews_module_1.ReviewsModule,
         ],
-        controllers: [employee_insight_controller_1.EmployeeInsightController],
-        providers: [employee_insight_service_1.EmployeeInsightService],
-        exports: [employee_insight_service_1.EmployeeInsightService],
+        controllers: [reviews_controller_1.ReviewsController, reviews_controller_1.ReviewResponseController],
+        providers: [reviews_service_1.ReviewsService],
+        exports: [reviews_service_1.ReviewsService],
     })
-], EmployeeInsightModule);
-//# sourceMappingURL=employee-insight.module.js.map
+], ReviewsModule);
+//# sourceMappingURL=reviews.module.js.map

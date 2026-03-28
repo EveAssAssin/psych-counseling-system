@@ -8,6 +8,7 @@ import { configuration } from './config/configuration';
 // Core modules
 import { SupabaseModule } from './modules/supabase/supabase.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { NotificationModule } from './modules/notification/notification.module';
 
 // Feature modules
 import { EmployeesModule } from './modules/employees/employees.module';
@@ -20,6 +21,7 @@ import { QueryModule } from './modules/query/query.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { OfficialChannelModule } from './modules/official-channel/official-channel.module';
 import { EmployeeInsightModule } from './modules/insight/employee-insight.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -38,6 +40,7 @@ import { HealthController } from './health.controller';
     // Core
     SupabaseModule,
     AuthModule,
+    NotificationModule,
 
     // Features
     EmployeesModule,
@@ -50,6 +53,7 @@ import { HealthController } from './health.controller';
     SchedulerModule,
     OfficialChannelModule,
     EmployeeInsightModule,
+    ReviewsModule,
   ],
   controllers: [HealthController],
 })

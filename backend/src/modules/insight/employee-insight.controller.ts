@@ -1,11 +1,75 @@
 import { Controller, Get, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { EmployeeInsightService } from './employee-insight.service';
+import { EmployeesService } from '../employees/employees.service';
 
 @ApiTags('employee-insight')
 @Controller('v1/employee-insight')
 export class EmployeeInsightController {
-  constructor(private readonly insightService: EmployeeInsightService) {}
+  constructor(
+    private readonly insightService: EmployeeInsightService,
+    private readonly employeesService: EmployeesService,
+  ) {}
+
+  @Get('by-name/:name')
+  @ApiOperation({ 
+    summary: '用名字查詢員工綜合洞察',
+    description: '用員工名字搜尋並取得 AI 分析結果'
+  })
+  @ApiParam({ name: 'name', description: '員工姓名' })
+  @ApiQuery({ name: 'refresh', required: false, description: '是否強制重新分析' })
+  @ApiResponse({ status: 200, description: '員工綜合洞察結果' })
+  @ApiResponse({ status: 404, description: '員工不存在' })
+  async getInsightByName(
+    @Param('name') name: string,
+    @Query('refresh') refresh?: boolean,
+  ) {
+    try {
+      // 搜尋員工
+      const { data: employees } = await this.employeesService.search({ q: name, limit: 10 });
+      
+      if (employees.length === 0) {
+        throw new HttpException(
+          { success: false, error: `找不到名字包含「${name}」的員工` },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // 如果有多個結果，回傳列表讓使用者選擇
+      if (employees.length > 1) {
+        return {
+          success: true,
+          multiple: true,
+          message: `找到 ${employees.length} 位員工，請選擇：`,
+          employees: employees.map(e => ({
+            name: e.name,
+            app_number: e.employeeappnumber,
+            department: e.department,
+            store_name: e.store_name,
+            title: e.title,
+          })),
+        };
+      }
+
+      // 只有一個結果，直接分析
+      const employee = employees[0];
+      const insight = await this.insightService.getInsight(employee.employeeappnumber, {
+        days: 30,
+        forceRefresh: refresh === true,
+      });
+
+      return {
+        success: true,
+        data: insight,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        { success: false, error: error.message },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 
   @Get(':appNumber')
   @ApiOperation({ 

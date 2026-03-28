@@ -17,6 +17,9 @@ import ConversationDetailPage from './pages/ConversationDetailPage';
 import NewConversationPage from './pages/NewConversationPage';
 import RiskFlagsPage from './pages/RiskFlagsPage';
 import QueryPage from './pages/QueryPage';
+import ReviewsPage from './pages/ReviewsPage';
+import ReviewDetailPage from './pages/ReviewDetailPage';
+import ReviewRespondPage from './pages/ReviewRespondPage';
 
 // Loading component
 const LoadingScreen = () => (
@@ -62,6 +65,9 @@ function App() {
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
       </Route>
       
+      {/* 員工回覆頁面（公開，不需登入） */}
+      <Route path="/review/respond/:token" element={<ReviewRespondPage />} />
+      
       {/* Protected routes */}
       <Route
         element={
@@ -79,6 +85,8 @@ function App() {
         <Route path="/conversations/:id" element={<ConversationDetailPage />} />
         <Route path="/risk-flags" element={<RiskFlagsPage />} />
         <Route path="/query" element={<QueryPage />} />
+        <Route path="/reviews" element={<ReviewsPage />} />
+        <Route path="/reviews/:id" element={<ReviewDetailPage />} />
       </Route>
       
       {/* Catch all */}

@@ -1,7 +1,28 @@
 import { EmployeeInsightService } from './employee-insight.service';
+import { EmployeesService } from '../employees/employees.service';
 export declare class EmployeeInsightController {
     private readonly insightService;
-    constructor(insightService: EmployeeInsightService);
+    private readonly employeesService;
+    constructor(insightService: EmployeeInsightService, employeesService: EmployeesService);
+    getInsightByName(name: string, refresh?: boolean): Promise<{
+        success: boolean;
+        multiple: boolean;
+        message: string;
+        employees: {
+            name: string;
+            app_number: string;
+            department: string | undefined;
+            store_name: string | undefined;
+            title: string | undefined;
+        }[];
+        data?: undefined;
+    } | {
+        success: boolean;
+        data: import("./employee-insight.service").EmployeeInsight;
+        multiple?: undefined;
+        message?: undefined;
+        employees?: undefined;
+    }>;
     getInsight(appNumber: string, days?: number, refresh?: boolean): Promise<{
         success: boolean;
         data: import("./employee-insight.service").EmployeeInsight;

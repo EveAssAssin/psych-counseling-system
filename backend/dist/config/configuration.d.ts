@@ -1,6 +1,9 @@
 export declare const configuration: () => {
     port: number;
     nodeEnv: string;
+    app: {
+        frontendUrl: string;
+    };
     supabase: {
         url: string | undefined;
         anonKey: string | undefined;

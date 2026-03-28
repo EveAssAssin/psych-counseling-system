@@ -16,9 +16,47 @@ exports.EmployeeInsightController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const employee_insight_service_1 = require("./employee-insight.service");
+const employees_service_1 = require("../employees/employees.service");
 let EmployeeInsightController = class EmployeeInsightController {
-    constructor(insightService) {
+    constructor(insightService, employeesService) {
         this.insightService = insightService;
+        this.employeesService = employeesService;
+    }
+    async getInsightByName(name, refresh) {
+        try {
+            const { data: employees } = await this.employeesService.search({ q: name, limit: 10 });
+            if (employees.length === 0) {
+                throw new common_1.HttpException({ success: false, error: `找不到名字包含「${name}」的員工` }, common_1.HttpStatus.NOT_FOUND);
+            }
+            if (employees.length > 1) {
+                return {
+                    success: true,
+                    multiple: true,
+                    message: `找到 ${employees.length} 位員工，請選擇：`,
+                    employees: employees.map(e => ({
+                        name: e.name,
+                        app_number: e.employeeappnumber,
+                        department: e.department,
+                        store_name: e.store_name,
+                        title: e.title,
+                    })),
+                };
+            }
+            const employee = employees[0];
+            const insight = await this.insightService.getInsight(employee.employeeappnumber, {
+                days: 30,
+                forceRefresh: refresh === true,
+            });
+            return {
+                success: true,
+                data: insight,
+            };
+        }
+        catch (error) {
+            if (error instanceof common_1.HttpException)
+                throw error;
+            throw new common_1.HttpException({ success: false, error: error.message }, common_1.HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
     async getInsight(appNumber, days, refresh) {
         try {
@@ -135,6 +173,22 @@ let EmployeeInsightController = class EmployeeInsightController {
 };
 exports.EmployeeInsightController = EmployeeInsightController;
 __decorate([
+    (0, common_1.Get)('by-name/:name'),
+    (0, swagger_1.ApiOperation)({
+        summary: '用名字查詢員工綜合洞察',
+        description: '用員工名字搜尋並取得 AI 分析結果'
+    }),
+    (0, swagger_1.ApiParam)({ name: 'name', description: '員工姓名' }),
+    (0, swagger_1.ApiQuery)({ name: 'refresh', required: false, description: '是否強制重新分析' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: '員工綜合洞察結果' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: '員工不存在' }),
+    __param(0, (0, common_1.Param)('name')),
+    __param(1, (0, common_1.Query)('refresh')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Boolean]),
+    __metadata("design:returntype", Promise)
+], EmployeeInsightController.prototype, "getInsightByName", null);
+__decorate([
     (0, common_1.Get)(':appNumber'),
     (0, swagger_1.ApiOperation)({
         summary: '取得員工綜合洞察',
@@ -209,6 +263,7 @@ __decorate([
 exports.EmployeeInsightController = EmployeeInsightController = __decorate([
     (0, swagger_1.ApiTags)('employee-insight'),
     (0, common_1.Controller)('v1/employee-insight'),
-    __metadata("design:paramtypes", [employee_insight_service_1.EmployeeInsightService])
+    __metadata("design:paramtypes", [employee_insight_service_1.EmployeeInsightService,
+        employees_service_1.EmployeesService])
 ], EmployeeInsightController);
 //# sourceMappingURL=employee-insight.controller.js.map

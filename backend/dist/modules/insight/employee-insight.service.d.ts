@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeesService } from '../employees/employees.service';
 import { OfficialChannelService } from '../official-channel/official-channel.service';
+import { ReviewsService } from '../reviews/reviews.service';
 export interface TimelineEvent {
     date: string;
     type: 'line_message' | 'ticket_comment' | 'conversation' | 'attendance' | 'score' | 'review';
@@ -97,14 +98,19 @@ export declare class EmployeeInsightService {
     private readonly supabase;
     private readonly employeesService;
     private readonly officialChannelService;
+    private readonly reviewsService;
     private readonly logger;
     private readonly anthropic;
-    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, officialChannelService: OfficialChannelService);
+    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, officialChannelService: OfficialChannelService, reviewsService: ReviewsService);
     getInsight(employeeAppNumber: string, options?: {
         days?: number;
         forceRefresh?: boolean;
     }): Promise<EmployeeInsight>;
+    private getCachedInsight;
+    private saveInsight;
+    clearInsightCache(employeeId: string): Promise<void>;
     private collectEmployeeData;
+    private calculateAvgResponseHours;
     private buildTimeline;
     private detectSentiment;
     private calculateDataCompleteness;

@@ -253,3 +253,32 @@ export const officialChannelApi = {
 export const healthApi = {
   check: () => api.get('/health'),
 };
+
+// ============================================
+// Employee Insight API
+// ============================================
+export const insightApi = {
+  // 取得員工綜合洞察（有快取就用快取）
+  getInsight: (appNumber: string, days?: number) => 
+    api.get(`/v1/employee-insight/${appNumber}`, { params: { days } }),
+  
+  // 強制重新分析
+  refreshInsight: (appNumber: string) => 
+    api.get(`/v1/employee-insight/${appNumber}`, { params: { refresh: true } }),
+  
+  // 取得快速摘要
+  getSummary: (appNumber: string) => 
+    api.get(`/v1/employee-insight/${appNumber}/summary`),
+  
+  // 取得溝通建議
+  getCommunication: (appNumber: string) => 
+    api.get(`/v1/employee-insight/${appNumber}/communication`),
+  
+  // 取得時間軸
+  getTimeline: (appNumber: string, days?: number) => 
+    api.get(`/v1/employee-insight/${appNumber}/timeline`, { params: { days } }),
+  
+  // 取得調動評估
+  getTransferAssessment: (appNumber: string) => 
+    api.get(`/v1/employee-insight/${appNumber}/transfer-assessment`),
+};

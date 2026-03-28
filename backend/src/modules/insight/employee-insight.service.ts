@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeesService } from '../employees/employees.service';
 import { OfficialChannelService } from '../official-channel/official-channel.service';
+import { ReviewsService } from '../reviews/reviews.service';
 
 // ============================================
 // 時間軸事件
@@ -152,6 +153,7 @@ export class EmployeeInsightService {
     private readonly supabase: SupabaseService,
     private readonly employeesService: EmployeesService,
     private readonly officialChannelService: OfficialChannelService,
+    private readonly reviewsService: ReviewsService,
   ) {
     const apiKey = this.configService.get<string>('anthropic.apiKey');
     if (apiKey) {
@@ -168,8 +170,9 @@ export class EmployeeInsightService {
     forceRefresh?: boolean;
   }): Promise<EmployeeInsight> {
     const days = options?.days || 30;
+    const forceRefresh = options?.forceRefresh || false;
     
-    this.logger.log(`Generating insight for employee: ${employeeAppNumber}, days: ${days}`);
+    this.logger.log(`Getting insight for employee: ${employeeAppNumber}, days: ${days}, forceRefresh: ${forceRefresh}`);
 
     // 1. 取得員工基本資料
     const employee = await this.employeesService.findByAppNumber(employeeAppNumber);
@@ -177,16 +180,25 @@ export class EmployeeInsightService {
       throw new Error(`Employee not found: ${employeeAppNumber}`);
     }
 
-    // 2. 收集所有可用資料
+    // 2. 如果不是強制刷新，嘗試讀取快取
+    if (!forceRefresh) {
+      const cached = await this.getCachedInsight(employee.id);
+      if (cached) {
+        this.logger.log(`Using cached insight for ${employeeAppNumber}`);
+        return cached;
+      }
+    }
+
+    // 3. 收集所有可用資料
     const collectedData = await this.collectEmployeeData(employee.id, employeeAppNumber, days);
 
-    // 3. 建立時間軸
+    // 4. 建立時間軸
     const timeline = this.buildTimeline(collectedData);
 
-    // 4. 呼叫 AI 分析
+    // 5. 呼叫 AI 分析
     const aiAnalysis = await this.callAIAnalysis(employee, collectedData, timeline);
 
-    // 5. 組合完整結果
+    // 6. 組合完整結果
     const insight: EmployeeInsight = {
       employee: {
         id: employee.id,
@@ -218,7 +230,116 @@ export class EmployeeInsightService {
       },
     };
 
+    // 7. 儲存到資料庫
+    await this.saveInsight(employee.id, insight);
+
     return insight;
+  }
+
+  /**
+   * 取得快取的洞察結果
+   */
+  private async getCachedInsight(employeeId: string): Promise<EmployeeInsight | null> {
+    try {
+      const cached: any = await this.supabase.findOne('employee_insights', 
+        { employee_id: employeeId },
+        { useAdmin: true }
+      );
+
+      if (!cached) return null;
+
+      // 取得員工資料
+      const employee = await this.employeesService.findById(employeeId);
+
+      // 重建 EmployeeInsight 物件
+      return {
+        employee: {
+          id: employee.id,
+          name: employee.name,
+          app_number: employee.employeeappnumber,
+          erp_id: employee.employeeerpid || '',
+          department: employee.department || '',
+          store_name: employee.store_name || '',
+          title: employee.title || '',
+          is_active: employee.is_active,
+        },
+        data_sources: cached.data_sources || {},
+        timeline: cached.timeline_snapshot || [],
+        summary: {
+          risk_level: cached.risk_level || 'low',
+          stress_level: cached.stress_level || 'low',
+          trend: cached.trend || 'stable',
+          overall_assessment: cached.overall_assessment || '',
+          key_concerns: cached.key_concerns || [],
+          positive_signals: cached.positive_signals || [],
+          last_analyzed: cached.analyzed_at,
+        },
+        communication: cached.communication || {},
+        transfer_assessment: cached.transfer_assessment || {},
+        team_dynamics: cached.team_dynamics || {},
+        historical_patterns: cached.historical_patterns || {},
+        recommended_actions: cached.recommended_actions || {},
+        analysis_metadata: {
+          analyzed_at: cached.analyzed_at,
+          model: cached.model_name || 'claude-sonnet-4-20250514',
+          confidence_score: cached.confidence_score || 0.7,
+          data_completeness: cached.data_completeness || 0.2,
+        },
+      };
+    } catch (error) {
+      this.logger.warn(`Failed to get cached insight: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * 儲存洞察結果到資料庫
+   */
+  private async saveInsight(employeeId: string, insight: EmployeeInsight): Promise<void> {
+    try {
+      const data = {
+        employee_id: employeeId,
+        data_sources: insight.data_sources,
+        risk_level: insight.summary?.risk_level || 'low',
+        stress_level: insight.summary?.stress_level || 'low',
+        trend: insight.summary?.trend || 'stable',
+        overall_assessment: insight.summary?.overall_assessment || '',
+        key_concerns: insight.summary?.key_concerns || [],
+        positive_signals: insight.summary?.positive_signals || [],
+        communication: insight.communication || {},
+        transfer_assessment: insight.transfer_assessment || {},
+        team_dynamics: insight.team_dynamics || {},
+        historical_patterns: insight.historical_patterns || {},
+        recommended_actions: insight.recommended_actions || {},
+        timeline_snapshot: (insight.timeline || []).slice(0, 20), // 只存最近 20 筆
+        model_name: insight.analysis_metadata?.model || 'claude-sonnet-4-20250514',
+        confidence_score: insight.analysis_metadata?.confidence_score || 0.7,
+        data_completeness: insight.analysis_metadata?.data_completeness || 0.2,
+        analyzed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      await this.supabase.upsert('employee_insights', data, {
+        onConflict: 'employee_id',
+        useAdmin: true,
+      });
+
+      this.logger.log(`Saved insight for employee: ${employeeId}`);
+    } catch (error) {
+      this.logger.error(`Failed to save insight: ${error.message}`);
+    }
+  }
+
+  /**
+   * 刪除員工的快取洞察
+   */
+  async clearInsightCache(employeeId: string): Promise<void> {
+    try {
+      await this.supabase.delete('employee_insights', { employee_id: employeeId }, { useAdmin: true });
+      this.logger.log(`Cleared insight cache for employee: ${employeeId}`);
+    } catch (error) {
+      this.logger.warn(`Failed to clear insight cache: ${error.message}`);
+    }
   }
 
   /**
@@ -257,8 +378,22 @@ export class EmployeeInsightService {
     // TODO: 加扣分紀錄（待實作）
     const scores: any[] = [];
 
-    // TODO: 客戶評價（待實作）
-    const reviews: any[] = [];
+    // 評價/客訴紀錄
+    const allReviews = await this.reviewsService.findByEmployee(employeeId, 100);
+    const reviews = allReviews.filter((r: any) => 
+      r.created_at && r.created_at >= sinceStr
+    );
+
+    // 計算評價統計
+    const reviewStats = {
+      total: reviews.length,
+      positive: reviews.filter((r: any) => r.review_type === 'positive').length,
+      negative: reviews.filter((r: any) => r.review_type === 'negative').length,
+      other: reviews.filter((r: any) => r.review_type === 'other').length,
+      pending: reviews.filter((r: any) => r.status === 'pending' && r.requires_response).length,
+      proxy_count: reviews.filter((r: any) => r.is_proxy).length,
+      avg_response_hours: this.calculateAvgResponseHours(reviews),
+    };
 
     return {
       officialMessages: filteredMessages,
@@ -267,7 +402,18 @@ export class EmployeeInsightService {
       attendance,
       scores,
       reviews,
+      reviewStats,
     };
+  }
+
+  /**
+   * 計算平均回覆時間
+   */
+  private calculateAvgResponseHours(reviews: any[]): number {
+    const respondedReviews = reviews.filter(r => r.response_speed_hours != null);
+    if (respondedReviews.length === 0) return 0;
+    const total = respondedReviews.reduce((sum, r) => sum + (r.response_speed_hours || 0), 0);
+    return Math.round((total / respondedReviews.length) * 10) / 10;
   }
 
   /**
@@ -306,7 +452,37 @@ export class EmployeeInsightService {
       });
     }
 
-    // TODO: 加入出勤、加扣分、評價等
+    // 加入評價/客訴記錄
+    for (const review of data.reviews) {
+      const typeLabels: Record<string, string> = {
+        positive: '正面評價',
+        negative: '負面評價/客訴',
+        other: '其他評價',
+      };
+      const sourceLabels: Record<string, string> = {
+        google_map: 'Google MAP',
+        facebook: 'Facebook',
+        phone: '電話客服',
+        app: 'APP 客服',
+        other: '其他',
+      };
+      
+      events.push({
+        date: review.created_at,
+        type: 'review',
+        category: typeLabels[review.review_type] || '評價',
+        content: review.content?.substring(0, 200) || '（無內容）',
+        sentiment: review.review_type === 'positive' ? 'positive' : 
+                   review.review_type === 'negative' ? 'negative' : 'neutral',
+        metadata: {
+          source: sourceLabels[review.source] || review.source,
+          status: review.status,
+          is_proxy: review.is_proxy,
+          response_speed_hours: review.response_speed_hours,
+          urgency: review.urgency,
+        },
+      });
+    }
 
     // 按時間排序（新到舊）
     events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -508,8 +684,27 @@ ${analysisInput}
 對話記錄：${data.conversations.length} 筆
 出勤紀錄：${data.attendance.length} 筆（待同步）
 加扣分紀錄：${data.scores.length} 筆（待同步）
-客戶評價：${data.reviews.length} 筆（待同步）
+評價/客訴：${data.reviews.length} 筆
 `;
+
+    // 加入評價統計
+    if (data.reviewStats && data.reviews.length > 0) {
+      input += `
+【評價/客訴統計】（近 30 天）
+正面評價：${data.reviewStats.positive} 筆
+負面評價/客訴：${data.reviewStats.negative} 筆
+其他評價：${data.reviewStats.other} 筆
+待處理：${data.reviewStats.pending} 筆${data.reviewStats.pending > 0 ? ' ⚠️' : ''}
+代理處理（非針對本人）：${data.reviewStats.proxy_count} 筆
+平均回覆速度：${data.reviewStats.avg_response_hours > 0 ? data.reviewStats.avg_response_hours + ' 小時' : '無資料'}
+
+【評價分析提示】
+- 如果有未處理的負評/客訴，應提高風險等級
+- 回覆速度反映員工的責任心和工作態度
+- 代理處理數量反映主管的管理責任
+- 正面評價是正向訊號
+`;
+    }
 
     return input;
   }

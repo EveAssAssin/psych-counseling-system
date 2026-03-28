@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeftIcon, ChatBubbleLeftRightIcon, TicketIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ChatBubbleLeftRightIcon, TicketIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { employeesApi, conversationsApi, analysisApi, officialChannelApi } from '../services/api';
+import { EmployeeInsightTab } from '../components/EmployeeInsightTab';
 import toast from 'react-hot-toast';
 
 export default function EmployeeDetailPage() {
@@ -10,7 +11,7 @@ export default function EmployeeDetailPage() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [latestAnalysis, setLatestAnalysis] = useState<any>(null);
   const [officialMessages, setOfficialMessages] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'conversations' | 'official'>('conversations');
+  const [activeTab, setActiveTab] = useState<'insight' | 'conversations' | 'official'>('insight');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -158,6 +159,17 @@ export default function EmployeeDetailPage() {
         <div className="border-b border-gray-200">
           <nav className="flex -mb-px">
             <button
+              onClick={() => setActiveTab('insight')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 ${
+                activeTab === 'insight'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <SparklesIcon className="h-4 w-4 inline mr-2" />
+              AI 分析
+            </button>
+            <button
               onClick={() => setActiveTab('conversations')}
               className={`px-6 py-3 text-sm font-medium border-b-2 ${
                 activeTab === 'conversations'
@@ -181,6 +193,16 @@ export default function EmployeeDetailPage() {
             </button>
           </nav>
         </div>
+
+        {/* AI 分析 Tab */}
+        {activeTab === 'insight' && (
+          <div className="p-6">
+            <EmployeeInsightTab 
+              employeeAppNumber={employee.employeeappnumber} 
+              employeeName={employee.name}
+            />
+          </div>
+        )}
 
         {/* 對話記錄 Tab */}
         {activeTab === 'conversations' && (

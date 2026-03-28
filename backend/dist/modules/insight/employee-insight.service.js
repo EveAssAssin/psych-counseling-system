@@ -17,6 +17,7 @@ const sdk_1 = require("@anthropic-ai/sdk");
 const supabase_service_1 = require("../supabase/supabase.service");
 const employees_service_1 = require("../employees/employees.service");
 const official_channel_service_1 = require("../official-channel/official-channel.service");
+const reviews_service_1 = require("../reviews/reviews.service");
 const INSIGHT_SYSTEM_PROMPT = `你是一位專業的職場心理分析師與人力資源顧問，協助主管理解員工狀況並提供溝通策略。
 
 你會收到一位員工的多種資料（可能包含部分或全部）：
@@ -44,11 +45,12 @@ const INSIGHT_SYSTEM_PROMPT = `你是一位專業的職場心理分析師與人�
 
 請以 JSON 格式輸出，嚴格遵循指定的 schema。`;
 let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightService {
-    constructor(configService, supabase, employeesService, officialChannelService) {
+    constructor(configService, supabase, employeesService, officialChannelService, reviewsService) {
         this.configService = configService;
         this.supabase = supabase;
         this.employeesService = employeesService;
         this.officialChannelService = officialChannelService;
+        this.reviewsService = reviewsService;
         this.logger = new common_1.Logger(EmployeeInsightService_1.name);
         const apiKey = this.configService.get('anthropic.apiKey');
         if (apiKey) {
@@ -58,10 +60,18 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
     }
     async getInsight(employeeAppNumber, options) {
         const days = options?.days || 30;
-        this.logger.log(`Generating insight for employee: ${employeeAppNumber}, days: ${days}`);
+        const forceRefresh = options?.forceRefresh || false;
+        this.logger.log(`Getting insight for employee: ${employeeAppNumber}, days: ${days}, forceRefresh: ${forceRefresh}`);
         const employee = await this.employeesService.findByAppNumber(employeeAppNumber);
         if (!employee) {
             throw new Error(`Employee not found: ${employeeAppNumber}`);
+        }
+        if (!forceRefresh) {
+            const cached = await this.getCachedInsight(employee.id);
+            if (cached) {
+                this.logger.log(`Using cached insight for ${employeeAppNumber}`);
+                return cached;
+            }
         }
         const collectedData = await this.collectEmployeeData(employee.id, employeeAppNumber, days);
         const timeline = this.buildTimeline(collectedData);
@@ -96,7 +106,96 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
                 data_completeness: this.calculateDataCompleteness(collectedData),
             },
         };
+        await this.saveInsight(employee.id, insight);
         return insight;
+    }
+    async getCachedInsight(employeeId) {
+        try {
+            const cached = await this.supabase.findOne('employee_insights', { employee_id: employeeId }, { useAdmin: true });
+            if (!cached)
+                return null;
+            const employee = await this.employeesService.findById(employeeId);
+            return {
+                employee: {
+                    id: employee.id,
+                    name: employee.name,
+                    app_number: employee.employeeappnumber,
+                    erp_id: employee.employeeerpid || '',
+                    department: employee.department || '',
+                    store_name: employee.store_name || '',
+                    title: employee.title || '',
+                    is_active: employee.is_active,
+                },
+                data_sources: cached.data_sources || {},
+                timeline: cached.timeline_snapshot || [],
+                summary: {
+                    risk_level: cached.risk_level || 'low',
+                    stress_level: cached.stress_level || 'low',
+                    trend: cached.trend || 'stable',
+                    overall_assessment: cached.overall_assessment || '',
+                    key_concerns: cached.key_concerns || [],
+                    positive_signals: cached.positive_signals || [],
+                    last_analyzed: cached.analyzed_at,
+                },
+                communication: cached.communication || {},
+                transfer_assessment: cached.transfer_assessment || {},
+                team_dynamics: cached.team_dynamics || {},
+                historical_patterns: cached.historical_patterns || {},
+                recommended_actions: cached.recommended_actions || {},
+                analysis_metadata: {
+                    analyzed_at: cached.analyzed_at,
+                    model: cached.model_name || 'claude-sonnet-4-20250514',
+                    confidence_score: cached.confidence_score || 0.7,
+                    data_completeness: cached.data_completeness || 0.2,
+                },
+            };
+        }
+        catch (error) {
+            this.logger.warn(`Failed to get cached insight: ${error.message}`);
+            return null;
+        }
+    }
+    async saveInsight(employeeId, insight) {
+        try {
+            const data = {
+                employee_id: employeeId,
+                data_sources: insight.data_sources,
+                risk_level: insight.summary?.risk_level || 'low',
+                stress_level: insight.summary?.stress_level || 'low',
+                trend: insight.summary?.trend || 'stable',
+                overall_assessment: insight.summary?.overall_assessment || '',
+                key_concerns: insight.summary?.key_concerns || [],
+                positive_signals: insight.summary?.positive_signals || [],
+                communication: insight.communication || {},
+                transfer_assessment: insight.transfer_assessment || {},
+                team_dynamics: insight.team_dynamics || {},
+                historical_patterns: insight.historical_patterns || {},
+                recommended_actions: insight.recommended_actions || {},
+                timeline_snapshot: (insight.timeline || []).slice(0, 20),
+                model_name: insight.analysis_metadata?.model || 'claude-sonnet-4-20250514',
+                confidence_score: insight.analysis_metadata?.confidence_score || 0.7,
+                data_completeness: insight.analysis_metadata?.data_completeness || 0.2,
+                analyzed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            await this.supabase.upsert('employee_insights', data, {
+                onConflict: 'employee_id',
+                useAdmin: true,
+            });
+            this.logger.log(`Saved insight for employee: ${employeeId}`);
+        }
+        catch (error) {
+            this.logger.error(`Failed to save insight: ${error.message}`);
+        }
+    }
+    async clearInsightCache(employeeId) {
+        try {
+            await this.supabase.delete('employee_insights', { employee_id: employeeId }, { useAdmin: true });
+            this.logger.log(`Cleared insight cache for employee: ${employeeId}`);
+        }
+        catch (error) {
+            this.logger.warn(`Failed to clear insight cache: ${error.message}`);
+        }
     }
     async collectEmployeeData(employeeId, appNumber, days) {
         const since = new Date();
@@ -118,7 +217,17 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
         });
         const attendance = [];
         const scores = [];
-        const reviews = [];
+        const allReviews = await this.reviewsService.findByEmployee(employeeId, 100);
+        const reviews = allReviews.filter((r) => r.created_at && r.created_at >= sinceStr);
+        const reviewStats = {
+            total: reviews.length,
+            positive: reviews.filter((r) => r.review_type === 'positive').length,
+            negative: reviews.filter((r) => r.review_type === 'negative').length,
+            other: reviews.filter((r) => r.review_type === 'other').length,
+            pending: reviews.filter((r) => r.status === 'pending' && r.requires_response).length,
+            proxy_count: reviews.filter((r) => r.is_proxy).length,
+            avg_response_hours: this.calculateAvgResponseHours(reviews),
+        };
         return {
             officialMessages: filteredMessages,
             conversations: filteredConversations,
@@ -126,7 +235,15 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
             attendance,
             scores,
             reviews,
+            reviewStats,
         };
+    }
+    calculateAvgResponseHours(reviews) {
+        const respondedReviews = reviews.filter(r => r.response_speed_hours != null);
+        if (respondedReviews.length === 0)
+            return 0;
+        const total = respondedReviews.reduce((sum, r) => sum + (r.response_speed_hours || 0), 0);
+        return Math.round((total / respondedReviews.length) * 10) / 10;
     }
     buildTimeline(data) {
         const events = [];
@@ -153,6 +270,35 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
                 metadata: {
                     interviewer: conv.interviewer_name,
                     priority: conv.priority,
+                },
+            });
+        }
+        for (const review of data.reviews) {
+            const typeLabels = {
+                positive: '正面評價',
+                negative: '負面評價/客訴',
+                other: '其他評價',
+            };
+            const sourceLabels = {
+                google_map: 'Google MAP',
+                facebook: 'Facebook',
+                phone: '電話客服',
+                app: 'APP 客服',
+                other: '其他',
+            };
+            events.push({
+                date: review.created_at,
+                type: 'review',
+                category: typeLabels[review.review_type] || '評價',
+                content: review.content?.substring(0, 200) || '（無內容）',
+                sentiment: review.review_type === 'positive' ? 'positive' :
+                    review.review_type === 'negative' ? 'negative' : 'neutral',
+                metadata: {
+                    source: sourceLabels[review.source] || review.source,
+                    status: review.status,
+                    is_proxy: review.is_proxy,
+                    response_speed_hours: review.response_speed_hours,
+                    urgency: review.urgency,
                 },
             });
         }
@@ -322,8 +468,25 @@ ${analysisInput}
 對話記錄：${data.conversations.length} 筆
 出勤紀錄：${data.attendance.length} 筆（待同步）
 加扣分紀錄：${data.scores.length} 筆（待同步）
-客戶評價：${data.reviews.length} 筆（待同步）
+評價/客訴：${data.reviews.length} 筆
 `;
+        if (data.reviewStats && data.reviews.length > 0) {
+            input += `
+【評價/客訴統計】（近 30 天）
+正面評價：${data.reviewStats.positive} 筆
+負面評價/客訴：${data.reviewStats.negative} 筆
+其他評價：${data.reviewStats.other} 筆
+待處理：${data.reviewStats.pending} 筆${data.reviewStats.pending > 0 ? ' ⚠️' : ''}
+代理處理（非針對本人）：${data.reviewStats.proxy_count} 筆
+平均回覆速度：${data.reviewStats.avg_response_hours > 0 ? data.reviewStats.avg_response_hours + ' 小時' : '無資料'}
+
+【評價分析提示】
+- 如果有未處理的負評/客訴，應提高風險等級
+- 回覆速度反映員工的責任心和工作態度
+- 代理處理數量反映主管的管理責任
+- 正面評價是正向訊號
+`;
+        }
         return input;
     }
     getDefaultAnalysis() {
@@ -381,6 +544,7 @@ exports.EmployeeInsightService = EmployeeInsightService = EmployeeInsightService
     __metadata("design:paramtypes", [config_1.ConfigService,
         supabase_service_1.SupabaseService,
         employees_service_1.EmployeesService,
-        official_channel_service_1.OfficialChannelService])
+        official_channel_service_1.OfficialChannelService,
+        reviews_service_1.ReviewsService])
 ], EmployeeInsightService);
 //# sourceMappingURL=employee-insight.service.js.map

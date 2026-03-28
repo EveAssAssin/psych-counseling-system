@@ -4,6 +4,9 @@ exports.configuration = void 0;
 const configuration = () => ({
     port: parseInt(process.env.PORT || '3000', 10),
     nodeEnv: process.env.NODE_ENV || 'development',
+    app: {
+        frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+    },
     supabase: {
         url: process.env.SUPABASE_URL,
         anonKey: process.env.SUPABASE_ANON_KEY,
