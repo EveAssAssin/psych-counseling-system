@@ -17,6 +17,7 @@ const sdk_1 = require("@anthropic-ai/sdk");
 const supabase_service_1 = require("../supabase/supabase.service");
 const employees_service_1 = require("../employees/employees.service");
 const analysis_service_1 = require("../analysis/analysis.service");
+const employee_insight_service_1 = require("../insight/employee-insight.service");
 const QUERY_SYSTEM_PROMPT = `你是一個企業心理輔導系統的查詢助手。你的任務是根據提供的員工資訊和分析結果，回答主管或 HR 的問題。
 
 回答原則：
@@ -32,11 +33,12 @@ const QUERY_SYSTEM_PROMPT = `你是一個企業心理輔導系統的查詢助手
 - 如有需要，提供建議行動
 - 如有風險提示，用【注意】標示`;
 let QueryService = QueryService_1 = class QueryService {
-    constructor(configService, supabase, employeesService, analysisService) {
+    constructor(configService, supabase, employeesService, analysisService, insightService) {
         this.configService = configService;
         this.supabase = supabase;
         this.employeesService = employeesService;
         this.analysisService = analysisService;
+        this.insightService = insightService;
         this.logger = new common_1.Logger(QueryService_1.name);
         const apiKey = this.configService.get('anthropic.apiKey');
         if (apiKey) {
@@ -46,11 +48,20 @@ let QueryService = QueryService_1 = class QueryService {
     async query(request) {
         this.logger.log(`Processing query: ${request.question.substring(0, 50)}...`);
         let employee = null;
-        let latestAnalysis = null;
         if (request.employee_identifier) {
             employee = await this.employeesService.identify(request.employee_identifier);
-            if (employee) {
-                latestAnalysis = await this.analysisService.getLatestByEmployee(employee.id);
+        }
+        if (!employee) {
+            employee = await this.extractEmployeeFromQuestion(request.question);
+        }
+        let insight = null;
+        if (employee) {
+            try {
+                insight = await this.insightService.getInsight(employee.employeeappnumber, { days: 30 });
+                this.logger.log(`Got insight for ${employee.name}: ${insight.data_sources.official_message_count} messages`);
+            }
+            catch (error) {
+                this.logger.warn(`Failed to get insight for ${employee.name}: ${error.message}`);
             }
         }
         const contextParts = [];
@@ -62,20 +73,40 @@ let QueryService = QueryService_1 = class QueryService {
 - 門市：${employee.store_name || '未知'}
 - 狀態：${employee.is_active ? '在職' : '離職'}${employee.is_leave ? '（留停中）' : ''}`);
         }
-        if (latestAnalysis) {
-            contextParts.push(`【最新分析結果】（${latestAnalysis.created_at}）
-- 風險等級：${this.translateRiskLevel(latestAnalysis.risk_level)}
-- 壓力等級：${this.translateStressLevel(latestAnalysis.stress_level)}
-- 心理狀態：${latestAnalysis.current_psychological_state}
-- 摘要：${latestAnalysis.summary}
-- 建議行動：${latestAnalysis.suggested_actions?.join('、') || '無'}
-- 是否需追蹤：${latestAnalysis.followup_needed ? '是' : '否'}`);
+        if (insight) {
+            contextParts.push(`【資料來源】
+- 對話記錄：${insight.data_sources.conversation_count} 筆
+- 官方頻道訊息：${insight.data_sources.official_message_count} 筆
+- 資料時間範圍：${new Date(insight.data_sources.date_range.from).toLocaleDateString('zh-TW')} ~ ${new Date(insight.data_sources.date_range.to).toLocaleDateString('zh-TW')}`);
+            contextParts.push(`【AI 分析摘要】
+- 風險等級：${this.translateRiskLevel(insight.summary.risk_level)}
+- 壓力等級：${this.translateStressLevel(insight.summary.stress_level)}
+- 趨勢：${insight.summary.trend === 'improving' ? '改善中' : insight.summary.trend === 'worsening' ? '惡化中' : '穩定'}
+- 整體評估：${insight.summary.overall_assessment}
+- 主要擔憂：${insight.summary.key_concerns?.join('、') || '無'}
+- 正面訊號：${insight.summary.positive_signals?.join('、') || '無'}`);
+            contextParts.push(`【溝通建議】
+- 建議時機：${insight.communication.suggested_timing}
+- 開場方式：${insight.communication.opening_approach}
+- 談話重點：${insight.communication.talking_points?.join('、') || '無'}
+- 避免話題：${insight.communication.avoid_topics?.join('、') || '無'}
+- 話術範例：${insight.communication.sample_phrases?.join('；') || '無'}`);
+            if (insight.timeline && insight.timeline.length > 0) {
+                const recentEvents = insight.timeline.slice(0, 5);
+                const timelineText = recentEvents.map((e) => `  - ${new Date(e.date).toLocaleDateString('zh-TW')} [${e.category}] ${e.content.substring(0, 50)}`).join('\n');
+                contextParts.push(`【近期事件】\n${timelineText}`);
+            }
+            contextParts.push(`【調動評估】
+- 現職適任度：${insight.transfer_assessment.current_fitness === 'high' ? '高' : insight.transfer_assessment.current_fitness === 'low' ? '低' : '中等'}
+- 調動風險：${insight.transfer_assessment.transfer_risk === 'high' ? '高' : insight.transfer_assessment.transfer_risk === 'low' ? '低' : '中等'}
+- 離職風險：${insight.transfer_assessment.turnover_risk === 'high' ? '高' : insight.transfer_assessment.turnover_risk === 'low' ? '低' : '中等'}
+- 建議：${insight.transfer_assessment.transfer_recommendation}`);
         }
         if (request.context) {
             contextParts.push(`【額外背景】\n${request.context}`);
         }
-        if (!this.anthropic) {
-            return this.buildBasicResponse(employee, latestAnalysis);
+        if (!this.anthropic || !employee) {
+            return this.buildBasicResponseWithInsight(employee, insight);
         }
         const answer = await this.generateAIAnswer(request.question, contextParts.join('\n\n'));
         await this.logQuery(request, employee?.id);
@@ -88,18 +119,65 @@ let QueryService = QueryService_1 = class QueryService {
                     employeeappnumber: employee.employeeappnumber,
                 }
                 : undefined,
-            latest_analysis: latestAnalysis
+            latest_analysis: insight
                 ? {
-                    id: latestAnalysis.id,
-                    risk_level: latestAnalysis.risk_level || 'unknown',
-                    stress_level: latestAnalysis.stress_level || 'unknown',
-                    summary: latestAnalysis.summary || '',
-                    created_at: latestAnalysis.created_at,
+                    id: 'insight',
+                    risk_level: insight.summary.risk_level || 'unknown',
+                    stress_level: insight.summary.stress_level || 'unknown',
+                    summary: insight.summary.overall_assessment || '',
+                    created_at: insight.analysis_metadata.analyzed_at,
                 }
                 : undefined,
-            confidence: latestAnalysis ? 0.85 : 0.6,
-            sources: latestAnalysis ? ['analysis_results'] : [],
+            confidence: insight ? 0.85 : 0.5,
+            sources: insight ? ['employee_insight', 'official_channel_messages'] : [],
         };
+    }
+    buildBasicResponseWithInsight(employee, insight) {
+        let answer = '';
+        if (!employee) {
+            answer = '找不到符合條件的員工資訊。';
+        }
+        else if (!insight || insight.data_sources.official_message_count === 0) {
+            answer = `員工 ${employee.name} 目前沒有相關資料記錄。`;
+        }
+        else {
+            answer = `員工 ${employee.name} 的狀態：
+風險等級：${this.translateRiskLevel(insight.summary.risk_level)}
+壓力等級：${this.translateStressLevel(insight.summary.stress_level)}
+整體評估：${insight.summary.overall_assessment}
+資料來源：${insight.data_sources.official_message_count} 筆官方頻道訊息`;
+        }
+        return {
+            answer,
+            employee: employee
+                ? {
+                    id: employee.id,
+                    name: employee.name,
+                    employeeappnumber: employee.employeeappnumber,
+                }
+                : undefined,
+            latest_analysis: insight
+                ? {
+                    id: 'insight',
+                    risk_level: insight.summary.risk_level || 'unknown',
+                    stress_level: insight.summary.stress_level || 'unknown',
+                    summary: insight.summary.overall_assessment || '',
+                    created_at: insight.analysis_metadata.analyzed_at,
+                }
+                : undefined,
+            confidence: 0.5,
+            sources: [],
+        };
+    }
+    async extractEmployeeFromQuestion(question) {
+        const { data: employees } = await this.employeesService.search({ limit: 500 });
+        for (const emp of employees) {
+            if (question.includes(emp.name)) {
+                this.logger.log(`Found employee from question: ${emp.name}`);
+                return emp;
+            }
+        }
+        return null;
     }
     async getEmployeeStatusSummary(employeeIdentifier) {
         const employee = await this.employeesService.identify(employeeIdentifier);
@@ -220,6 +298,7 @@ exports.QueryService = QueryService = QueryService_1 = __decorate([
     __metadata("design:paramtypes", [config_1.ConfigService,
         supabase_service_1.SupabaseService,
         employees_service_1.EmployeesService,
-        analysis_service_1.AnalysisService])
+        analysis_service_1.AnalysisService,
+        employee_insight_service_1.EmployeeInsightService])
 ], QueryService);
 //# sourceMappingURL=query.service.js.map

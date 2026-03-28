@@ -4,6 +4,7 @@ import { EmployeesService } from '../employees/employees.service';
 import { Employee } from '../employees/employees.dto';
 import { AnalysisService } from '../analysis/analysis.service';
 import { AnalysisResult } from '../analysis/analysis.dto';
+import { EmployeeInsightService } from '../insight/employee-insight.service';
 export interface QueryRequest {
     question: string;
     employee_identifier?: {
@@ -36,10 +37,13 @@ export declare class QueryService {
     private readonly supabase;
     private readonly employeesService;
     private readonly analysisService;
+    private readonly insightService;
     private readonly logger;
     private readonly anthropic;
-    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, analysisService: AnalysisService);
+    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, analysisService: AnalysisService, insightService: EmployeeInsightService);
     query(request: QueryRequest): Promise<QueryResponse>;
+    private buildBasicResponseWithInsight;
+    private extractEmployeeFromQuestion;
     getEmployeeStatusSummary(employeeIdentifier: {
         employeeappnumber?: string;
         employeeerpid?: string;

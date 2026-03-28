@@ -12,12 +12,13 @@ const query_controller_1 = require("./query.controller");
 const query_service_1 = require("./query.service");
 const employees_module_1 = require("../employees/employees.module");
 const analysis_module_1 = require("../analysis/analysis.module");
+const employee_insight_module_1 = require("../insight/employee-insight.module");
 let QueryModule = class QueryModule {
 };
 exports.QueryModule = QueryModule;
 exports.QueryModule = QueryModule = __decorate([
     (0, common_1.Module)({
-        imports: [employees_module_1.EmployeesModule, analysis_module_1.AnalysisModule],
+        imports: [employees_module_1.EmployeesModule, analysis_module_1.AnalysisModule, employee_insight_module_1.EmployeeInsightModule],
         controllers: [query_controller_1.QueryController],
         providers: [query_service_1.QueryService],
         exports: [query_service_1.QueryService],
