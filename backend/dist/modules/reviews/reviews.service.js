@@ -336,6 +336,13 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
             by_source: bySource,
         };
     }
+    async delete(id) {
+        this.logger.log(`Deleting review: ${id}`);
+        await this.supabase.delete('review_responses', { review_id: id });
+        await this.supabase.delete('review_attachments', { review_id: id });
+        await this.supabase.delete('reviews', { id });
+        this.logger.log(`Review deleted: ${id}`);
+    }
 };
 exports.ReviewsService = ReviewsService;
 exports.ReviewsService = ReviewsService = ReviewsService_1 = __decorate([

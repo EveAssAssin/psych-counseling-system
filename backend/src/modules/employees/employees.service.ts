@@ -10,7 +10,7 @@ import {
 @Injectable()
 export class EmployeesService {
   private readonly logger = new Logger(EmployeesService.name);
-  private readonly TABLE = 'employees';
+  private readonly TABLE = 'employees_view';
 
   constructor(private readonly supabase: SupabaseService) {}
 

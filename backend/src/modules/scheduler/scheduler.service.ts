@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { SyncService } from '../sync/sync.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { AnalysisService } from '../analysis/analysis.service';
+import { EmployeeSyncService } from '../employee-sync/employee-sync.service';
 
 @Injectable()
 export class SchedulerService implements OnModuleInit {
@@ -15,6 +16,7 @@ export class SchedulerService implements OnModuleInit {
     private readonly syncService: SyncService,
     private readonly conversationsService: ConversationsService,
     private readonly analysisService: AnalysisService,
+    private readonly employeeSyncService: EmployeeSyncService,
   ) {
     this.isEnabled = this.configService.get<boolean>('scheduler.enabled') ?? true;
   }
@@ -164,6 +166,25 @@ export class SchedulerService implements OnModuleInit {
     // 這裡可以加入批量更新所有員工狀態快照的邏輯
     // 目前由 AnalysisService 在每次分析後更新
   }
+
+  
+  /**
+   * 每月 5 日 05:00 同步 employees_cache（從左手 API）
+   */
+  @Cron('0 5 5 * *')
+  async monthlyEmployeeCacheSync() {
+    if (!this.isEnabled) return;
+
+    this.logger.log('Starting monthly employees_cache sync');
+
+    try {
+      const result = await this.employeeSyncService.syncAll();
+      this.logger.log(`Monthly employees_cache sync completed: ${JSON.stringify(result)}`);
+    } catch (error) {
+      this.logger.error('Monthly employees_cache sync failed:', error);
+    }
+  }
+
 
   /**
    * 每日 07:00 發送高風險提醒

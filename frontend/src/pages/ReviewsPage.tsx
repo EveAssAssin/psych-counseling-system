@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { PlusIcon, FunnelIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import toast from 'react-hot-toast';
+import FileUpload from '../components/FileUpload';
 
 // 類型定義
 interface Review {
@@ -319,6 +320,8 @@ function CreateReviewModal({
     event_date: new Date().toISOString().split('T')[0],
   });
 
+  const [attachments, setAttachments] = useState<any[]>([]);
+
   // 搜尋員工
   useEffect(() => {
     if (employeeSearch.length < 1) {
@@ -361,6 +364,7 @@ function CreateReviewModal({
       await api.post('/reviews', {
         employee_id: selectedEmployee.id,
         ...formData,
+        attachments: attachments,
       });
       toast.success('評價已建立');
       onSuccess();
@@ -548,10 +552,12 @@ function CreateReviewModal({
             />
           </div>
 
-          {/* TODO: 附件上傳 */}
-          <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded">
-            📎 附件上傳功能開發中...
-          </div>
+          {/* 附件上傳 */}
+          <FileUpload
+            category="reviews"
+            label="附件上傳"
+            onUploadComplete={(files) => setAttachments(files)}
+          />
         </div>
 
         <div className="p-6 border-t flex justify-end gap-3">

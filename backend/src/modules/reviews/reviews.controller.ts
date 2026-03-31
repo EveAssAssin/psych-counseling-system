@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Param,
   Query,
   Body,
@@ -161,6 +162,25 @@ export class ReviewsController {
       return {
         success: true,
         data: review,
+      };
+    } catch (error) {
+      throw new HttpException(
+        { success: false, error: error.message },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+
+  @Delete(':id')
+  @ApiOperation({ summary: '刪除評價' })
+  @ApiParam({ name: 'id', description: '評價 ID' })
+  async delete(@Param('id') id: string) {
+    try {
+      await this.reviewsService.delete(id);
+      return {
+        success: true,
+        message: '評價已刪除',
       };
     } catch (error) {
       throw new HttpException(

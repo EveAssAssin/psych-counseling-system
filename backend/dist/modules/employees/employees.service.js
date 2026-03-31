@@ -17,7 +17,7 @@ let EmployeesService = EmployeesService_1 = class EmployeesService {
     constructor(supabase) {
         this.supabase = supabase;
         this.logger = new common_1.Logger(EmployeesService_1.name);
-        this.TABLE = 'employees';
+        this.TABLE = 'employees_view';
     }
     async create(dto) {
         this.logger.log(`Creating employee: ${dto.employeeappnumber}`);

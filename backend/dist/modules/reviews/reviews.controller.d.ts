@@ -88,6 +88,10 @@ export declare class ReviewsController {
         success: boolean;
         data: import("./reviews.dto").Review;
     }>;
+    delete(id: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
 }
 export declare class ReviewResponseController {
     private readonly reviewsService;

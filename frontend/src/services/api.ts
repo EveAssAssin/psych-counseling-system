@@ -108,6 +108,7 @@ export const conversationsApi = {
     priority?: string;
     need_followup?: boolean;
     tags?: string[];
+    attachments?: any[];
   }) => api.post('/conversations', data),
   
   upload: (formData: FormData) => api.post('/conversations/upload', formData, {

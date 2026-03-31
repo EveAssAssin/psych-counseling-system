@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeftIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { api } from '../services/api';
 import toast from 'react-hot-toast';
+import FileUpload from '../components/FileUpload';
 
 // 標籤配置
 const SOURCE_LABELS: Record<string, string> = {
@@ -51,10 +52,26 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function ReviewDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [review, setReview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
   const [closeNote, setCloseNote] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.delete(`/reviews/${id}`);
+      toast.success('評價已刪除');
+      navigate('/reviews');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || '刪除失敗');
+    } finally {
+      setDeleting(false);
+    }
+  };
   const [showCloseModal, setShowCloseModal] = useState(false);
 
   useEffect(() => {
@@ -126,6 +143,13 @@ export default function ReviewDetailPage() {
             結案
           </button>
         )}
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+        >
+          <TrashIcon className="h-4 w-4" />
+          刪除
+        </button>
       </div>
 
       {/* 狀態標籤 */}
@@ -339,6 +363,33 @@ export default function ReviewDetailPage() {
           </div>
         </div>
       )}
+
+      {/* 刪除確認 Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold mb-4 text-red-600">確認刪除</h3>
+            <p className="text-gray-600 mb-4">
+              確定要刪除這筆評價嗎？此操作無法復原，所有相關的回覆和附件都會一併刪除。
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? '刪除中...' : '確認刪除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -355,6 +406,7 @@ function ReviewerResponseForm({
 }) {
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [reviewerAttachments, setReviewerAttachments] = useState<any[]>([]);
 
   const handleSubmit = async () => {
     if (!content.trim()) return;
@@ -364,6 +416,7 @@ function ReviewerResponseForm({
       await api.post(`/reviews/${reviewId}/respond`, {
         content: content,
         reviewer_name: '公關部', // TODO: 從登入用戶取得
+        attachments: reviewerAttachments,
       });
       toast.success('回覆成功');
       setContent('');
@@ -387,6 +440,15 @@ function ReviewerResponseForm({
         className="input-field w-full"
         placeholder="輸入要追問或補充的內容..."
       />
+      <div className="mt-3">
+        <FileUpload
+          category="responses"
+          subFolder={reviewId}
+          label="附件（可選）"
+          maxFiles={3}
+          onUploadComplete={(files) => setReviewerAttachments(files)}
+        />
+      </div>
       <div className="flex justify-end mt-2">
         <button
           onClick={handleSubmit}

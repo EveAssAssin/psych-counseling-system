@@ -8,7 +8,7 @@ import {
   ExclamationTriangleIcon,
   QuestionMarkCircleIcon,
   Bars3Icon,
-  XMarkIcon,
+
   ArrowLeftOnRectangleIcon,
   ArrowPathIcon,
   StarIcon,

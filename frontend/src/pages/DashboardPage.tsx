@@ -5,10 +5,10 @@ import {
   ChatBubbleLeftRightIcon,
   ExclamationTriangleIcon,
   ArrowTrendingUpIcon,
-  ArrowTrendingDownIcon,
+
 } from '@heroicons/react/24/outline';
 import { employeesApi, conversationsApi, riskFlagsApi, analysisApi } from '../services/api';
-import clsx from 'clsx';
+// import clsx from 'clsx';
 
 interface Stats {
   employees: { total: number; active: number };
@@ -204,7 +204,7 @@ export default function DashboardPage() {
             highRiskItems.map((item) => (
               <li key={item.id}>
                 <Link
-                  to={`/conversations/${item.conversation_intake_id}`}
+                  to={`/conversations/${item.id}`}
                   className="block hover:bg-gray-50"
                 >
                   <div className="px-4 py-4 sm:px-6">

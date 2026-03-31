@@ -108,6 +108,18 @@ let ReviewsController = class ReviewsController {
             throw new common_1.HttpException({ success: false, error: error.message }, common_1.HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+    async delete(id) {
+        try {
+            await this.reviewsService.delete(id);
+            return {
+                success: true,
+                message: '評價已刪除',
+            };
+        }
+        catch (error) {
+            throw new common_1.HttpException({ success: false, error: error.message }, common_1.HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
 };
 exports.ReviewsController = ReviewsController;
 __decorate([
@@ -185,6 +197,15 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], ReviewsController.prototype, "close", null);
+__decorate([
+    (0, common_1.Delete)(':id'),
+    (0, swagger_1.ApiOperation)({ summary: '刪除評價' }),
+    (0, swagger_1.ApiParam)({ name: 'id', description: '評價 ID' }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ReviewsController.prototype, "delete", null);
 exports.ReviewsController = ReviewsController = __decorate([
     (0, swagger_1.ApiTags)('reviews'),
     (0, common_1.Controller)('reviews'),

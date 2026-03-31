@@ -12,12 +12,13 @@ const scheduler_service_1 = require("./scheduler.service");
 const sync_module_1 = require("../sync/sync.module");
 const conversations_module_1 = require("../conversations/conversations.module");
 const analysis_module_1 = require("../analysis/analysis.module");
+const employee_sync_module_1 = require("../employee-sync/employee-sync.module");
 let SchedulerModule = class SchedulerModule {
 };
 exports.SchedulerModule = SchedulerModule;
 exports.SchedulerModule = SchedulerModule = __decorate([
     (0, common_1.Module)({
-        imports: [sync_module_1.SyncModule, conversations_module_1.ConversationsModule, analysis_module_1.AnalysisModule],
+        imports: [sync_module_1.SyncModule, conversations_module_1.ConversationsModule, analysis_module_1.AnalysisModule, employee_sync_module_1.EmployeeSyncModule],
         providers: [scheduler_service_1.SchedulerService],
         exports: [scheduler_service_1.SchedulerService],
     })

@@ -53,4 +53,5 @@ export declare class ReviewsService {
         by_type: Record<string, number>;
         by_source: Record<string, number>;
     }>;
+    delete(id: string): Promise<void>;
 }

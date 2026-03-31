@@ -526,4 +526,23 @@ export class ReviewsService {
       by_source: bySource,
     };
   }
+
+
+  /**
+   * 刪除評價
+   */
+  async delete(id: string): Promise<void> {
+    this.logger.log(`Deleting review: ${id}`);
+
+    // 先刪除相關的回覆
+    await this.supabase.delete('review_responses', { review_id: id });
+
+    // 刪除附件
+    await this.supabase.delete('review_attachments', { review_id: id });
+
+    // 刪除評價本身
+    await this.supabase.delete('reviews', { id });
+
+    this.logger.log(`Review deleted: ${id}`);
+  }
 }

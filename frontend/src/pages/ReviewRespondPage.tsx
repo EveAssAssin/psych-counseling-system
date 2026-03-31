@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../services/api';
+import FileUpload from '../components/FileUpload';
 
 // 標籤配置
 const SOURCE_LABELS: Record<string, string> = {
@@ -37,6 +38,7 @@ export default function ReviewRespondPage() {
   const [response, setResponse] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [responseAttachments, setResponseAttachments] = useState<any[]>([]);
 
   useEffect(() => {
     loadReview();
@@ -63,6 +65,7 @@ export default function ReviewRespondPage() {
     try {
       await api.post(`/review-response/${token}/respond`, {
         content: response,
+        attachments: responseAttachments,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -264,9 +267,14 @@ export default function ReviewRespondPage() {
             placeholder="請說明情況或提供您的回覆..."
           />
 
-          {/* TODO: 附件上傳 */}
-          <div className="mt-4 text-sm text-gray-500 bg-gray-50 p-3 rounded">
-            📎 附件上傳功能開發中...
+          {/* 附件上傳 */}
+          <div className="mt-4">
+            <FileUpload
+              category="responses"
+              subFolder={token}
+              label="附件（可選）"
+              onUploadComplete={(files) => setResponseAttachments(files)}
+            />
           </div>
 
           <button

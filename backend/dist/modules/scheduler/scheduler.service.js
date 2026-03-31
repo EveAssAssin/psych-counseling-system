@@ -17,12 +17,14 @@ const schedule_1 = require("@nestjs/schedule");
 const sync_service_1 = require("../sync/sync.service");
 const conversations_service_1 = require("../conversations/conversations.service");
 const analysis_service_1 = require("../analysis/analysis.service");
+const employee_sync_service_1 = require("../employee-sync/employee-sync.service");
 let SchedulerService = SchedulerService_1 = class SchedulerService {
-    constructor(configService, syncService, conversationsService, analysisService) {
+    constructor(configService, syncService, conversationsService, analysisService, employeeSyncService) {
         this.configService = configService;
         this.syncService = syncService;
         this.conversationsService = conversationsService;
         this.analysisService = analysisService;
+        this.employeeSyncService = employeeSyncService;
         this.logger = new common_1.Logger(SchedulerService_1.name);
         this.isEnabled = this.configService.get('scheduler.enabled') ?? true;
     }
@@ -126,6 +128,18 @@ let SchedulerService = SchedulerService_1 = class SchedulerService {
             return;
         this.logger.log('Starting status snapshot update');
     }
+    async monthlyEmployeeCacheSync() {
+        if (!this.isEnabled)
+            return;
+        this.logger.log('Starting monthly employees_cache sync');
+        try {
+            const result = await this.employeeSyncService.syncAll();
+            this.logger.log(`Monthly employees_cache sync completed: ${JSON.stringify(result)}`);
+        }
+        catch (error) {
+            this.logger.error('Monthly employees_cache sync failed:', error);
+        }
+    }
     async sendHighRiskAlerts() {
         if (!this.isEnabled)
             return;
@@ -188,6 +202,12 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SchedulerService.prototype, "updateStatusSnapshots", null);
 __decorate([
+    (0, schedule_1.Cron)('0 5 5 * *'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], SchedulerService.prototype, "monthlyEmployeeCacheSync", null);
+__decorate([
     (0, schedule_1.Cron)('0 7 * * *'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
@@ -198,6 +218,7 @@ exports.SchedulerService = SchedulerService = SchedulerService_1 = __decorate([
     __metadata("design:paramtypes", [config_1.ConfigService,
         sync_service_1.SyncService,
         conversations_service_1.ConversationsService,
-        analysis_service_1.AnalysisService])
+        analysis_service_1.AnalysisService,
+        employee_sync_service_1.EmployeeSyncService])
 ], SchedulerService);
 //# sourceMappingURL=scheduler.service.js.map

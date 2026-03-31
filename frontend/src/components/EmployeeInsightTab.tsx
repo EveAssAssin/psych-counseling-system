@@ -82,7 +82,7 @@ const fitnessConfig: Record<string, string> = {
 
 export const EmployeeInsightTab: React.FC<EmployeeInsightTabProps> = ({
   employeeAppNumber,
-  employeeName,
+  employeeName: _employeeName,
 }) => {
   const [insight, setInsight] = useState<InsightData | null>(null);
   const [loading, setLoading] = useState(false);

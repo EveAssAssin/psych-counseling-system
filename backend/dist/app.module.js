@@ -25,6 +25,8 @@ const scheduler_module_1 = require("./modules/scheduler/scheduler.module");
 const official_channel_module_1 = require("./modules/official-channel/official-channel.module");
 const employee_insight_module_1 = require("./modules/insight/employee-insight.module");
 const reviews_module_1 = require("./modules/reviews/reviews.module");
+const upload_module_1 = require("./modules/upload/upload.module");
+const employee_sync_module_1 = require("./modules/employee-sync/employee-sync.module");
 const health_controller_1 = require("./health.controller");
 let AppModule = class AppModule {
 };
@@ -51,6 +53,8 @@ exports.AppModule = AppModule = __decorate([
             official_channel_module_1.OfficialChannelModule,
             employee_insight_module_1.EmployeeInsightModule,
             reviews_module_1.ReviewsModule,
+            upload_module_1.UploadModule,
+            employee_sync_module_1.EmployeeSyncModule,
         ],
         controllers: [health_controller_1.HealthController],
     })

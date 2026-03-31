@@ -22,6 +22,8 @@ import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { OfficialChannelModule } from './modules/official-channel/official-channel.module';
 import { EmployeeInsightModule } from './modules/insight/employee-insight.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
+import { UploadModule } from './modules/upload/upload.module';
+import { EmployeeSyncModule } from './modules/employee-sync/employee-sync.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -54,6 +56,8 @@ import { HealthController } from './health.controller';
     OfficialChannelModule,
     EmployeeInsightModule,
     ReviewsModule,
+    UploadModule,
+    EmployeeSyncModule,
   ],
   controllers: [HealthController],
 })

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { conversationsApi, employeesApi } from '../services/api';
 import toast from 'react-hot-toast';
+import FileUpload from '../components/FileUpload';
 
 export default function NewConversationPage() {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ export default function NewConversationPage() {
 
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searchingEmployees, setSearchingEmployees] = useState(false);
+  const [_searchingEmployees, setSearchingEmployees] = useState(false);
   const [employeeSearch, setEmployeeSearch] = useState('');
 
   const [formData, setFormData] = useState({
@@ -24,6 +25,8 @@ export default function NewConversationPage() {
     priority: 'normal',
     need_followup: false,
   });
+
+  const [conversationAttachments, setConversationAttachments] = useState<any[]>([]);
 
   useEffect(() => {
     if (preselectedEmployeeId) {
@@ -73,6 +76,7 @@ export default function NewConversationPage() {
       const response = await conversationsApi.create({
         ...formData,
         conversation_date: new Date(formData.conversation_date).toISOString(),
+        attachments: conversationAttachments,
       });
       toast.success('對話記錄已建立！');
       navigate(`/conversations/${response.data.id}`);
@@ -193,6 +197,13 @@ export default function NewConversationPage() {
               required
             />
           </div>
+
+          {/* 附件上傳 */}
+          <FileUpload
+            category="conversations"
+            label="附件（對話截圖、錄音等）"
+            onUploadComplete={(files) => setConversationAttachments(files)}
+          />
 
           {/* 優先級 */}
           <div className="flex gap-6">
