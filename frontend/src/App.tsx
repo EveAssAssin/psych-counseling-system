@@ -1,14 +1,9 @@
-import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuthStore } from './stores';
 
 // Layouts
 import MainLayout from './layouts/MainLayout';
-import AuthLayout from './layouts/AuthLayout';
 
 // Pages
-import LoginPage from './pages/LoginPage';
-import AuthCallbackPage from './pages/AuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
 import EmployeesPage from './pages/EmployeesPage';
 import EmployeeDetailPage from './pages/EmployeeDetailPage';
@@ -21,61 +16,14 @@ import ReviewsPage from './pages/ReviewsPage';
 import ReviewDetailPage from './pages/ReviewDetailPage';
 import ReviewRespondPage from './pages/ReviewRespondPage';
 
-// Loading component
-const LoadingScreen = () => (
-  <div className="min-h-screen flex items-center justify-center bg-gray-50">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-      <p className="mt-4 text-gray-600">載入中...</p>
-    </div>
-  </div>
-);
-
-// Protected route wrapper
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuthStore();
-  
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  return <>{children}</>;
-};
-
 function App() {
-  const { checkAuth, isLoading } = useAuthStore();
-  
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
-  
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
-  
   return (
     <Routes>
-      {/* Auth routes */}
-      <Route element={<AuthLayout />}>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/auth/callback" element={<AuthCallbackPage />} />
-      </Route>
-      
-      {/* 員工回覆頁面（公開，不需登入） */}
+      {/* 員工回覆頁面（公開） */}
       <Route path="/review/respond/:token" element={<ReviewRespondPage />} />
       
-      {/* Protected routes */}
-      <Route
-        element={
-          <ProtectedRoute>
-            <MainLayout />
-          </ProtectedRoute>
-        }
-      >
+      {/* 主要頁面（不需登入） */}
+      <Route element={<MainLayout />}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/employees" element={<EmployeesPage />} />
