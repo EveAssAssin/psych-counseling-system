@@ -81,9 +81,26 @@ export class SchedulerService implements OnModuleInit {
   }
 
   /**
-   * 每日 06:00 執行多來源資料同步
+   * 每日 06:00 執行員工工單歷史同步
    */
   @Cron('0 6 * * *')
+  async dailyTicketHistorySync() {
+    if (!this.isEnabled) return;
+
+    this.logger.log('Starting daily ticket history sync');
+
+    try {
+      const result = await this.syncService.syncTicketHistory();
+      this.logger.log(`Daily ticket history sync completed: ${result.total_created} created, ${result.total_updated} updated`);
+    } catch (error) {
+      this.logger.error('Daily ticket history sync failed:', error);
+    }
+  }
+
+  /**
+   * 每日 07:00 執行多來源資料同步
+   */
+  @Cron('0 7 * * *')
   async dailyDataSync() {
     if (!this.isEnabled) return;
 
@@ -221,5 +238,13 @@ export class SchedulerService implements OnModuleInit {
   async triggerOfficialChannelSync(): Promise<any> {
     this.logger.log('Manual official channel sync triggered');
     return this.syncService.syncOfficialChannelMessages('manual');
+  }
+
+  /**
+   * 手動觸發工單歷史同步
+   */
+  async triggerTicketHistorySync(): Promise<any> {
+    this.logger.log('Manual ticket history sync triggered');
+    return this.syncService.syncTicketHistory('manual');
   }
 }

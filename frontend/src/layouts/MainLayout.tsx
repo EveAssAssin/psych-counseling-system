@@ -8,10 +8,10 @@ import {
   ExclamationTriangleIcon,
   QuestionMarkCircleIcon,
   Bars3Icon,
-
   ArrowLeftOnRectangleIcon,
   ArrowPathIcon,
   StarIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore, useUIStore } from '../stores';
 import { syncApi } from '../services/api';
@@ -25,6 +25,7 @@ const navigation = [
   { name: '評價管理', href: '/reviews', icon: StarIcon },
   { name: '風險標記', href: '/risk-flags', icon: ExclamationTriangleIcon },
   { name: '智能問答', href: '/query', icon: QuestionMarkCircleIcon },
+  { name: '資料管理', href: '/data-management', icon: Cog6ToothIcon },
 ];
 
 export default function MainLayout() {

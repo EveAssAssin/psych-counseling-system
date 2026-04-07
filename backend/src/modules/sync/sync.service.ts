@@ -4,7 +4,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeesService } from '../employees/employees.service';
 import { StoresService } from '../stores/stores.service';
 import { LefthandApiService, EmployeeApiData, StoreApiData } from './lefthand-api.service';
-import { TicketApiService, OfficialChannelMessage } from './ticket-api.service';
+import { TicketApiService, OfficialChannelMessage, TicketHistoryRecord } from './ticket-api.service';
 
 export interface SyncLog {
   id: string;
@@ -440,6 +440,28 @@ export class SyncService {
   }
 
   /**
+   * 取得所有同步狀態（各類型最後同步時間 + 最近日誌）
+   */
+  async getSyncStatus(): Promise<{
+    cursors: Record<string, any>;
+    recentLogs: SyncLog[];
+  }> {
+    // 取得所有同步游標
+    const cursors: Record<string, any> = {};
+
+    const cursorTypes = ['official-channel-line', 'official-channel-comments', 'ticket-history'];
+    for (const type of cursorTypes) {
+      const cursor = await this.getSyncCursor(type);
+      cursors[type] = cursor || { last_synced_at: null, last_record_time: null, total_synced: 0 };
+    }
+
+    // 取得最近 5 筆同步日誌
+    const recentLogs = await this.getRecentSyncLogs(5);
+
+    return { cursors, recentLogs };
+  }
+
+  /**
    * 取得最近的同步日誌
    */
   async getRecentSyncLogs(limit: number = 20): Promise<SyncLog[]> {
@@ -479,17 +501,14 @@ export class SyncService {
       const lineLastSync = await this.getSyncCursor('official-channel-line');
       const commentsLastSync = await this.getSyncCursor('official-channel-comments');
 
-      // 預設取昨天 00:00 到今天 00:00 的資料
+      // 如果是第一次同步（無 cursor），從 90 天前開始抓全部歷史資料
+      // 之後的增量同步只抓上次同步之後的新資料
       const now = new Date();
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      yesterday.setHours(0, 0, 0, 0);
-      
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
+      const firstSyncStart = new Date(now);
+      firstSyncStart.setDate(firstSyncStart.getDate() - 90);
+      firstSyncStart.setHours(0, 0, 0, 0);
 
-      const defaultAfter = yesterday.toISOString();
-      const defaultBefore = today.toISOString();
+      const defaultAfter = firstSyncStart.toISOString();
 
       // ========================================
       // Step 2: 同步 LINE 訊息
@@ -655,6 +674,211 @@ export class SyncService {
     }
 
     return { created, updated, skipped, failed };
+  }
+
+  // ============================================
+  // 工單歷史同步（按員工逐一查詢）
+  // ============================================
+
+  private readonly ETH_TABLE = 'employee_ticket_history';
+  private readonly TC_TABLE = 'ticket_conversations';
+
+  /**
+   * 同步所有員工的工單歷史
+   */
+  async syncTicketHistory(triggeredBy?: string): Promise<SyncLog> {
+    const syncLog = await this.createSyncLog('ticket_history', 'ticket-system', triggeredBy);
+
+    try {
+      await this.updateSyncLog(syncLog.id, { status: 'running' });
+
+      // 取得上次同步時間
+      const lastSync = await this.getSyncCursor('ticket-history');
+      const now = new Date();
+      const firstSyncStart = new Date(now);
+      firstSyncStart.setDate(firstSyncStart.getDate() - 90);
+      firstSyncStart.setHours(0, 0, 0, 0);
+      const updatedAfter = lastSync?.last_record_time || firstSyncStart.toISOString();
+
+      // 取得所有有效員工
+      const employees = await this.supabase.findMany<any>('employees', {
+        filters: { is_active: true },
+        useAdmin: true,
+        limit: 9999,
+      });
+
+      // 只取有 employeeappnumber 的員工
+      const validEmployees = employees.filter((e: any) => e.employeeappnumber);
+      this.logger.log(`Found ${validEmployees.length} valid employees for ticket history sync`);
+
+      let totalFetched = 0;
+      let totalCreated = 0;
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+      let totalFailed = 0;
+      let latestUpdateTime = updatedAfter;
+
+      for (const emp of validEmployees) {
+        try {
+          const records = await this.ticketApi.getAllEmployeeTicketHistory({
+            app_number: emp.employeeappnumber,
+            updated_after: updatedAfter,
+          });
+
+          if (records.length === 0) continue;
+
+          totalFetched += records.length;
+
+          for (const ticket of records) {
+            try {
+              const result = await this.upsertTicketHistory(ticket, emp);
+              if (result === 'created') totalCreated++;
+              else if (result === 'updated') totalUpdated++;
+
+              // 追蹤最新的 updated_at
+              if (ticket.updated_at > latestUpdateTime) {
+                latestUpdateTime = ticket.updated_at;
+              }
+            } catch (error) {
+              this.logger.error(`Failed to upsert ticket ${ticket.ticket_no}:`, error.message);
+              totalFailed++;
+            }
+          }
+
+          // 避免 API 過載
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          this.logger.error(`Failed to fetch tickets for ${emp.employeeappnumber} (${emp.name}):`, error.message);
+          totalSkipped++;
+        }
+      }
+
+      // 更新同步游標
+      if (totalCreated + totalUpdated > 0) {
+        await this.updateSyncCursor('ticket-history', latestUpdateTime, totalCreated + totalUpdated);
+      }
+
+      await this.updateSyncLog(syncLog.id, {
+        status: totalFailed > 0 ? 'partial' : 'completed',
+        finished_at: new Date().toISOString(),
+        total_fetched: totalFetched,
+        total_created: totalCreated,
+        total_updated: totalUpdated,
+        total_skipped: totalSkipped,
+        total_failed: totalFailed,
+        error_details: {
+          total_employees: validEmployees.length,
+        },
+      });
+
+      this.logger.log(
+        `Ticket history sync completed: ${totalCreated} created, ${totalUpdated} updated, ${totalSkipped} skipped, ${totalFailed} failed`,
+      );
+
+      return this.getSyncLog(syncLog.id);
+    } catch (error) {
+      this.logger.error('Ticket history sync failed:', error);
+
+      await this.updateSyncLog(syncLog.id, {
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: error.message,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Upsert 單張工單 + 對話事件
+   */
+  private async upsertTicketHistory(
+    ticket: TicketHistoryRecord,
+    employee: any,
+  ): Promise<'created' | 'updated'> {
+    const existing = await this.supabase.findOne(
+      this.ETH_TABLE,
+      { ticket_id: ticket.ticket_id },
+      { useAdmin: true },
+    );
+
+    const record = {
+      ticket_id: ticket.ticket_id,
+      ticket_no: ticket.ticket_no,
+      employee_id: employee.id,
+      employee_app_number: employee.employeeappnumber,
+      employee_erp_id: employee.employeeerpid || null,
+      employee_name: ticket.staff_name || employee.name,
+      store_name: ticket.store_name,
+      issue_title: ticket.issue_title,
+      issue_desc: ticket.issue_desc,
+      category: ticket.category,
+      parent_category: ticket.parent_category,
+      sub_category: ticket.sub_category,
+      status: ticket.status,
+      review_status: ticket.review_status,
+      priority: ticket.priority,
+      customer_name: ticket.customer_name || null,
+      customer_code: ticket.customer_code || null,
+      assigned_engineer: ticket.assigned_engineer,
+      attachment_count: ticket.attachment_count || 0,
+      conversation_count: ticket.conversation_count || 0,
+      ticket_created_at: ticket.created_at,
+      ticket_updated_at: ticket.updated_at,
+      ticket_closed_at: ticket.closed_at || null,
+      synced_at: new Date().toISOString(),
+    };
+
+    let ticketHistoryId: string;
+    let result: 'created' | 'updated';
+
+    if (existing) {
+      await this.supabase.update(
+        this.ETH_TABLE,
+        { ticket_id: ticket.ticket_id },
+        record,
+        { useAdmin: true },
+      );
+      ticketHistoryId = (existing as any).id;
+      result = 'updated';
+    } else {
+      const created = await this.supabase.create(this.ETH_TABLE, record, { useAdmin: true });
+      ticketHistoryId = (created as any).id;
+      result = 'created';
+    }
+
+    // 同步對話事件（先刪後建）
+    if (ticket.conversation && ticket.conversation.length > 0) {
+      // 刪除舊的對話事件
+      try {
+        await this.supabase.delete(this.TC_TABLE, { ticket_id: ticket.ticket_id }, { useAdmin: true });
+      } catch (e) {
+        // 可能沒有舊資料，忽略
+      }
+
+      // 批量建立新對話事件
+      for (const conv of ticket.conversation) {
+        try {
+          await this.supabase.create(
+            this.TC_TABLE,
+            {
+              ticket_history_id: ticketHistoryId,
+              ticket_id: ticket.ticket_id,
+              event_type: conv.event_type,
+              actor_name: conv.actor_name,
+              actor_role: conv.actor_role,
+              content: conv.content,
+              event_created_at: conv.created_at,
+            },
+            { useAdmin: true },
+          );
+        } catch (e) {
+          this.logger.warn(`Failed to insert conversation for ticket ${ticket.ticket_no}:`, e.message);
+        }
+      }
+    }
+
+    return result;
   }
 
   /**

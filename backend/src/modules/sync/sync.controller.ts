@@ -28,6 +28,20 @@ export class SyncController {
     return this.syncService.syncOfficialChannelMessages(triggeredBy);
   }
 
+  @Post('ticket-history')
+  @ApiOperation({ summary: '同步員工工單歷史' })
+  @ApiResponse({ status: 201, description: '同步結果' })
+  async syncTicketHistory(@Query('triggered_by') triggeredBy?: string) {
+    return this.syncService.syncTicketHistory(triggeredBy);
+  }
+
+  @Get('status')
+  @ApiOperation({ summary: '取得所有同步狀態（含最後同步時間）' })
+  @ApiResponse({ status: 200, description: '同步狀態' })
+  async getSyncStatus() {
+    return this.syncService.getSyncStatus();
+  }
+
   @Get('logs')
   @ApiOperation({ summary: '取得同步日誌' })
   @ApiResponse({ status: 200, description: '同步日誌列表' })

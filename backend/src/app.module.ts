@@ -24,6 +24,7 @@ import { EmployeeInsightModule } from './modules/insight/employee-insight.module
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { EmployeeSyncModule } from './modules/employee-sync/employee-sync.module';
+import { TicketHistoryModule } from './modules/ticket-history/ticket-history.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -58,6 +59,7 @@ import { HealthController } from './health.controller';
     ReviewsModule,
     UploadModule,
     EmployeeSyncModule,
+    TicketHistoryModule,
   ],
   controllers: [HealthController],
 })

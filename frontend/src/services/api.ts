@@ -215,13 +215,17 @@ export const queryApi = {
 // ============================================
 export const syncApi = {
   syncEmployees: () => api.post('/sync/employees'),
-  
+
   syncDaily: () => api.post('/sync/daily'),
-  
+
   syncOfficialChannel: () => api.post('/sync/official-channel'),
-  
+
+  syncTicketHistory: () => api.post('/sync/ticket-history'),
+
+  getStatus: () => api.get('/sync/status'),
+
   getLogs: (limit?: number) => api.get('/sync/logs', { params: { limit } }),
-  
+
   getLog: (id: string) => api.get(`/sync/logs/${id}`),
 };
 
@@ -246,6 +250,24 @@ export const officialChannelApi = {
   getStats: () => api.get('/official-channel/stats'),
 
   getById: (id: string) => api.get(`/official-channel/${id}`),
+};
+
+// ============================================
+// Ticket History API
+// ============================================
+export const ticketHistoryApi = {
+  getByEmployeeId: (employeeId: string, limit?: number) =>
+    api.get(`/ticket-history/employee/${employeeId}`, { params: { limit } }),
+
+  getByAppNumber: (appNumber: string, limit?: number) =>
+    api.get(`/ticket-history/by-app-number/${appNumber}`, { params: { limit } }),
+
+  getStats: (appNumber: string) => api.get(`/ticket-history/stats/${appNumber}`),
+
+  getConversations: (ticketId: number) =>
+    api.get(`/ticket-history/ticket/${ticketId}/conversations`),
+
+  getByTicketId: (ticketId: number) => api.get(`/ticket-history/${ticketId}`),
 };
 
 // ============================================

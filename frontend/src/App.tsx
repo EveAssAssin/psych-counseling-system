@@ -15,6 +15,7 @@ import QueryPage from './pages/QueryPage';
 import ReviewsPage from './pages/ReviewsPage';
 import ReviewDetailPage from './pages/ReviewDetailPage';
 import ReviewRespondPage from './pages/ReviewRespondPage';
+import DataManagementPage from './pages/DataManagementPage';
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
         <Route path="/query" element={<QueryPage />} />
         <Route path="/reviews" element={<ReviewsPage />} />
         <Route path="/reviews/:id" element={<ReviewDetailPage />} />
+        <Route path="/data-management" element={<DataManagementPage />} />
       </Route>
       
       {/* Catch all */}
