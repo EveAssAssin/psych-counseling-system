@@ -4,7 +4,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeesService } from '../employees/employees.service';
 import { StoresService } from '../stores/stores.service';
 import { LefthandApiService, EmployeeApiData, StoreApiData } from './lefthand-api.service';
-import { TicketApiService, OfficialChannelMessage, TicketHistoryRecord } from './ticket-api.service';
+import { TicketApiService, OfficialChannelMessage, TicketHistoryRecord, ExternalReview } from './ticket-api.service';
 
 export interface SyncLog {
   id: string;
@@ -897,7 +897,7 @@ export class SyncService {
    * 評價資料存在於本系統 DB，此同步任務負責追蹤最新評價狀態並產生 sync log
    */
   async syncReviewData(triggeredBy?: string): Promise<SyncLog> {
-    const syncLog = await this.createSyncLog('review_sync', 'internal_db', triggeredBy);
+    const syncLog = await this.createSyncLog('review_sync', 'review-system', triggeredBy);
 
     try {
       await this.updateSyncLog(syncLog.id, { status: 'running' });
@@ -910,69 +910,66 @@ export class SyncService {
       firstSyncStart.setHours(0, 0, 0, 0);
       const updatedAfter = lastSync?.last_record_time || firstSyncStart.toISOString();
 
-      // 查詢上次同步後更新的評價
-      const updatedReviews = await this.supabase.findMany<any>('reviews', {
+      // 從 review-system 外部 API 取得新增/更新/刪除的評價
+      const externalReviews = await this.ticketApi.getReviewsSince(updatedAfter);
+
+      let totalFetched = externalReviews.length;
+      let totalCreated = 0;
+      let totalUpdated = 0;
+      let totalDeleted = 0;
+      let totalFailed = 0;
+      let latestUpdatedAt = updatedAfter;
+
+      // 取得所有員工 app_number → UUID 對照表
+      const employees = await this.supabase.findMany<any>('employees', {
+        filters: { is_active: true },
         useAdmin: true,
         limit: 9999,
       });
-
-      // 過濾 updated_after
-      const newReviews = updatedReviews.filter(
-        (r: any) => r.updated_at && r.updated_at >= updatedAfter,
-      );
-
-      // 查詢相關回覆（review_responses）
-      let totalResponses = 0;
-      for (const review of newReviews.slice(0, 200)) {
-        try {
-          const responses = await this.supabase.findMany<any>('review_responses', {
-            filters: { review_id: review.id },
-            useAdmin: true,
-            limit: 100,
-          });
-          totalResponses += responses.length;
-        } catch {
-          // 忽略錯誤，繼續
+      const empByAppNumber: Record<string, any> = {};
+      for (const emp of employees) {
+        if (emp.employeeappnumber) {
+          empByAppNumber[emp.employeeappnumber] = emp;
         }
       }
 
-      // 統計資料
-      const positive = newReviews.filter((r: any) => r.review_type === 'positive').length;
-      const negative = newReviews.filter((r: any) => r.review_type === 'negative').length;
-      const pending = newReviews.filter(
-        (r: any) => r.status === 'pending' && r.requires_response,
-      ).length;
+      for (const ext of externalReviews) {
+        try {
+          const result = await this.upsertExternalReview(ext, empByAppNumber);
+          if (result === 'created') totalCreated++;
+          else if (result === 'updated') totalUpdated++;
+          else if (result === 'deleted') totalDeleted++;
 
-      // 最新 updated_at
-      let latestUpdatedAt = updatedAfter;
-      for (const r of newReviews) {
-        if (r.updated_at > latestUpdatedAt) latestUpdatedAt = r.updated_at;
+          if (ext.updated_at > latestUpdatedAt) {
+            latestUpdatedAt = ext.updated_at;
+          }
+        } catch (err: any) {
+          this.logger.error(`Failed to upsert review ${ext.id}:`, err.message);
+          totalFailed++;
+        }
       }
 
-      // 更新同步游標（只有有新資料時才更新）
-      if (newReviews.length > 0) {
-        await this.updateSyncCursor('review-data', latestUpdatedAt, newReviews.length);
+      // 更新同步游標
+      if (totalFetched > 0) {
+        await this.updateSyncCursor('review-data', latestUpdatedAt, totalCreated + totalUpdated);
       }
 
       await this.updateSyncLog(syncLog.id, {
-        status: 'completed',
+        status: totalFailed > 0 ? 'partial' : 'completed',
         finished_at: new Date().toISOString(),
-        total_fetched: newReviews.length,
-        total_created: 0,
-        total_updated: newReviews.length,
+        total_fetched: totalFetched,
+        total_created: totalCreated,
+        total_updated: totalUpdated,
         total_skipped: 0,
-        total_failed: 0,
+        total_failed: totalFailed,
         error_details: {
-          positive,
-          negative,
-          pending_responses: pending,
-          total_responses_checked: totalResponses,
+          deleted: totalDeleted,
           sync_window_from: updatedAfter,
         },
       });
 
       this.logger.log(
-        `Review sync completed: ${newReviews.length} reviews (${positive} positive, ${negative} negative, ${pending} pending)`,
+        `Review sync completed: ${totalFetched} fetched, ${totalCreated} created, ${totalUpdated} updated, ${totalDeleted} soft-deleted`,
       );
 
       return this.getSyncLog(syncLog.id);
@@ -984,6 +981,124 @@ export class SyncService {
         error_message: error.message,
       });
       return this.getSyncLog(syncLog.id);
+    }
+  }
+
+  /**
+   * Upsert 單筆來自外部 review-system 的評價
+   * 以 external_review_id 為唯一鍵：
+   *   - 不存在 → 建立
+   *   - 已存在 → 更新
+   *   - deleted_at 有值 → 軟刪除（標記 deleted_at，AI 分析自動略過）
+   */
+  private async upsertExternalReview(
+    ext: ExternalReview,
+    empByAppNumber: Record<string, any>,
+  ): Promise<'created' | 'updated' | 'deleted' | 'skipped'> {
+    const externalId = String(ext.id);
+
+    // 找對應員工 UUID
+    const emp = empByAppNumber[ext.employee_app_number];
+    if (!emp) {
+      this.logger.warn(`Employee not found for app_number: ${ext.employee_app_number}, skipping review ${externalId}`);
+      return 'skipped';
+    }
+
+    // 找實際當事人（如果有代理）
+    let actualEmployeeId: string | null = null;
+    if (ext.actual_employee_app_number && ext.actual_employee_app_number !== ext.employee_app_number) {
+      const actualEmp = empByAppNumber[ext.actual_employee_app_number];
+      actualEmployeeId = actualEmp?.id || null;
+    }
+
+    const client = this.supabase.getAdminClient();
+
+    // 查是否已存在
+    const { data: existing } = await client
+      .from('reviews')
+      .select('id, deleted_at')
+      .eq('external_review_id', externalId)
+      .maybeSingle();
+
+    const reviewData: Record<string, any> = {
+      employee_id: emp.id,
+      actual_employee_id: actualEmployeeId,
+      is_proxy: ext.is_proxy || false,
+      source: ext.source,
+      review_type: ext.review_type,
+      urgency: ext.urgency || 'normal',
+      content: ext.content,
+      event_date: ext.event_date,
+      status: ext.status,
+      response_speed_hours: ext.response_speed_hours,
+      responded_at: ext.responded_at,
+      closed_at: ext.closed_at,
+      deleted_at: ext.deleted_at || null,   // 來源刪除 → 標記軟刪除
+      external_review_id: externalId,
+      synced_at: new Date().toISOString(),
+      requires_response: ext.review_type === 'negative' || ext.review_type === 'other',
+    };
+
+    if (!existing) {
+      // 新增
+      const { error } = await client.from('reviews').insert(reviewData);
+      if (error) throw error;
+
+      // 同步回覆對話
+      if (ext.responses && ext.responses.length > 0) {
+        const { data: newReview } = await client
+          .from('reviews')
+          .select('id')
+          .eq('external_review_id', externalId)
+          .single();
+        if (newReview) {
+          await this.syncReviewResponses(newReview.id, emp.id, ext.responses);
+        }
+      }
+      return 'created';
+    } else {
+      // 更新
+      const { error } = await client
+        .from('reviews')
+        .update(reviewData)
+        .eq('external_review_id', externalId);
+      if (error) throw error;
+
+      // 更新回覆對話
+      if (ext.responses && ext.responses.length > 0) {
+        await this.syncReviewResponses(existing.id, emp.id, ext.responses);
+      }
+
+      return ext.deleted_at ? 'deleted' : 'updated';
+    }
+  }
+
+  /**
+   * 同步評價回覆對話
+   */
+  private async syncReviewResponses(
+    reviewId: string,
+    employeeId: string,
+    responses: ExternalReview['responses'],
+  ): Promise<void> {
+    if (!responses || responses.length === 0) return;
+    const client = this.supabase.getAdminClient();
+
+    for (const resp of responses) {
+      const { error } = await client.from('review_responses').upsert(
+        {
+          review_id: reviewId,
+          employee_id: employeeId,
+          responder_type: resp.responder_type,
+          responder_name: resp.responder_name,
+          content: resp.content,
+          created_at: resp.created_at,
+        },
+        { onConflict: 'review_id,responder_type,created_at', ignoreDuplicates: true },
+      );
+      if (error) {
+        this.logger.warn(`Failed to upsert review response: ${error.message}`);
+      }
     }
   }
 

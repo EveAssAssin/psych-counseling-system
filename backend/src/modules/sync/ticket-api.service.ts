@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
 // API 回傳的訊息格式
@@ -34,10 +35,51 @@ export interface ApiResponse {
   records: OfficialChannelMessage[];
 }
 
+// ============================================
+// Review System API 回傳格式
+// ============================================
+export interface ExternalReview {
+  id: string | number;          // review-system 的原始 ID
+  employee_app_number: string;  // 人員編號
+  employee_erp_id?: string;
+  employee_name?: string;
+  review_type: 'positive' | 'negative' | 'other';
+  source: string;               // google_map / facebook / phone / app / other
+  urgency?: string;             // urgent_plus / urgent / normal
+  content?: string;
+  event_date?: string;
+  status: string;               // pending / responded / closed
+  is_proxy?: boolean;
+  actual_employee_app_number?: string;
+  response_speed_hours?: number;
+  responded_at?: string;
+  closed_at?: string;
+  deleted_at?: string | null;   // 軟刪除時間，null = 正常
+  created_at: string;
+  updated_at: string;
+  responses?: ExternalReviewResponse[];
+}
+
+export interface ExternalReviewResponse {
+  id: string | number;
+  responder_type: 'employee' | 'reviewer';
+  responder_name?: string;
+  content?: string;
+  created_at: string;
+}
+
+export interface ExternalReviewApiResponse {
+  success: boolean;
+  total: number;
+  records: ExternalReview[];
+}
+
 @Injectable()
 export class TicketApiService {
   private readonly logger = new Logger(TicketApiService.name);
   private readonly BASE_URL = 'https://ticket.ruki-ai.com';
+
+  constructor(private readonly configService: ConfigService) {}
 
   /**
    * 取得 LINE 官方帳號訊息
@@ -229,6 +271,57 @@ export class TicketApiService {
     }
 
     return allRecords;
+  }
+
+  /**
+   * 從 review-system 取得指定時間後更新的評價
+   * 支援兩種 API 格式：
+   *   GET /api/reviews/since/{timestamp}
+   *   GET /api/reviews/since/placeholder?updated_after={timestamp}
+   */
+  async getReviewsSince(updatedAfter: string): Promise<ExternalReview[]> {
+    const baseUrl = this.configService.get<string>('externalApis.reviewSystem.url');
+    const apiKey = this.configService.get<string>('externalApis.reviewSystem.apiKey');
+
+    if (!baseUrl) {
+      this.logger.warn('REVIEW_SYSTEM_API_URL not configured, skipping review sync');
+      return [];
+    }
+
+    try {
+      // 優先嘗試 query param 格式
+      const url = `${baseUrl}/api/reviews/since/placeholder`;
+      this.logger.log(`Fetching reviews since ${updatedAfter} from ${baseUrl}`);
+
+      const response = await axios.get<ExternalReviewApiResponse>(url, {
+        params: { updated_after: updatedAfter },
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        timeout: 30000,
+      });
+
+      const data = response.data;
+      this.logger.log(`Fetched ${data.records?.length || 0} reviews from review-system`);
+      return data.records || [];
+    } catch (err: any) {
+      // fallback：嘗試路徑格式 /api/reviews/since/{timestamp}
+      try {
+        const baseUrl2 = this.configService.get<string>('externalApis.reviewSystem.url');
+        const encodedTs = encodeURIComponent(updatedAfter);
+        const url2 = `${baseUrl2}/api/reviews/since/${encodedTs}`;
+
+        const response2 = await axios.get<ExternalReviewApiResponse>(url2, {
+          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+          timeout: 30000,
+        });
+
+        const data2 = response2.data;
+        this.logger.log(`Fetched ${data2.records?.length || 0} reviews (fallback path format)`);
+        return data2.records || [];
+      } catch (err2: any) {
+        this.logger.error('Failed to fetch reviews from review-system:', err2.message);
+        throw err2;
+      }
+    }
   }
 }
 

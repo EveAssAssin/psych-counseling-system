@@ -38,6 +38,10 @@ export const configuration = () => ({
       url: process.env.TICKET_SYSTEM_API_URL,
       apiKey: process.env.TICKET_SYSTEM_API_KEY,
     },
+    reviewSystem: {
+      url: process.env.REVIEW_SYSTEM_API_URL,
+      apiKey: process.env.REVIEW_SYSTEM_API_KEY,
+    },
   },
 
   upload: {

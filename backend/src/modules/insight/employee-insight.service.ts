@@ -384,10 +384,11 @@ export class EmployeeInsightService {
       useAdmin: true,
     });
 
-    // 評價/客訴紀錄（所有時間，客訴是長期重要資料）
-    const allReviews = await this.reviewsService.findByEmployee(employeeId, 200);
+    // 評價/客訴紀錄（所有時間，客訴是長期重要資料；略過軟刪除的評價）
+    const allReviewsRaw = await this.reviewsService.findByEmployee(employeeId, 200);
+    const allReviews = allReviewsRaw.filter((r: any) => !r.deleted_at);
 
-    // 近期評價（限 days 內）
+    // 近期評價（限 days 內，同樣排除軟刪除）
     const reviews = allReviews.filter((r: any) =>
       r.created_at && r.created_at >= sinceStr
     );
