@@ -159,8 +159,27 @@ export class ReviewsService {
       throw error;
     }
 
+    // 補上員工姓名：批次查詢，避免 N+1
+    const reviews = data || [];
+    if (reviews.length > 0) {
+      const employeeIds = [...new Set(reviews.map((r: any) => r.employee_id).filter(Boolean))];
+      const employees = await this.supabase.findMany<any>('employees', {
+        useAdmin: true,
+        limit: employeeIds.length,
+      });
+      const empMap: Record<string, string> = {};
+      for (const emp of employees) {
+        empMap[emp.id] = emp.name;
+      }
+      for (const review of reviews as any[]) {
+        if (!review.employee_name) {
+          review.employee_name = empMap[review.employee_id] || null;
+        }
+      }
+    }
+
     return {
-      data: data || [],
+      data: reviews,
       total: count || 0,
       limit,
       offset,
