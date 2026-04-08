@@ -14,7 +14,8 @@ export default function EntryPage() {
 
   useEffect(() => {
     const appNumber = searchParams.get('app_number');
-    const uid = searchParams.get('uid'); // 目前保留備用，未來可做 LINE 身份驗證
+    // uid 保留備用，未來可做 LINE 身份驗證
+    // const uid = searchParams.get('uid');
 
     if (!appNumber) {
       setError('網址缺少 app_number 參數');
