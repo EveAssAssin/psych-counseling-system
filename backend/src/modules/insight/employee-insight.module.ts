@@ -6,6 +6,7 @@ import { SupabaseModule } from '../supabase/supabase.module';
 import { EmployeesModule } from '../employees/employees.module';
 import { OfficialChannelModule } from '../official-channel/official-channel.module';
 import { ReviewsModule } from '../reviews/reviews.module';
+import { TicketHistoryModule } from '../ticket-history/ticket-history.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ReviewsModule } from '../reviews/reviews.module';
     EmployeesModule,
     OfficialChannelModule,
     ReviewsModule,
+    TicketHistoryModule,
   ],
   controllers: [EmployeeInsightController],
   providers: [EmployeeInsightService],
