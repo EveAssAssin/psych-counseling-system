@@ -16,10 +16,14 @@ import ReviewsPage from './pages/ReviewsPage';
 import ReviewDetailPage from './pages/ReviewDetailPage';
 import ReviewRespondPage from './pages/ReviewRespondPage';
 import DataManagementPage from './pages/DataManagementPage';
+import EntryPage from './pages/EntryPage';
 
 function App() {
   return (
     <Routes>
+      {/* 統一入口：讀取 app_number 自動跳轉（公開） */}
+      <Route path="/entry" element={<EntryPage />} />
+
       {/* 員工回覆頁面（公開） */}
       <Route path="/review/respond/:token" element={<ReviewRespondPage />} />
       
