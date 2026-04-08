@@ -57,6 +57,16 @@ const DATA_SOURCES: DataSource[] = [
     icon: '🎫',
   },
   {
+    id: 'review-data',
+    name: '評價/客訴資料',
+    description: '同步客戶評價、負評客訴、回覆對話紀錄及處理速度追蹤',
+    syncType: 'review_sync',
+    cursorKeys: ['review-data'],
+    triggerFn: () => syncApi.syncReviewData(),
+    schedule: '每日 06:30',
+    icon: '⭐',
+  },
+  {
     id: 'daily',
     name: '每日資料同步',
     description: '多來源每日增量資料同步',

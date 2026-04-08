@@ -35,6 +35,13 @@ export class SyncController {
     return this.syncService.syncTicketHistory(triggeredBy);
   }
 
+  @Post('review-data')
+  @ApiOperation({ summary: '同步評價資料（reviews + 回覆對話）' })
+  @ApiResponse({ status: 201, description: '同步結果' })
+  async syncReviewData(@Query('triggered_by') triggeredBy?: string) {
+    return this.syncService.syncReviewData(triggeredBy);
+  }
+
   @Get('status')
   @ApiOperation({ summary: '取得所有同步狀態（含最後同步時間）' })
   @ApiResponse({ status: 200, description: '同步狀態' })

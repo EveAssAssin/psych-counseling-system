@@ -222,6 +222,8 @@ export const syncApi = {
 
   syncTicketHistory: () => api.post('/sync/ticket-history'),
 
+  syncReviewData: () => api.post('/sync/review-data'),
+
   getStatus: () => api.get('/sync/status'),
 
   getLogs: (limit?: number) => api.get('/sync/logs', { params: { limit } }),

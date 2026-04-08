@@ -893,6 +893,101 @@ export class SyncService {
   }
 
   /**
+   * 同步評價資料（reviews + review_responses）
+   * 評價資料存在於本系統 DB，此同步任務負責追蹤最新評價狀態並產生 sync log
+   */
+  async syncReviewData(triggeredBy?: string): Promise<SyncLog> {
+    const syncLog = await this.createSyncLog('review_sync', 'internal_db', triggeredBy);
+
+    try {
+      await this.updateSyncLog(syncLog.id, { status: 'running' });
+
+      // 取得上次同步時間
+      const lastSync = await this.getSyncCursor('review-data');
+      const now = new Date();
+      const firstSyncStart = new Date(now);
+      firstSyncStart.setDate(firstSyncStart.getDate() - 90);
+      firstSyncStart.setHours(0, 0, 0, 0);
+      const updatedAfter = lastSync?.last_record_time || firstSyncStart.toISOString();
+
+      // 查詢上次同步後更新的評價
+      const updatedReviews = await this.supabase.findMany<any>('reviews', {
+        useAdmin: true,
+        limit: 9999,
+      });
+
+      // 過濾 updated_after
+      const newReviews = updatedReviews.filter(
+        (r: any) => r.updated_at && r.updated_at >= updatedAfter,
+      );
+
+      // 查詢相關回覆（review_responses）
+      let totalResponses = 0;
+      for (const review of newReviews.slice(0, 200)) {
+        try {
+          const responses = await this.supabase.findMany<any>('review_responses', {
+            filters: { review_id: review.id },
+            useAdmin: true,
+            limit: 100,
+          });
+          totalResponses += responses.length;
+        } catch {
+          // 忽略錯誤，繼續
+        }
+      }
+
+      // 統計資料
+      const positive = newReviews.filter((r: any) => r.review_type === 'positive').length;
+      const negative = newReviews.filter((r: any) => r.review_type === 'negative').length;
+      const pending = newReviews.filter(
+        (r: any) => r.status === 'pending' && r.requires_response,
+      ).length;
+
+      // 最新 updated_at
+      let latestUpdatedAt = updatedAfter;
+      for (const r of newReviews) {
+        if (r.updated_at > latestUpdatedAt) latestUpdatedAt = r.updated_at;
+      }
+
+      // 更新同步游標（只有有新資料時才更新）
+      if (newReviews.length > 0) {
+        await this.updateSyncCursor('review-data', latestUpdatedAt, newReviews.length);
+      }
+
+      await this.updateSyncLog(syncLog.id, {
+        status: 'completed',
+        finished_at: new Date().toISOString(),
+        total_fetched: newReviews.length,
+        total_created: 0,
+        total_updated: newReviews.length,
+        total_skipped: 0,
+        total_failed: 0,
+        error_details: {
+          positive,
+          negative,
+          pending_responses: pending,
+          total_responses_checked: totalResponses,
+          sync_window_from: updatedAfter,
+        },
+      });
+
+      this.logger.log(
+        `Review sync completed: ${newReviews.length} reviews (${positive} positive, ${negative} negative, ${pending} pending)`,
+      );
+
+      return this.getSyncLog(syncLog.id);
+    } catch (error) {
+      this.logger.error('Review sync failed:', error);
+      await this.updateSyncLog(syncLog.id, {
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: error.message,
+      });
+      return this.getSyncLog(syncLog.id);
+    }
+  }
+
+  /**
    * 更新同步游標
    */
   private async updateSyncCursor(syncType: string, lastRecordTime: string, count: number): Promise<void> {

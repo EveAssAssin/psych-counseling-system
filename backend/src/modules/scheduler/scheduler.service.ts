@@ -98,6 +98,23 @@ export class SchedulerService implements OnModuleInit {
   }
 
   /**
+   * 每日 06:30 執行評價資料同步
+   */
+  @Cron('30 6 * * *')
+  async dailyReviewSync() {
+    if (!this.isEnabled) return;
+
+    this.logger.log('Starting daily review data sync');
+
+    try {
+      const result = await this.syncService.syncReviewData();
+      this.logger.log(`Daily review sync completed: ${result.total_updated} reviews processed`);
+    } catch (error) {
+      this.logger.error('Daily review sync failed:', error);
+    }
+  }
+
+  /**
    * 每日 07:00 執行多來源資料同步
    */
   @Cron('0 7 * * *')
@@ -246,5 +263,13 @@ export class SchedulerService implements OnModuleInit {
   async triggerTicketHistorySync(): Promise<any> {
     this.logger.log('Manual ticket history sync triggered');
     return this.syncService.syncTicketHistory('manual');
+  }
+
+  /**
+   * 手動觸發評價資料同步
+   */
+  async triggerReviewSync(): Promise<any> {
+    this.logger.log('Manual review sync triggered');
+    return this.syncService.syncReviewData('manual');
   }
 }
