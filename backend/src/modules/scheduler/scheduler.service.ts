@@ -266,10 +266,37 @@ export class SchedulerService implements OnModuleInit {
   }
 
   /**
+   * 每日 06:45 從 review-system 同步員工客訴/回報統計
+   */
+  @Cron('45 6 * * *')
+  async dailyCustomerFeedbackStatsSync() {
+    if (!this.isEnabled) return;
+
+    this.logger.log('Starting daily customer feedback stats sync');
+
+    try {
+      const result = await this.syncService.syncCustomerFeedbackStats();
+      this.logger.log(
+        `Daily customer feedback stats sync completed: ${result.total_fetched} fetched, ${result.total_created} created, ${result.total_updated} updated`,
+      );
+    } catch (error) {
+      this.logger.error('Daily customer feedback stats sync failed:', error);
+    }
+  }
+
+  /**
    * 手動觸發評價資料同步
    */
   async triggerReviewSync(): Promise<any> {
     this.logger.log('Manual review sync triggered');
     return this.syncService.syncReviewData('manual');
+  }
+
+  /**
+   * 手動觸發客戶回報統計同步
+   */
+  async triggerCustomerFeedbackStatsSync(): Promise<any> {
+    this.logger.log('Manual customer feedback stats sync triggered');
+    return this.syncService.syncCustomerFeedbackStats('manual');
   }
 }

@@ -36,7 +36,7 @@ export interface ApiResponse {
 }
 
 // ============================================
-// Review System API 回傳格式
+// Review System API 回傳格式（舊式 /api/reviews/since 端點）
 // ============================================
 export interface ExternalReview {
   id: string | number;          // review-system 的原始 ID
@@ -72,6 +72,45 @@ export interface ExternalReviewApiResponse {
   success: boolean;
   total: number;
   records: ExternalReview[];
+}
+
+// ============================================
+// Psych-Sync API 回傳格式（官方 /psych-sync/reviews 端點）
+// 用 x-api-key header 驗證，回傳每位員工的客訴/回報統計摘要
+// ============================================
+export interface PsychSyncFeedbackStats {
+  app_number: string;
+  employee_name?: string;
+  store_name?: string;
+  total_feedbacks: number;
+  pending_count: number;
+  processing_count: number;
+  resolved_count: number;
+  closed_count: number;
+  by_type?: {
+    complaint?: number;
+    suggestion?: number;
+    praise?: number;
+    inquiry?: number;
+    other?: number;
+  };
+  by_urgency?: {
+    urgent_plus?: number;
+    urgent?: number;
+    normal?: number;
+  };
+  latest_feedback_at?: string | null;
+  [key: string]: any; // 預留彈性欄位
+}
+
+export interface PsychSyncReviewsResponse {
+  success: boolean;
+  total_employees?: number;
+  generated_at?: string;
+  employees?: PsychSyncFeedbackStats[];
+  data?: PsychSyncFeedbackStats[];     // 相容不同回傳格式
+  records?: PsychSyncFeedbackStats[];  // 相容不同回傳格式
+  [key: string]: any;
 }
 
 @Injectable()
@@ -274,10 +313,11 @@ export class TicketApiService {
   }
 
   /**
-   * 從 review-system 取得指定時間後更新的評價
+   * 從 review-system 取得指定時間後更新的評價（增量同步）
    * 支援兩種 API 格式：
    *   GET /api/reviews/since/{timestamp}
    *   GET /api/reviews/since/placeholder?updated_after={timestamp}
+   * 驗證方式：x-api-key header（REVIEW_SYSTEM_API_KEY / PSYCH_SYNC_API_KEY）
    */
   async getReviewsSince(updatedAfter: string): Promise<ExternalReview[]> {
     const baseUrl = this.configService.get<string>('externalApis.reviewSystem.url');
@@ -288,6 +328,8 @@ export class TicketApiService {
       return [];
     }
 
+    const authHeaders = apiKey ? { 'x-api-key': apiKey } : {};
+
     try {
       // 優先嘗試 query param 格式
       const url = `${baseUrl}/api/reviews/since/placeholder`;
@@ -295,7 +337,7 @@ export class TicketApiService {
 
       const response = await axios.get<ExternalReviewApiResponse>(url, {
         params: { updated_after: updatedAfter },
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        headers: authHeaders,
         timeout: 30000,
       });
 
@@ -305,12 +347,11 @@ export class TicketApiService {
     } catch (err: any) {
       // fallback：嘗試路徑格式 /api/reviews/since/{timestamp}
       try {
-        const baseUrl2 = this.configService.get<string>('externalApis.reviewSystem.url');
         const encodedTs = encodeURIComponent(updatedAfter);
-        const url2 = `${baseUrl2}/api/reviews/since/${encodedTs}`;
+        const url2 = `${baseUrl}/api/reviews/since/${encodedTs}`;
 
         const response2 = await axios.get<ExternalReviewApiResponse>(url2, {
-          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+          headers: authHeaders,
           timeout: 30000,
         });
 
@@ -321,6 +362,46 @@ export class TicketApiService {
         this.logger.error('Failed to fetch reviews from review-system:', err2.message);
         throw err2;
       }
+    }
+  }
+
+  /**
+   * 呼叫 review-system 官方同步端點
+   * GET /psych-sync/reviews
+   * 驗證：x-api-key header（文件中 PSYCH_SYNC_API_KEY = lohas-psych-sync-2026-secret）
+   * 回傳每位員工的客戶回報統計摘要（投訴數、評分、待處理案件數等）
+   */
+  async getPsychSyncReviews(): Promise<PsychSyncFeedbackStats[]> {
+    const baseUrl = this.configService.get<string>('externalApis.reviewSystem.url');
+    const apiKey = this.configService.get<string>('externalApis.reviewSystem.apiKey');
+
+    if (!baseUrl) {
+      this.logger.warn('REVIEW_SYSTEM_API_URL not configured, skipping psych-sync');
+      return [];
+    }
+
+    try {
+      const url = `${baseUrl}/psych-sync/reviews`;
+      this.logger.log(`Fetching psych-sync reviews from ${url}`);
+
+      const response = await axios.get<PsychSyncReviewsResponse>(url, {
+        headers: apiKey ? { 'x-api-key': apiKey } : {},
+        timeout: 45000, // Render 免費方案可能有冷啟動延遲
+      });
+
+      const data = response.data;
+      // 相容多種回傳格式
+      const employees =
+        data.employees ||
+        data.data ||
+        data.records ||
+        (Array.isArray(data) ? data : []);
+
+      this.logger.log(`Fetched psych-sync stats for ${employees.length} employees`);
+      return employees;
+    } catch (err: any) {
+      this.logger.error('Failed to fetch psych-sync reviews:', err.message);
+      throw err;
     }
   }
 }

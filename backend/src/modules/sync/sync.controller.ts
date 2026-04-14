@@ -42,6 +42,13 @@ export class SyncController {
     return this.syncService.syncReviewData(triggeredBy);
   }
 
+  @Post('customer-feedback-stats')
+  @ApiOperation({ summary: '同步客戶回報統計（從 review-system /psych-sync/reviews）' })
+  @ApiResponse({ status: 201, description: '同步結果' })
+  async syncCustomerFeedbackStats(@Query('triggered_by') triggeredBy?: string) {
+    return this.syncService.syncCustomerFeedbackStats(triggeredBy);
+  }
+
   @Get('status')
   @ApiOperation({ summary: '取得所有同步狀態（含最後同步時間）' })
   @ApiResponse({ status: 200, description: '同步狀態' })

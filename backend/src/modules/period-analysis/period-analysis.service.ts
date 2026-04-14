@@ -107,30 +107,31 @@ export class PeriodAnalysisService {
 
     this.logger.log(`Period analysis: ${startISO} ~ ${endISO}, employee: ${req.employee_id || 'all'}`);
 
-    // ── 平行抓取所有資料 ──
-    const [messages, tickets, ticketConvs, reviews, conversations, employees] = await Promise.all([
+    // ── 平行抓取所有資料（含客訴統計） ──
+    const [messages, tickets, ticketConvs, reviews, conversations, employees, feedbackStats] = await Promise.all([
       this.fetchMessages(startISO, endISO, req.employee_id),
       this.fetchTickets(startISO, endISO, req.employee_id),
       this.fetchTicketConversations(startISO, endISO, req.employee_id),
       this.fetchReviews(startISO, endISO, req.employee_id),
       this.fetchConversations(startISO, endISO, req.employee_id),
       this.fetchEmployees(req.employee_id),
+      this.fetchCustomerFeedbackStats(req.employee_id),
     ]);
 
     // ── 計算統計 ──
     const dataStats = this.calcDataStats(messages, tickets, reviews, conversations, employees, startISO, endISO, days);
 
     // ── 計算熱門議題 ──
-    const hotTopics = this.calcHotTopics(tickets, ticketConvs, reviews, conversations, messages);
+    const hotTopics = this.calcHotTopics(tickets, ticketConvs, reviews, conversations, messages, feedbackStats);
 
     // ── 計算高風險員工（全體模式） ──
-    const riskEmployees = req.employee_id ? [] : this.calcRiskEmployees(employees, tickets, reviews, messages);
+    const riskEmployees = req.employee_id ? [] : this.calcRiskEmployees(employees, tickets, reviews, messages, feedbackStats);
 
     // ── 計算時間軸摘要 ──
     const timelineSummary = this.calcTimeline(tickets, reviews, conversations, messages, startISO, endISO);
 
     // ── AI 分析 ──
-    const aiResult = await this.callAI(req, dataStats, hotTopics, riskEmployees, timelineSummary, employees, days, { messages, tickets, reviews });
+    const aiResult = await this.callAI(req, dataStats, hotTopics, riskEmployees, timelineSummary, employees, days, { messages, tickets, reviews, feedbackStats });
 
     // ── 取得單一員工資料 ──
     let employeeInfo: PeriodAnalysisResult['employee'];
@@ -253,6 +254,29 @@ export class PeriodAnalysisService {
     } catch { return []; }
   }
 
+  /**
+   * 從 customer_feedback_stats 表讀取客訴統計（由 review-system 每日同步）
+   * 單一員工模式：只取該員工；全體模式：取所有有資料的員工
+   */
+  private async fetchCustomerFeedbackStats(employeeId?: string): Promise<any[]> {
+    try {
+      const client = this.supabase.getAdminClient();
+      let q = client
+        .from('customer_feedback_stats')
+        .select('*')
+        .order('total_feedbacks', { ascending: false })
+        .limit(500);
+
+      if (employeeId) {
+        // 透過 employee_id 過濾
+        q = q.eq('employee_id', employeeId);
+      }
+
+      const { data } = await q;
+      return data || [];
+    } catch { return []; }
+  }
+
   // ============================================
   // 統計計算
   // ============================================
@@ -308,7 +332,7 @@ export class PeriodAnalysisService {
 
   private calcHotTopics(
     tickets: any[], ticketConvs: any[], reviews: any[],
-    conversations: any[], messages: any[],
+    conversations: any[], messages: any[], feedbackStats: any[] = [],
   ): TopicItem[] {
     const topicCount: Record<string, { count: number; examples: Set<string> }> = {};
 
@@ -350,6 +374,41 @@ export class PeriodAnalysisService {
     const keywords = this.extractMessageKeywords(messages);
     for (const [kw, cnt] of Object.entries(keywords)) {
       if (cnt >= 3) addTopic(`LINE 訊息：${kw}`, `出現 ${cnt} 次`);
+    }
+
+    // 客訴/回報統計（從 review-system 同步）
+    // 把所有員工的 by_type 合計成議題
+    const feedbackTypeTotals: Record<string, number> = {};
+    const feedbackUrgencyTotals: Record<string, number> = {};
+    for (const stat of feedbackStats) {
+      if (stat.by_type) {
+        for (const [type, cnt] of Object.entries(stat.by_type as Record<string, number>)) {
+          feedbackTypeTotals[type] = (feedbackTypeTotals[type] || 0) + (cnt || 0);
+        }
+      }
+      if (stat.by_urgency) {
+        for (const [urgency, cnt] of Object.entries(stat.by_urgency as Record<string, number>)) {
+          feedbackUrgencyTotals[urgency] = (feedbackUrgencyTotals[urgency] || 0) + (cnt || 0);
+        }
+      }
+    }
+    const feedbackTypeLabel: Record<string, string> = {
+      complaint: '客訴/投訴',
+      suggestion: '客戶建議',
+      praise: '客戶稱讚',
+      inquiry: '客戶詢問',
+      other: '其他客服案件',
+    };
+    for (const [type, cnt] of Object.entries(feedbackTypeTotals)) {
+      if (cnt >= 1) {
+        const label = feedbackTypeLabel[type] || type;
+        addTopic(`客服：${label}`, `共 ${cnt} 筆`);
+      }
+    }
+    // 緊急案件特別標記
+    const urgentTotal = (feedbackUrgencyTotals['urgent_plus'] || 0) + (feedbackUrgencyTotals['urgent'] || 0);
+    if (urgentTotal >= 2) {
+      addTopic('客服：緊急/特急案件', `共 ${urgentTotal} 筆`);
     }
 
     const total = Object.values(topicCount).reduce((s, v) => s + v.count, 0) || 1;
@@ -398,10 +457,12 @@ export class PeriodAnalysisService {
 
   private calcRiskEmployees(
     employees: any[], tickets: any[], reviews: any[], messages: any[],
+    feedbackStats: any[] = [],
   ): RiskEmployee[] {
     const empRisk: Record<string, {
       name: string; department?: string; store_name?: string;
       negReviews: number; urgentTickets: number; pendingReviews: number;
+      feedbackComplaints: number; feedbackPending: number; feedbackUrgent: number;
       signals: string[];
     }> = {};
 
@@ -413,6 +474,9 @@ export class PeriodAnalysisService {
         negReviews: 0,
         urgentTickets: 0,
         pendingReviews: 0,
+        feedbackComplaints: 0,
+        feedbackPending: 0,
+        feedbackUrgent: 0,
         signals: [],
       };
     }
@@ -428,6 +492,19 @@ export class PeriodAnalysisService {
       if (t.priority === 'urgent' || t.priority === 'urgent_plus') empRisk[t.employee_id].urgentTickets++;
     }
 
+    // 加入客訴統計（以 employee_id 對應）
+    for (const stat of feedbackStats) {
+      const empId = stat.employee_id;
+      if (!empId || !empRisk[empId]) continue;
+      const complaints = stat.by_type?.complaint || 0;
+      const pending = stat.pending_count || 0;
+      const urgentPlus = stat.by_urgency?.urgent_plus || 0;
+      const urgent = stat.by_urgency?.urgent || 0;
+      empRisk[empId].feedbackComplaints += complaints;
+      empRisk[empId].feedbackPending += pending;
+      empRisk[empId].feedbackUrgent += urgentPlus + urgent;
+    }
+
     const result: RiskEmployee[] = [];
 
     for (const [id, data] of Object.entries(empRisk)) {
@@ -437,6 +514,10 @@ export class PeriodAnalysisService {
       if (data.negReviews >= 3) { signals.push(`${data.negReviews} 筆負評`); score += data.negReviews; }
       if (data.urgentTickets >= 3) { signals.push(`${data.urgentTickets} 筆緊急工單`); score += data.urgentTickets; }
       if (data.pendingReviews >= 2) { signals.push(`${data.pendingReviews} 筆待處理評價`); score += data.pendingReviews * 2; }
+      // 客訴維度
+      if (data.feedbackComplaints >= 3) { signals.push(`${data.feedbackComplaints} 筆客訴`); score += data.feedbackComplaints; }
+      if (data.feedbackPending >= 3) { signals.push(`${data.feedbackPending} 筆待處理客服案件`); score += data.feedbackPending; }
+      if (data.feedbackUrgent >= 2) { signals.push(`${data.feedbackUrgent} 筆緊急客服案件`); score += data.feedbackUrgent * 2; }
 
       if (score >= 8) {
         result.push({
@@ -518,7 +599,7 @@ export class PeriodAnalysisService {
     timeline: TimelineEvent[],
     employees: any[],
     days: number,
-    rawData?: { messages: any[]; tickets: any[]; reviews: any[] },
+    rawData?: { messages: any[]; tickets: any[]; reviews: any[]; feedbackStats?: any[] },
   ): Promise<{ summary: string; key_findings: string[]; recommended_actions: string[] }> {
     if (!this.anthropic) {
       return {
@@ -555,6 +636,32 @@ export class PeriodAnalysisService {
     // 週趨勢是否有異常高峰
     const peakWeek = timeline.reduce((max, t) => t.count > max.count ? t : max, { count: 0, date: '', summary: '' } as any);
 
+    // 客訴統計摘要（來自 review-system 同步）
+    const feedbackStats = rawData?.feedbackStats || [];
+    let feedbackSummaryText = '';
+    if (feedbackStats.length > 0) {
+      const totalFb = feedbackStats.reduce((s: number, stat: any) => s + (stat.total_feedbacks || 0), 0);
+      const totalComplaints = feedbackStats.reduce((s: number, stat: any) => s + (stat.by_type?.complaint || 0), 0);
+      const totalPraise = feedbackStats.reduce((s: number, stat: any) => s + (stat.by_type?.praise || 0), 0);
+      const totalPending = feedbackStats.reduce((s: number, stat: any) => s + (stat.pending_count || 0), 0);
+      const totalUrgent = feedbackStats.reduce(
+        (s: number, stat: any) => s + (stat.by_urgency?.urgent_plus || 0) + (stat.by_urgency?.urgent || 0), 0
+      );
+
+      // 客訴最多的員工
+      const topComplainers = feedbackStats
+        .filter((s: any) => (s.by_type?.complaint || 0) >= 2)
+        .sort((a: any, b: any) => (b.by_type?.complaint || 0) - (a.by_type?.complaint || 0))
+        .slice(0, 3)
+        .map((s: any) => `${s.employee_name || s.employee_app_number}（${s.by_type?.complaint} 筆客訴）`)
+        .join('、');
+
+      feedbackSummaryText = `【客訴/客服回報統計（來自客服系統同步）】
+總案件數：${totalFb} 筆（涵蓋 ${feedbackStats.length} 位員工）
+投訴：${totalComplaints} 筆　稱讚：${totalPraise} 筆　待處理：${totalPending} 筆　緊急/特急：${totalUrgent} 筆
+${topComplainers ? `客訴集中員工：${topComplainers}` : ''}`;
+    }
+
     const prompt = `請分析以下 ${days} 天（${req.start_date} ~ ${req.end_date}）的組織資料，從心理健康與工作壓力角度給出洞察：
 
 【資料量概覽】
@@ -565,6 +672,7 @@ LINE 訊息：${stats.official_messages} 則（員工主動發送）
 主管面談：${stats.conversations} 筆
 ${peakWeek.count > 0 ? `活動高峰：${peakWeek.date}（${peakWeek.summary}）` : ''}
 
+${feedbackSummaryText ? feedbackSummaryText + '\n' : ''}
 【熱門議題排行（含 LINE 關鍵詞）】
 ${topicsText || '本期資料不足，無法統計議題'}
 

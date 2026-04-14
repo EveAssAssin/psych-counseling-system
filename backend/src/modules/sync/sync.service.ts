@@ -4,7 +4,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeesService } from '../employees/employees.service';
 import { StoresService } from '../stores/stores.service';
 import { LefthandApiService, EmployeeApiData, StoreApiData } from './lefthand-api.service';
-import { TicketApiService, OfficialChannelMessage, TicketHistoryRecord, ExternalReview } from './ticket-api.service';
+import { TicketApiService, OfficialChannelMessage, TicketHistoryRecord, ExternalReview, PsychSyncFeedbackStats } from './ticket-api.service';
 
 export interface SyncLog {
   id: string;
@@ -879,6 +879,119 @@ export class SyncService {
     }
 
     return result;
+  }
+
+  // ============================================
+  // 客戶回報統計同步（review-system /psych-sync/reviews）
+  // ============================================
+
+  private readonly CFS_TABLE = 'customer_feedback_stats';
+
+  /**
+   * 從 review-system 拉取每位員工的客訴/回報統計，寫入 customer_feedback_stats 表
+   * 每次全量覆蓋（UPSERT by employee_app_number）
+   * 建議每日排程執行一次
+   */
+  async syncCustomerFeedbackStats(triggeredBy?: string): Promise<SyncLog> {
+    const syncLog = await this.createSyncLog('customer_feedback_stats', 'review-system', triggeredBy);
+
+    try {
+      await this.updateSyncLog(syncLog.id, { status: 'running' });
+
+      // 呼叫 review-system 官方同步端點
+      const statsArray: PsychSyncFeedbackStats[] = await this.ticketApi.getPsychSyncReviews();
+
+      let totalFetched = statsArray.length;
+      let totalCreated = 0;
+      let totalUpdated = 0;
+      let totalFailed = 0;
+
+      // 取得員工 app_number → UUID 對照表
+      const employees = await this.supabase.findMany<any>('employees', {
+        filters: { is_active: true },
+        useAdmin: true,
+        limit: 9999,
+      });
+      const empByAppNumber: Record<string, any> = {};
+      for (const emp of employees) {
+        if (emp.employeeappnumber) {
+          empByAppNumber[emp.employeeappnumber] = emp;
+        }
+      }
+
+      const client = this.supabase.getAdminClient();
+
+      for (const stat of statsArray) {
+        try {
+          const emp = empByAppNumber[stat.app_number];
+          const employeeId = emp?.id || null;
+
+          const record = {
+            employee_id: employeeId,
+            employee_app_number: stat.app_number,
+            employee_name: stat.employee_name || emp?.name || null,
+            store_name: stat.store_name || emp?.store_name || null,
+            total_feedbacks: stat.total_feedbacks || 0,
+            pending_count: stat.pending_count || 0,
+            processing_count: stat.processing_count || 0,
+            resolved_count: stat.resolved_count || 0,
+            closed_count: stat.closed_count || 0,
+            by_type: stat.by_type || {},
+            by_urgency: stat.by_urgency || {},
+            latest_feedback_at: stat.latest_feedback_at || null,
+            raw_data: stat,
+            synced_at: new Date().toISOString(),
+          };
+
+          // UPSERT by employee_app_number
+          const { data: existing } = await client
+            .from(this.CFS_TABLE)
+            .select('id')
+            .eq('employee_app_number', stat.app_number)
+            .maybeSingle();
+
+          if (existing) {
+            const { error } = await client
+              .from(this.CFS_TABLE)
+              .update(record)
+              .eq('employee_app_number', stat.app_number);
+            if (error) throw error;
+            totalUpdated++;
+          } else {
+            const { error } = await client.from(this.CFS_TABLE).insert(record);
+            if (error) throw error;
+            totalCreated++;
+          }
+        } catch (err: any) {
+          this.logger.error(`Failed to upsert feedback stats for ${stat.app_number}:`, err.message);
+          totalFailed++;
+        }
+      }
+
+      await this.updateSyncLog(syncLog.id, {
+        status: totalFailed > 0 ? 'partial' : 'completed',
+        finished_at: new Date().toISOString(),
+        total_fetched: totalFetched,
+        total_created: totalCreated,
+        total_updated: totalUpdated,
+        total_skipped: 0,
+        total_failed: totalFailed,
+      });
+
+      this.logger.log(
+        `Customer feedback stats sync completed: ${totalFetched} fetched, ${totalCreated} created, ${totalUpdated} updated, ${totalFailed} failed`,
+      );
+
+      return this.getSyncLog(syncLog.id);
+    } catch (error) {
+      this.logger.error('Customer feedback stats sync failed:', error);
+      await this.updateSyncLog(syncLog.id, {
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: error.message,
+      });
+      return this.getSyncLog(syncLog.id);
+    }
   }
 
   /**
