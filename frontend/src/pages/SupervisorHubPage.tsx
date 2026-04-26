@@ -193,7 +193,12 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
     const params: any = { search: listSearch || undefined, limit: 50 };
     if (m !== 'all') params.supervisor_id = supervisor.identifier;
     axios.get(`${API}/supervisor-hub/notes`, { params })
-      .then(r => setNotes(r.data?.data || [])).finally(() => setLoading(false));
+      .then(r => setNotes(r.data?.data || []))
+      .catch(e => {
+        console.error('loadNotes error:', e);
+        alert('載入記錄失敗：' + (e.response?.data?.message || e.message));
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { if (mode === 'list' || mode === 'all') loadNotes(mode); }, [mode, listSearch]);
@@ -247,7 +252,7 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
       setSaved(true);
       setContent(''); setSelectedEmp(null); setExtName(''); setIsExternal(false);
       setCategoryId(''); setPendingFiles([]);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => { setSaved(false); setMode('list'); }, 1200);
     } catch (e: any) { alert(e.response?.data?.message || '儲存失敗'); }
     setSaving(false);
   };
