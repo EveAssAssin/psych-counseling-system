@@ -13,6 +13,13 @@ interface Note { id: string; content: string; category_name?: string; supervisor
 interface AiMessage { role: 'user' | 'assistant'; content: string; }
 interface AiSession { id: string; employee_name?: string; ai_type: string; title: string; created_at: string; }
 interface AiPersona { id: string; ai_type: string; persona_name: string; system_prompt: string; model?: string; }
+interface EmployeeSummary {
+  employee: { name: string; store_name?: string; title?: string; department?: string; hire_date?: string; is_active: boolean; is_leave: boolean; leave_type?: string; } | null;
+  notes: any[];
+  conversations: any[];
+  reviews: any[];
+  riskFlags: any[];
+}
 
 const AI_LABELS: Record<string, { label: string; color: string; emoji: string }> = {
   claude: { label: 'Claude',  color: '#7c3aed', emoji: '🟣' },
@@ -487,6 +494,9 @@ function getFileEmoji(mimeType: string): string {
 function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: string; role: string } }) {
   const [step, setStep] = useState<'select' | 'chat'>('select');
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [empSummary, setEmpSummary] = useState<EmployeeSummary | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState<Record<string, boolean>>({ notes: true, conversations: false, reviews: false, riskFlags: true });
   const [personas, setPersonas] = useState<Record<string, string>>({});
   const [aiType, setAiType] = useState<'claude' | 'openai' | 'gemini'>('claude');
   const [session, setSession] = useState<AiSession | null>(null);
@@ -498,16 +508,24 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // 載入 AI 人格簡介
     axios.get(`${API}/supervisor-hub/ai/personas`).then(r => {
       const map: Record<string, string> = {};
       (r.data || []).forEach((p: any) => {
-        // 取 system_prompt 前 40 字當摘要
         map[p.ai_type] = p.system_prompt?.slice(0, 40) || '';
       });
       setPersonas(map);
     });
   }, []);
+
+  // 選人後自動載入資料彙整
+  useEffect(() => {
+    if (!selectedEmp) { setEmpSummary(null); return; }
+    setLoadingSummary(true);
+    axios.get(`${API}/supervisor-hub/ai/employee-summary/${selectedEmp.app_number}`)
+      .then(r => setEmpSummary(r.data))
+      .catch(() => setEmpSummary(null))
+      .finally(() => setLoadingSummary(false));
+  }, [selectedEmp]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -565,6 +583,7 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
   };
 
   const aiInfo = AI_LABELS[aiType] || AI_LABELS.claude;
+  const toggleSection = (key: string) => setSummaryOpen(p => ({ ...p, [key]: !p[key] }));
 
   if (step === 'select') {
     return (
@@ -597,7 +616,7 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
 
         <div style={cardStyle}>
           <label style={labelStyle}>搜尋人員</label>
-          <EmployeeSearchPicker selected={selectedEmp} onSelect={setSelectedEmp} placeholder="輸入姓名或員工編號..." />
+          <EmployeeSearchPicker selected={selectedEmp} onSelect={emp => { setSelectedEmp(emp); }} placeholder="輸入姓名或員工編號..." />
 
           <label style={labelStyle}>選擇 AI</label>
           <div style={{ display:'flex', gap:8, marginBottom:4 }}>
@@ -611,7 +630,6 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
               </button>
             ))}
           </div>
-          {/* AI 人格摘要 */}
           {personas[aiType] && (
             <div style={{ background:'#f8f4ff', borderRadius:8, padding:'8px 12px', marginBottom:12, fontSize:12, color:'#6d28d9', lineHeight:1.5 }}>
               💬 {personas[aiType]}…
@@ -623,6 +641,22 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
             {aiInfo.emoji} 開始 AI 快問
           </button>
         </div>
+
+        {/* ── 人員資料彙整 ── */}
+        {selectedEmp && (
+          <div style={{ marginTop:8 }}>
+            {loadingSummary ? (
+              <div style={{ ...cardStyle, textAlign:'center', color:'#94a3b8', padding:24 }}>載入人員資料中...</div>
+            ) : empSummary && (
+              <EmployeeSummaryPanel
+                emp={selectedEmp}
+                summary={empSummary}
+                open={summaryOpen}
+                onToggle={toggleSection}
+              />
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -928,6 +962,177 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────
+//  人員資料彙整面板
+// ────────────────────────────────────────────
+function EmployeeSummaryPanel({
+  emp, summary, open, onToggle,
+}: {
+  emp: Employee;
+  summary: EmployeeSummary;
+  open: Record<string, boolean>;
+  onToggle: (key: string) => void;
+}) {
+  const { employee, notes, conversations, reviews, riskFlags } = summary;
+  const openFlags = riskFlags.filter((f: any) => ['open', 'acknowledged', 'in_progress'].includes(f.status));
+
+  const SectionHeader = ({ id, icon, label, count, badgeColor }: { id: string; icon: string; label: string; count: number; badgeColor?: string }) => (
+    <button onClick={() => onToggle(id)}
+      style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'10px 14px', background: open[id] ? '#f8f4ff':'#f8fafc', border:'none', borderRadius: open[id] ? '10px 10px 0 0':'10px', cursor:'pointer', textAlign:'left', marginBottom: open[id] ? 0 : 8 }}>
+      <span style={{ fontSize:16 }}>{icon}</span>
+      <span style={{ flex:1, fontWeight:700, color:'#1e293b', fontSize:13 }}>{label}</span>
+      <span style={{ background: badgeColor || (count > 0 ? '#ede9fe':'#e2e8f0'), color: badgeColor ? '#fff' : (count > 0 ? '#7c3aed':'#94a3b8'), borderRadius:99, padding:'1px 8px', fontSize:11, fontWeight:700 }}>{count}</span>
+      <span style={{ color:'#94a3b8', fontSize:12 }}>{open[id] ? '▲':'▼'}</span>
+    </button>
+  );
+
+  return (
+    <div>
+      {/* 標題卡 */}
+      <div style={{ ...cardStyle, background:'linear-gradient(135deg,#7c3aed,#a855f7)', padding:'14px 16px', marginBottom:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ width:40, height:40, borderRadius:'50%', background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <span style={{ fontSize:20 }}>👤</span>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:800, fontSize:16, color:'#fff' }}>{emp.name}</div>
+            <div style={{ fontSize:12, color:'rgba(255,255,255,0.8)', marginTop:2 }}>
+              {employee?.store_name && `${employee.store_name}　`}
+              {employee?.title && `${employee.title}　`}
+              {emp.app_number}
+            </div>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:4, alignItems:'flex-end' }}>
+            {openFlags.length > 0 && (
+              <span style={{ background:'#ef4444', color:'#fff', borderRadius:99, padding:'2px 8px', fontSize:11, fontWeight:700 }}>⚠️ {openFlags.length} 風險</span>
+            )}
+            {employee?.is_leave && (
+              <span style={{ background:'#fbbf24', color:'#78350f', borderRadius:99, padding:'2px 8px', fontSize:11, fontWeight:700 }}>請假中</span>
+            )}
+            {employee && !employee.is_active && (
+              <span style={{ background:'#94a3b8', color:'#fff', borderRadius:99, padding:'2px 8px', fontSize:11, fontWeight:700 }}>已停用</span>
+            )}
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:12, marginTop:10 }}>
+          {[
+            { label:'隨手記', val: notes.length, color:'#c4b5fd' },
+            { label:'對話', val: conversations.length, color:'#93c5fd' },
+            { label:'評價', val: reviews.length, color:'#6ee7b7' },
+            { label:'風險標記', val: riskFlags.length, color: openFlags.length > 0 ? '#fca5a5':'#cbd5e1' },
+          ].map(item => (
+            <div key={item.label} style={{ textAlign:'center', flex:1 }}>
+              <div style={{ fontWeight:800, fontSize:18, color: item.color }}>{item.val}</div>
+              <div style={{ fontSize:10, color:'rgba(255,255,255,0.7)' }}>{item.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 風險標記 */}
+      {riskFlags.length > 0 && (
+        <div style={{ marginBottom:8 }}>
+          <SectionHeader id="riskFlags" icon="⚠️" label="風險標記" count={riskFlags.length} badgeColor={openFlags.length > 0 ? '#ef4444' : undefined} />
+          {open.riskFlags && (
+            <div style={{ border:'1px solid #fecaca', borderTop:'none', borderRadius:'0 0 10px 10px', overflow:'hidden', marginBottom:8 }}>
+              {riskFlags.map((f: any) => {
+                const severityStyle: Record<string, string> = { critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#22c55e' };
+                const statusLabel: Record<string, string> = { open:'未處理', acknowledged:'已確認', in_progress:'處理中', resolved:'已解決', false_positive:'誤判' };
+                return (
+                  <div key={f.id} style={{ padding:'10px 14px', borderBottom:'1px solid #fef2f2', background:'#fff' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                      <span style={{ width:8, height:8, borderRadius:'50%', background: severityStyle[f.severity] || '#94a3b8', flexShrink:0, display:'inline-block' }} />
+                      <span style={{ fontWeight:700, color:'#1e293b', fontSize:13, flex:1 }}>{f.title}</span>
+                      <span style={{ fontSize:10, background:'#f1f5f9', color:'#64748b', borderRadius:99, padding:'1px 7px' }}>{statusLabel[f.status] || f.status}</span>
+                    </div>
+                    <div style={{ fontSize:11, color:'#64748b' }}>{f.risk_type} ｜ {new Date(f.created_at).toLocaleDateString('zh-TW')}</div>
+                    {f.description && <div style={{ fontSize:12, color:'#475569', marginTop:4, lineHeight:1.5 }}>{f.description}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 主管隨手記 */}
+      <div style={{ marginBottom:8 }}>
+        <SectionHeader id="notes" icon="📝" label="主管隨手記" count={notes.length} />
+        {open.notes && (
+          <div style={{ border:'1px solid #e2e8f0', borderTop:'none', borderRadius:'0 0 10px 10px', overflow:'hidden', marginBottom:8 }}>
+            {notes.length === 0 ? (
+              <div style={{ padding:14, color:'#94a3b8', fontSize:13, textAlign:'center' }}>尚無隨手記</div>
+            ) : notes.slice(0, 10).map((n: any) => (
+              <div key={n.id} style={{ padding:'10px 14px', borderBottom:'1px solid #f8fafc', background:'#fff' }}>
+                <div style={{ display:'flex', gap:6, marginBottom:4, alignItems:'center' }}>
+                  {n.category_name && <span style={{ background:'#ede9fe', color:'#7c3aed', borderRadius:99, padding:'1px 8px', fontSize:10 }}>{n.category_name}</span>}
+                  <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>{n.supervisor_name} · {new Date(n.created_at).toLocaleDateString('zh-TW')}</span>
+                </div>
+                <div style={{ fontSize:13, color:'#374151', lineHeight:1.6 }}>{n.content}</div>
+              </div>
+            ))}
+            {notes.length > 10 && <div style={{ padding:'8px 14px', background:'#f8fafc', fontSize:12, color:'#94a3b8', textAlign:'center' }}>…還有 {notes.length - 10} 筆</div>}
+          </div>
+        )}
+      </div>
+
+      {/* 對話記錄 */}
+      <div style={{ marginBottom:8 }}>
+        <SectionHeader id="conversations" icon="💬" label="心理輔導對話記錄" count={conversations.length} />
+        {open.conversations && (
+          <div style={{ border:'1px solid #e2e8f0', borderTop:'none', borderRadius:'0 0 10px 10px', overflow:'hidden', marginBottom:8 }}>
+            {conversations.length === 0 ? (
+              <div style={{ padding:14, color:'#94a3b8', fontSize:13, textAlign:'center' }}>尚無對話記錄</div>
+            ) : conversations.slice(0, 10).map((c: any) => {
+              const text = c.extracted_text || c.raw_text || '';
+              return (
+                <div key={c.id} style={{ padding:'10px 14px', borderBottom:'1px solid #f8fafc', background:'#fff' }}>
+                  <div style={{ display:'flex', gap:6, marginBottom:4, alignItems:'center', flexWrap:'wrap' }}>
+                    <span style={{ fontSize:11, color:'#64748b' }}>{c.conversation_type || '一般'} ｜ {c.interviewer_name || '未知訪談者'}</span>
+                    {c.need_followup && <span style={{ background:'#fef3c7', color:'#92400e', borderRadius:99, padding:'1px 6px', fontSize:10 }}>需追蹤</span>}
+                    <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>
+                      {c.conversation_date ? new Date(c.conversation_date).toLocaleDateString('zh-TW') : new Date(c.created_at).toLocaleDateString('zh-TW')}
+                    </span>
+                  </div>
+                  {text && <div style={{ fontSize:12, color:'#475569', lineHeight:1.6 }}>{text.slice(0, 150)}{text.length > 150 ? '...' : ''}</div>}
+                </div>
+              );
+            })}
+            {conversations.length > 10 && <div style={{ padding:'8px 14px', background:'#f8fafc', fontSize:12, color:'#94a3b8', textAlign:'center' }}>…還有 {conversations.length - 10} 筆</div>}
+          </div>
+        )}
+      </div>
+
+      {/* 評價記錄 */}
+      <div style={{ marginBottom:8 }}>
+        <SectionHeader id="reviews" icon="⭐" label="評價記錄" count={reviews.length} />
+        {open.reviews && (
+          <div style={{ border:'1px solid #e2e8f0', borderTop:'none', borderRadius:'0 0 10px 10px', overflow:'hidden', marginBottom:8 }}>
+            {reviews.length === 0 ? (
+              <div style={{ padding:14, color:'#94a3b8', fontSize:13, textAlign:'center' }}>尚無評價記錄</div>
+            ) : reviews.slice(0, 10).map((r: any) => {
+              const typeEmoji: Record<string, string> = { positive:'✅', negative:'❌', complaint:'⚠️', praise:'🌟', other:'📝' };
+              return (
+                <div key={r.id} style={{ padding:'10px 14px', borderBottom:'1px solid #f8fafc', background:'#fff' }}>
+                  <div style={{ display:'flex', gap:6, marginBottom:4, alignItems:'center' }}>
+                    <span style={{ fontSize:13 }}>{typeEmoji[r.review_type] || '📝'}</span>
+                    <span style={{ fontSize:11, color:'#64748b' }}>{r.review_type} ｜ 急迫度：{r.urgency || 'normal'}</span>
+                    <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>
+                      {r.event_date ? new Date(r.event_date).toLocaleDateString('zh-TW') : new Date(r.created_at).toLocaleDateString('zh-TW')}
+                    </span>
+                  </div>
+                  {r.content && <div style={{ fontSize:12, color:'#475569', lineHeight:1.6 }}>{r.content.slice(0, 150)}{r.content.length > 150 ? '...' : ''}</div>}
+                </div>
+              );
+            })}
+            {reviews.length > 10 && <div style={{ padding:'8px 14px', background:'#f8fafc', fontSize:12, color:'#94a3b8', textAlign:'center' }}>…還有 {reviews.length - 10} 筆</div>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

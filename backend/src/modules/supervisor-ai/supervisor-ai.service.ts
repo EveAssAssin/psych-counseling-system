@@ -105,9 +105,9 @@ export class SupervisorAiService {
       const { data: emp } = await this.db
         .from('employees')
         .select('id')
-        .eq('app_number', dto.employee_app_number)
-        .single();
-      employee_id = emp?.id;
+        .eq('employeeappnumber', dto.employee_app_number)
+        .limit(1);
+      employee_id = emp?.[0]?.id;
     }
 
     const title = dto.employee_name
@@ -221,7 +221,71 @@ export class SupervisorAiService {
   }
 
   // ═══════════════════════════════════════════
-  //  建立系統提示（彙整人員資料）
+  //  取得人員完整資料彙整（供前端顯示 + AI 分析）
+  // ═══════════════════════════════════════════
+
+  async getEmployeeSummary(appNumber: string) {
+    // 1. 員工基本資料
+    const { data: empRows } = await this.db
+      .from('employees')
+      .select('id, name, store_name, title, hire_date, is_active, is_leave, leave_type, department, email')
+      .eq('employeeappnumber', appNumber)
+      .order('synced_at', { ascending: false })
+      .limit(1);
+
+    const emp = empRows?.[0] || null;
+    const employeeUUID = emp?.id;
+
+    // 2. 主管隨手記
+    const notes = await this.notesService.getNotesByEmployee(appNumber);
+
+    // 3. 對話記錄（conversation_intakes）
+    let conversations: any[] = [];
+    if (employeeUUID) {
+      const { data: convs } = await this.db
+        .from('conversation_intakes')
+        .select('id, conversation_date, conversation_type, interviewer_name, extracted_text, raw_text, priority, need_followup, intake_status, tags, created_at')
+        .eq('employee_id', employeeUUID)
+        .order('conversation_date', { ascending: false })
+        .limit(20);
+      conversations = convs || [];
+    }
+
+    // 4. 評價記錄（reviews）
+    let reviews: any[] = [];
+    if (employeeUUID) {
+      const { data: revs } = await this.db
+        .from('reviews')
+        .select('id, review_type, urgency, event_date, content, status, source, created_at')
+        .eq('employee_id', employeeUUID)
+        .order('event_date', { ascending: false })
+        .limit(20);
+      reviews = revs || [];
+    }
+
+    // 5. 風險標記（risk_flags）
+    let riskFlags: any[] = [];
+    if (employeeUUID) {
+      const { data: flags } = await this.db
+        .from('risk_flags')
+        .select('id, risk_type, severity, title, description, evidence_text, status, created_at')
+        .eq('employee_id', employeeUUID)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      riskFlags = flags || [];
+    }
+
+    return {
+      employee: emp,
+      notes,
+      conversations,
+      reviews,
+      riskFlags,
+    };
+  }
+
+  // ═══════════════════════════════════════════
+  //  建立系統提示（彙整所有人員資料）
   // ═══════════════════════════════════════════
 
   private async buildSystemPrompt(session: any): Promise<string> {
@@ -229,44 +293,79 @@ export class SupervisorAiService {
     let prompt = persona?.system_prompt || '你是一位專業的職場心理顧問。';
 
     if (session.employee_app_number) {
-      // 收集該人員相關資料
-      const [notes, empData] = await Promise.all([
-        this.notesService.getNotesByEmployee(session.employee_app_number),
-        this.getEmployeeData(session.employee_app_number),
-      ]);
+      const summary = await this.getEmployeeSummary(session.employee_app_number);
+      const { employee: emp, notes, conversations, reviews, riskFlags } = summary;
 
-      if (empData) {
-        prompt += `\n\n【員工基本資料】\n`;
-        prompt += `姓名：${empData.name || session.employee_name}\n`;
-        if (empData.store_name) prompt += `所屬店家：${empData.store_name}\n`;
-        if (empData.position)   prompt += `職位：${empData.position}\n`;
-        if (empData.hire_date)  prompt += `到職日：${empData.hire_date}\n`;
+      // ── 員工基本資料 ──
+      prompt += `\n\n【員工基本資料】\n`;
+      prompt += `姓名：${emp?.name || session.employee_name}\n`;
+      prompt += `員工編號：${session.employee_app_number}\n`;
+      if (emp?.store_name)  prompt += `所屬店家：${emp.store_name}\n`;
+      if (emp?.title)       prompt += `職位：${emp.title}\n`;
+      if (emp?.department)  prompt += `部門：${emp.department}\n`;
+      if (emp?.hire_date)   prompt += `到職日：${emp.hire_date}\n`;
+      if (emp?.is_leave)    prompt += `⚠️ 目前請假中（${emp.leave_type || '未知假別'}）\n`;
+      if (emp && !emp.is_active) prompt += `⚠️ 員工狀態：已離職或停用\n`;
+
+      // ── 風險標記 ──
+      const openFlags = riskFlags.filter((f: any) => ['open', 'acknowledged', 'in_progress'].includes(f.status));
+      if (openFlags.length > 0) {
+        prompt += `\n\n【⚠️ 風險標記（進行中 ${openFlags.length} 筆）】\n`;
+        openFlags.forEach((f: any) => {
+          const date = new Date(f.created_at).toLocaleDateString('zh-TW');
+          const severityLabel = { critical: '🔴 嚴重', high: '🟠 高', medium: '🟡 中', low: '🟢 低' }[f.severity] || f.severity;
+          prompt += `\n[${date}] ${severityLabel} ｜ ${f.risk_type} ｜ ${f.title}\n`;
+          if (f.description) prompt += `說明：${f.description}\n`;
+          if (f.evidence_text) prompt += `依據：${f.evidence_text.slice(0, 200)}\n`;
+        });
       }
 
+      // ── 主管隨手記 ──
       if (notes.length > 0) {
-        prompt += `\n\n【主管隨手記（最近 ${notes.length} 筆）】\n`;
+        prompt += `\n\n【主管隨手記（共 ${notes.length} 筆，最近 20 筆）】\n`;
         notes.slice(0, 20).forEach((n: any, i: number) => {
           const date = new Date(n.created_at).toLocaleDateString('zh-TW');
           prompt += `\n[${i + 1}] ${date} ｜ ${n.category_name || '未分類'} ｜ 記錄者：${n.supervisor_name}\n`;
           prompt += `${n.content}\n`;
         });
       } else {
-        prompt += `\n\n【目前尚無該員工的隨手記紀錄】\n`;
+        prompt += `\n\n【主管隨手記：尚無記錄】\n`;
       }
 
-      prompt += `\n\n請根據以上資料，協助主管了解員工狀況。`;
+      // ── 對話記錄 ──
+      if (conversations.length > 0) {
+        prompt += `\n\n【心理輔導對話記錄（共 ${conversations.length} 筆，最近 10 筆）】\n`;
+        conversations.slice(0, 10).forEach((c: any, i: number) => {
+          const date = c.conversation_date
+            ? new Date(c.conversation_date).toLocaleDateString('zh-TW')
+            : new Date(c.created_at).toLocaleDateString('zh-TW');
+          const text = c.extracted_text || c.raw_text || '';
+          prompt += `\n[${i + 1}] ${date} ｜ 類型：${c.conversation_type || '一般'} ｜ 訪談者：${c.interviewer_name || '未知'}\n`;
+          if (c.priority && c.priority !== 'normal') prompt += `優先級：${c.priority}\n`;
+          if (c.need_followup) prompt += `⚠️ 需要後續追蹤\n`;
+          if (text) prompt += `內容摘要：${text.slice(0, 300)}${text.length > 300 ? '...' : ''}\n`;
+        });
+      }
+
+      // ── 評價記錄 ──
+      if (reviews.length > 0) {
+        const negRevs = reviews.filter((r: any) => r.review_type === 'negative' || r.review_type === 'complaint');
+        const posRevs = reviews.filter((r: any) => r.review_type === 'positive' || r.review_type === 'praise');
+        prompt += `\n\n【評價記錄（共 ${reviews.length} 筆：${posRevs.length} 正面 / ${negRevs.length} 負面）】\n`;
+        reviews.slice(0, 10).forEach((r: any, i: number) => {
+          const date = r.event_date
+            ? new Date(r.event_date).toLocaleDateString('zh-TW')
+            : new Date(r.created_at).toLocaleDateString('zh-TW');
+          const typeLabel = { positive: '✅ 正面', negative: '❌ 負面', complaint: '⚠️ 投訴', praise: '🌟 表揚', other: '📝 其他' }[r.review_type] || r.review_type;
+          prompt += `\n[${i + 1}] ${date} ｜ ${typeLabel} ｜ 急迫度：${r.urgency || 'normal'} ｜ 狀態：${r.status || '未知'}\n`;
+          prompt += `${(r.content || '').slice(0, 200)}${(r.content || '').length > 200 ? '...' : ''}\n`;
+        });
+      }
+
+      prompt += `\n\n以上為系統中關於「${emp?.name || session.employee_name}」的所有相關資料，請根據這些資料協助主管分析員工狀況。`;
     }
 
     return prompt;
-  }
-
-  private async getEmployeeData(appNumber: string) {
-    const { data } = await this.db
-      .from('employees')
-      .select('name, store_name, position, hire_date, status')
-      .eq('app_number', appNumber)
-      .single();
-    return data;
   }
 
   // ═══════════════════════════════════════════
