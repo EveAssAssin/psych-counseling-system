@@ -18,7 +18,17 @@ export class SupervisorNotesController {
   // ── 身份驗證 ──
   @Get('auth/check')
   @ApiOperation({ summary: '確認主管是否有權限' })
-  async checkAuth(@Query('identifier') identifier: string) {
+  async checkAuth(
+    @Query('identifier') identifier: string,
+    @Query('password') password?: string,
+  ) {
+    // 密碼登入模式
+    if (password) {
+      const result = await this.svc.verifyLogin(identifier, password);
+      if (!result.success) return { authorized: false, role: null, name: null };
+      return { authorized: true, role: result.info!.role, name: result.info!.name };
+    }
+    // 舊模式（識別碼查詢，供內部使用）
     const info = await this.svc.getSupervisorInfo(identifier);
     if (!info) return { authorized: false, role: null, name: null };
     return { authorized: true, role: info.role, name: info.name };
@@ -115,6 +125,12 @@ export class SupervisorNotesController {
   @Delete('supervisors/:id')
   @ApiOperation({ summary: '停用主管' })
   deleteSupervisor(@Param('id') id: string) { return this.svc.deleteSupervisor(id); }
+
+  @Patch('supervisors/:id/password')
+  @ApiOperation({ summary: '設定主管密碼' })
+  setPassword(@Param('id') id: string, @Body() body: { password: string }) {
+    return this.svc.setPassword(id, body.password);
+  }
 
   // ── AI 機密名單 ──
   @Get('confidential')

@@ -25,25 +25,25 @@ const AI_LABELS: Record<string, { label: string; color: string; emoji: string }>
 export default function SupervisorHubPage() {
   const [tab, setTab] = useState<'note' | 'ai' | 'manage'>('note');
   const [supervisor, setSupervisor] = useState<{ identifier: string; name: string; role: string } | null>(null);
-  const [loginInput, setLoginInput] = useState({ identifier: '', name: '' });
+  const [loginInput, setLoginInput] = useState({ identifier: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [checking, setChecking] = useState(false);
 
   // ── 登入 ──
   const handleLogin = async () => {
-    if (!loginInput.identifier.trim() || !loginInput.name.trim()) {
-      setLoginError('請輸入識別碼與姓名'); return;
+    if (!loginInput.identifier.trim() || !loginInput.password.trim()) {
+      setLoginError('請輸入員工編號與密碼'); return;
     }
     setChecking(true); setLoginError('');
     try {
       const { data } = await axios.get(`${API}/supervisor-hub/auth/check`, {
-        params: { identifier: loginInput.identifier },
+        params: { identifier: loginInput.identifier, password: loginInput.password },
       });
       if (data.authorized) {
-        const sv = { ...loginInput, role: data.role || 'supervisor' };
+        const sv = { identifier: loginInput.identifier, name: data.name, role: data.role || 'supervisor' };
         setSupervisor(sv);
         sessionStorage.setItem('sv_identifier', loginInput.identifier);
-        sessionStorage.setItem('sv_name', loginInput.name);
+        sessionStorage.setItem('sv_name', data.name);
         sessionStorage.setItem('sv_role', data.role || 'supervisor');
       } else {
         setLoginError('您沒有使用此功能的權限，請聯繫系統管理員。');
@@ -67,16 +67,16 @@ export default function SupervisorHubPage() {
           <div style={{ fontSize:28, marginBottom:8, textAlign:'center' }}>🧠</div>
           <h2 style={{ textAlign:'center', marginBottom:4, color:'#1e293b' }}>主管輔助中心</h2>
           <p style={{ textAlign:'center', color:'#64748b', fontSize:13, marginBottom:24 }}>隨手記 + AI 快問</p>
-          <label style={labelStyle}>識別碼（員工編號或帳號）</label>
+          <label style={labelStyle}>員工編號</label>
           <input style={inputStyle} value={loginInput.identifier}
             onChange={e => setLoginInput(p => ({...p, identifier: e.target.value}))}
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            placeholder="輸入識別碼" />
-          <label style={labelStyle}>您的姓名</label>
-          <input style={inputStyle} value={loginInput.name}
-            onChange={e => setLoginInput(p => ({...p, name: e.target.value}))}
+            placeholder="輸入員工編號" />
+          <label style={labelStyle}>密碼</label>
+          <input style={{ ...inputStyle, letterSpacing: 2 }} type="password" value={loginInput.password}
+            onChange={e => setLoginInput(p => ({...p, password: e.target.value}))}
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            placeholder="輸入姓名" />
+            placeholder="輸入密碼" />
           {loginError && <p style={{ color:'#ef4444', fontSize:13, marginBottom:8 }}>{loginError}</p>}
           <button onClick={handleLogin} disabled={checking}
             style={{ ...btnStyle, background:'#7c3aed', color:'#fff', width:'100%' }}>
@@ -582,6 +582,9 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
   const [newCatColor, setNewCatColor] = useState('#7c3aed');
   const [newSvId, setNewSvId] = useState('');
   const [newSvName, setNewSvName] = useState('');
+  const [newSvPassword, setNewSvPassword] = useState('');
+  const [editPwdId, setEditPwdId] = useState<string | null>(null);
+  const [editPwdValue, setEditPwdValue] = useState('');
   const [newConfEmp, setNewConfEmp] = useState('');
   const [newConfReason, setNewConfReason] = useState('');
   const [editPersona, setEditPersona] = useState<AiPersona | null>(null);
@@ -639,26 +642,47 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
       {section === 'supervisors' && isAdmin && (
         <div style={cardStyle}>
           <h4 style={{ margin:'0 0 12px', color:'#1e293b' }}>有權使用的主管</h4>
-          <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap' }}>
-            <input style={{ ...inputStyle, flex:1, margin:0, minWidth:120 }} placeholder="識別碼" value={newSvId} onChange={e => setNewSvId(e.target.value)} />
-            <input style={{ ...inputStyle, flex:1, margin:0, minWidth:100 }} placeholder="姓名" value={newSvName} onChange={e => setNewSvName(e.target.value)} />
+          <div style={{ display:'flex', gap:8, marginBottom:4, flexWrap:'wrap' }}>
+            <input style={{ ...inputStyle, flex:1, margin:0, minWidth:100 }} placeholder="員工編號" value={newSvId} onChange={e => setNewSvId(e.target.value)} />
+            <input style={{ ...inputStyle, flex:1, margin:0, minWidth:80 }} placeholder="姓名" value={newSvName} onChange={e => setNewSvName(e.target.value)} />
+            <input style={{ ...inputStyle, flex:1, margin:0, minWidth:80, letterSpacing:1 }} type="password" placeholder="密碼" value={newSvPassword} onChange={e => setNewSvPassword(e.target.value)} />
             <button onClick={async () => {
-              if (!newSvId.trim() || !newSvName.trim()) return;
-              await axios.post(`${API}/supervisor-hub/supervisors`, { identifier: newSvId, name: newSvName, display_name: newSvName });
-              setNewSvId(''); setNewSvName(''); load();
+              if (!newSvId.trim() || !newSvName.trim() || !newSvPassword.trim()) return;
+              const res = await axios.post(`${API}/supervisor-hub/supervisors`, { identifier: newSvId, name: newSvName, display_name: newSvName });
+              if (res.data?.id) {
+                await axios.patch(`${API}/supervisor-hub/supervisors/${res.data.id}/password`, { password: newSvPassword });
+              }
+              setNewSvId(''); setNewSvName(''); setNewSvPassword(''); load();
             }} style={{ ...btnStyle, background:'#7c3aed', color:'#fff' }}>新增</button>
           </div>
           {supervisors.map((s: any) => (
-            <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
-              <div style={{ flex:1 }}>
-                <span style={{ fontWeight:600, color:'#1e293b' }}>{s.name}</span>
-                <span style={{ color:'#94a3b8', fontSize:12, marginLeft:8 }}>{s.identifier}</span>
+            <div key={s.id} style={{ borderBottom:'1px solid #f1f5f9', padding:'6px 0' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ flex:1 }}>
+                  <span style={{ fontWeight:600, color:'#1e293b' }}>{s.name}</span>
+                  <span style={{ color:'#94a3b8', fontSize:12, marginLeft:8 }}>{s.identifier}</span>
+                  {s.role === 'admin' && <span style={{ marginLeft:6, fontSize:10, background:'#fef3c7', color:'#92400e', borderRadius:99, padding:'1px 6px' }}>超管</span>}
+                </div>
+                <span style={{ fontSize:11, padding:'2px 8px', borderRadius:99, background: s.is_active ? '#dcfce7':'#fee2e2', color: s.is_active ? '#16a34a':'#dc2626' }}>
+                  {s.is_active ? '啟用' : '停用'}
+                </span>
+                <button onClick={() => { setEditPwdId(s.id); setEditPwdValue(''); }}
+                  style={{ ...smallBtnStyle, background:'#ede9fe', color:'#7c3aed' }}>🔑 密碼</button>
+                <button onClick={async () => { await axios.delete(`${API}/supervisor-hub/supervisors/${s.id}`); load(); }}
+                  style={{ ...smallBtnStyle, background:'#fee2e2', color:'#dc2626' }}>停用</button>
               </div>
-              <span style={{ fontSize:11, padding:'2px 8px', borderRadius:99, background: s.is_active ? '#dcfce7':'#fee2e2', color: s.is_active ? '#16a34a':'#dc2626' }}>
-                {s.is_active ? '啟用' : '停用'}
-              </span>
-              <button onClick={async () => { await axios.delete(`${API}/supervisor-hub/supervisors/${s.id}`); load(); }}
-                style={{ ...smallBtnStyle, background:'#fee2e2', color:'#dc2626' }}>停用</button>
+              {editPwdId === s.id && (
+                <div style={{ display:'flex', gap:8, marginTop:6, marginLeft:8 }}>
+                  <input type="password" style={{ ...inputStyle, flex:1, margin:0, fontSize:13, letterSpacing:1 }}
+                    placeholder="輸入新密碼" value={editPwdValue} onChange={e => setEditPwdValue(e.target.value)} />
+                  <button onClick={async () => {
+                    if (!editPwdValue.trim()) return;
+                    await axios.patch(`${API}/supervisor-hub/supervisors/${s.id}/password`, { password: editPwdValue });
+                    setEditPwdId(null); setEditPwdValue('');
+                  }} style={{ ...smallBtnStyle, background:'#7c3aed', color:'#fff' }}>確認</button>
+                  <button onClick={() => setEditPwdId(null)} style={{ ...smallBtnStyle, background:'#e2e8f0', color:'#475569' }}>取消</button>
+                </div>
+              )}
             </div>
           ))}
         </div>

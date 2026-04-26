@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   CreateNoteDto, UpdateNoteDto,
@@ -16,6 +17,20 @@ export class SupervisorNotesService {
     return this.supabase.getAdminClient();
   }
 
+  private hashPassword(password: string): string {
+    return crypto.createHash('sha256').update(password).digest('hex');
+  }
+
+  async setPassword(supervisorId: string, password: string) {
+    const hash = this.hashPassword(password);
+    const { error } = await this.db
+      .from('authorized_supervisors')
+      .update({ password_hash: hash, updated_at: new Date().toISOString() })
+      .eq('id', supervisorId);
+    if (error) throw error;
+    return { success: true };
+  }
+
   // ═══════════════════════════════════════════
   //  主管驗證
   // ═══════════════════════════════════════════
@@ -28,6 +43,21 @@ export class SupervisorNotesService {
       .eq('is_active', true)
       .single();
     return !!data;
+  }
+
+  async verifyLogin(identifier: string, password: string): Promise<{ success: boolean; info?: { id: string; name: string; role: string } }> {
+    const { data } = await this.db
+      .from('authorized_supervisors')
+      .select('id, name, role, password_hash')
+      .eq('identifier', identifier)
+      .eq('is_active', true)
+      .limit(1);
+    if (!data || data.length === 0) return { success: false };
+    const sv = data[0];
+    if (!sv.password_hash) return { success: false };
+    const hash = this.hashPassword(password);
+    if (hash !== sv.password_hash) return { success: false };
+    return { success: true, info: { id: sv.id, name: sv.name, role: sv.role } };
   }
 
   async getSupervisorInfo(identifier: string): Promise<{ id: string; name: string; role: string } | null> {
