@@ -9,7 +9,7 @@ const API = import.meta.env.VITE_API_URL || 'https://psych-counseling-backend.on
 interface Employee { app_number: string; name: string; store_name?: string; position?: string; }
 interface Category { id: string; name: string; color: string; supervisor_id?: string | null; }
 interface Attachment { url: string; originalName: string; type: string; size: number; }
-interface Note { id: string; content: string; category_name?: string; supervisor_name: string; created_at: string; employee_app_number?: string; non_employee_name?: string; images?: string[]; attachments?: Attachment[]; }
+interface Note { id: string; content: string; category_id?: string; category_name?: string; supervisor_name: string; created_at: string; employee_app_number?: string; non_employee_name?: string; images?: string[]; attachments?: Attachment[]; }
 interface AiMessage { role: 'user' | 'assistant'; content: string; }
 interface AiSession { id: string; employee_name?: string; ai_type: string; title: string; created_at: string; }
 interface AiPersona { id: string; ai_type: string; persona_name: string; system_prompt: string; model?: string; }
@@ -260,7 +260,10 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
 
   const handleUpdate = async () => {
     if (!editNote) return;
-    await axios.patch(`${API}/supervisor-hub/notes/${editNote.id}`, { content: editNote.content }, { params: { supervisor_id: supervisor.identifier } });
+    await axios.patch(`${API}/supervisor-hub/notes/${editNote.id}`, {
+      content: editNote.content,
+      category_id: editNote.category_id || null,
+    }, { params: { supervisor_id: supervisor.identifier } });
     setEditNote(null); loadNotes();
   };
 
@@ -405,6 +408,21 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
               <div key={n.id} style={cardStyle}>
                 {editNote?.id === n.id ? (
                   <>
+                    {/* 編輯分類 */}
+                    <div style={{ marginBottom:8 }}>
+                      <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>分類</div>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                        <button onClick={() => setEditNote({ ...editNote, category_id: '' })}
+                          style={{ ...smallBtnStyle, background: !editNote.category_id ? '#7c3aed':'#e2e8f0', color: !editNote.category_id ? '#fff':'#475569' }}>未分類</button>
+                        {categories.map(c => (
+                          <button key={c.id} onClick={() => setEditNote({ ...editNote, category_id: c.id })}
+                            style={{ ...smallBtnStyle, background: editNote.category_id===c.id ? c.color:'#e2e8f0', color: editNote.category_id===c.id ? '#fff':'#475569' }}>
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* 編輯內容 */}
                     <textarea style={{ ...inputStyle, minHeight:80 }} value={editNote.content} onChange={e => setEditNote({ ...editNote, content: e.target.value })} />
                     <div style={{ display:'flex', gap:8 }}>
                       <button onClick={handleUpdate} style={{ ...btnStyle, background:'#7c3aed', color:'#fff', flex:1 }}>儲存</button>
