@@ -30,6 +30,21 @@ export class SupervisorNotesService {
     return !!data;
   }
 
+  async getSupervisorInfo(identifier: string): Promise<{ id: string; name: string; role: string } | null> {
+    const { data } = await this.db
+      .from('authorized_supervisors')
+      .select('id, name, role')
+      .eq('identifier', identifier)
+      .eq('is_active', true)
+      .limit(1);
+    return data && data.length > 0 ? data[0] : null;
+  }
+
+  async isAdmin(identifier: string): Promise<boolean> {
+    const info = await this.getSupervisorInfo(identifier);
+    return info?.role === 'admin';
+  }
+
   async requireAuthorized(identifier: string) {
     const ok = await this.isSupervisorAuthorized(identifier);
     if (!ok) throw new ForbiddenException('您沒有使用此功能的權限，請聯繫系統管理員。');
@@ -198,9 +213,10 @@ export class SupervisorNotesService {
   async updateNote(id: string, supervisorId: string, dto: UpdateNoteDto) {
     await this.requireAuthorized(supervisorId);
 
-    // 確認這筆記錄屬於該主管
+    // 確認這筆記錄屬於該主管（admin 可跨主管編輯）
     const note = await this.getNoteById(id);
-    if (note.supervisor_id !== supervisorId) {
+    const admin = await this.isAdmin(supervisorId);
+    if (!admin && note.supervisor_id !== supervisorId) {
       throw new ForbiddenException('您只能編輯自己的記錄');
     }
 
@@ -228,7 +244,8 @@ export class SupervisorNotesService {
     await this.requireAuthorized(supervisorId);
 
     const note = await this.getNoteById(id);
-    if (note.supervisor_id !== supervisorId) {
+    const admin = await this.isAdmin(supervisorId);
+    if (!admin && note.supervisor_id !== supervisorId) {
       throw new ForbiddenException('您只能刪除自己的記錄');
     }
 

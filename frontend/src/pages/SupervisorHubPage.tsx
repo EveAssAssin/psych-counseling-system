@@ -24,7 +24,7 @@ const AI_LABELS: Record<string, { label: string; color: string; emoji: string }>
 // ────────────────────────────────────────────
 export default function SupervisorHubPage() {
   const [tab, setTab] = useState<'note' | 'ai' | 'manage'>('note');
-  const [supervisor, setSupervisor] = useState<{ identifier: string; name: string } | null>(null);
+  const [supervisor, setSupervisor] = useState<{ identifier: string; name: string; role: string } | null>(null);
   const [loginInput, setLoginInput] = useState({ identifier: '', name: '' });
   const [loginError, setLoginError] = useState('');
   const [checking, setChecking] = useState(false);
@@ -40,9 +40,11 @@ export default function SupervisorHubPage() {
         params: { identifier: loginInput.identifier },
       });
       if (data.authorized) {
-        setSupervisor(loginInput);
+        const sv = { ...loginInput, role: data.role || 'supervisor' };
+        setSupervisor(sv);
         sessionStorage.setItem('sv_identifier', loginInput.identifier);
         sessionStorage.setItem('sv_name', loginInput.name);
+        sessionStorage.setItem('sv_role', data.role || 'supervisor');
       } else {
         setLoginError('您沒有使用此功能的權限，請聯繫系統管理員。');
       }
@@ -54,7 +56,8 @@ export default function SupervisorHubPage() {
   useEffect(() => {
     const id = sessionStorage.getItem('sv_identifier');
     const nm = sessionStorage.getItem('sv_name');
-    if (id && nm) setSupervisor({ identifier: id, name: nm });
+    const rl = sessionStorage.getItem('sv_role') || 'supervisor';
+    if (id && nm) setSupervisor({ identifier: id, name: nm, role: rl });
   }, []);
 
   if (!supervisor) {
@@ -93,7 +96,12 @@ export default function SupervisorHubPage() {
           <span style={{ color:'#fff', fontWeight:700, fontSize:16 }}>主管輔助中心</span>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <span style={{ color:'#e9d5ff', fontSize:13 }}>{supervisor.name}</span>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <span style={{ color:'#e9d5ff', fontSize:13 }}>{supervisor.name}</span>
+            {supervisor.role === 'admin' && (
+              <span style={{ background:'#fbbf24', color:'#78350f', fontSize:10, fontWeight:700, borderRadius:99, padding:'1px 7px' }}>超管</span>
+            )}
+          </div>
           <button onClick={() => { setSupervisor(null); sessionStorage.clear(); }}
             style={{ background:'rgba(255,255,255,0.15)', border:'none', color:'#fff', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontSize:12 }}>
             登出
@@ -127,8 +135,8 @@ export default function SupervisorHubPage() {
 // ────────────────────────────────────────────
 //  Tab 1: 隨手記
 // ────────────────────────────────────────────
-function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: string } }) {
-  const [mode, setMode] = useState<'write' | 'list'>('write');
+function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: string; role: string } }) {
+  const [mode, setMode] = useState<'write' | 'list' | 'all'>('write');
   const [categories, setCategories] = useState<Category[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [stores, setStores] = useState<any[]>([]);
@@ -161,14 +169,16 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
     return () => clearTimeout(t);
   }, [searchQ]);
 
-  const loadNotes = () => {
+  const loadNotes = (forMode?: typeof mode) => {
+    const m = forMode ?? mode;
     setLoading(true);
-    axios.get(`${API}/supervisor-hub/notes`, {
-      params: { supervisor_id: supervisor.identifier, search: listSearch || undefined, limit: 50 },
-    }).then(r => setNotes(r.data?.data || [])).finally(() => setLoading(false));
+    const params: any = { search: listSearch || undefined, limit: 50 };
+    if (m !== 'all') params.supervisor_id = supervisor.identifier;
+    axios.get(`${API}/supervisor-hub/notes`, { params })
+      .then(r => setNotes(r.data?.data || [])).finally(() => setLoading(false));
   };
 
-  useEffect(() => { if (mode === 'list') loadNotes(); }, [mode, listSearch]);
+  useEffect(() => { if (mode === 'list' || mode === 'all') loadNotes(mode); }, [mode, listSearch]);
 
   const handleSave = async () => {
     if (!content.trim()) { alert('請輸入內容'); return; }
@@ -214,6 +224,12 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
             {m === 'write' ? '✏️ 新增記錄' : '📋 我的記錄'}
           </button>
         ))}
+        {supervisor.role === 'admin' && (
+          <button onClick={() => setMode('all')}
+            style={{ ...btnStyle, flex:1, background: mode==='all' ? '#dc2626':'#e2e8f0', color: mode==='all' ? '#fff':'#475569' }}>
+            👁 所有記錄
+          </button>
+        )}
       </div>
 
       {mode === 'write' && (
@@ -317,8 +333,12 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                       <span style={{ fontSize:12, color:'#94a3b8' }}>記錄者：{n.supervisor_name}</span>
                       <div style={{ display:'flex', gap:6 }}>
-                        <button onClick={() => setEditNote(n)} style={{ ...smallBtnStyle, background:'#f1f5f9', color:'#475569' }}>編輯</button>
-                        <button onClick={() => handleDelete(n.id)} style={{ ...smallBtnStyle, background:'#fee2e2', color:'#dc2626' }}>刪除</button>
+                        {(supervisor.role === 'admin' || n.supervisor_name === supervisor.name) && (
+                          <button onClick={() => setEditNote(n)} style={{ ...smallBtnStyle, background:'#f1f5f9', color:'#475569' }}>編輯</button>
+                        )}
+                        {(supervisor.role === 'admin' || n.supervisor_name === supervisor.name) && (
+                          <button onClick={() => handleDelete(n.id)} style={{ ...smallBtnStyle, background:'#fee2e2', color:'#dc2626' }}>刪除</button>
+                        )}
                       </div>
                     </div>
                   </>
@@ -335,7 +355,7 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
 // ────────────────────────────────────────────
 //  Tab 2: AI 快問
 // ────────────────────────────────────────────
-function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: string } }) {
+function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: string; role: string } }) {
   const [step, setStep] = useState<'select' | 'chat'>('select');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [searchQ, setSearchQ] = useState('');
@@ -552,7 +572,7 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
 // ────────────────────────────────────────────
 //  Tab 3: 管理（分類 + 主管 + 機密名單 + AI 人格）
 // ────────────────────────────────────────────
-function ManageTab({ supervisor }: { supervisor: { identifier: string; name: string } }) {
+function ManageTab({ supervisor }: { supervisor: { identifier: string; name: string; role: string } }) {
   const [section, setSection] = useState<'categories' | 'supervisors' | 'confidential' | 'personas'>('categories');
   const [categories, setCategories] = useState<Category[]>([]);
   const [supervisors, setSupervisors] = useState<any[]>([]);
@@ -574,6 +594,16 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
   };
 
   useEffect(() => { load(); }, []);
+
+  if (supervisor.role !== 'admin') {
+    return (
+      <div style={{ padding:32, textAlign:'center' }}>
+        <div style={{ fontSize:40, marginBottom:12 }}>🔒</div>
+        <p style={{ color:'#64748b', fontSize:14 }}>管理功能僅限超級管理員使用</p>
+        <p style={{ color:'#94a3b8', fontSize:12 }}>請聯繫系統管理員（app_number: 28095198）</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding:16 }}>

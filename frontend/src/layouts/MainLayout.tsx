@@ -12,6 +12,8 @@ import {
   ArrowPathIcon,
   StarIcon,
   Cog6ToothIcon,
+  SparklesIcon,
+  PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore, useUIStore } from '../stores';
 import { syncApi } from '../services/api';
@@ -25,7 +27,13 @@ const navigation = [
   { name: '評價管理', href: '/reviews', icon: StarIcon },
   { name: '風險標記', href: '/risk-flags', icon: ExclamationTriangleIcon },
   { name: '智能問答', href: '/query', icon: QuestionMarkCircleIcon },
+  { name: '時段分析', href: '/period-analysis', icon: SparklesIcon },
   { name: '資料管理', href: '/data-management', icon: Cog6ToothIcon },
+];
+
+// 獨立入口（開新視窗）
+const externalLinks = [
+  { name: '主管輔助中心', href: '/supervisor-hub', icon: PencilSquareIcon },
 ];
 
 export default function MainLayout() {
@@ -120,6 +128,26 @@ export default function MainLayout() {
                           ))}
                         </ul>
                       </li>
+                      <li>
+                        <div className="text-xs font-semibold leading-6 text-gray-400 px-2 mb-1">工具</div>
+                        <ul role="list" className="-mx-2 space-y-1">
+                          {externalLinks.map((item) => (
+                            <li key={item.name}>
+                              <a
+                                href={item.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-purple-700 hover:bg-purple-50"
+                                onClick={() => setSidebarOpen(false)}
+                              >
+                                <item.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
+                                {item.name}
+                                <span className="ml-auto text-xs text-purple-400">↗</span>
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
                     </ul>
                   </nav>
                 </div>
@@ -155,6 +183,26 @@ export default function MainLayout() {
                         <item.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
                         {item.name}
                       </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+              {/* 工具（獨立入口） */}
+              <li>
+                <div className="text-xs font-semibold leading-6 text-gray-400 px-2 mb-1">工具</div>
+                <ul role="list" className="-mx-2 space-y-1">
+                  {externalLinks.map((item) => (
+                    <li key={item.name}>
+                      <a
+                        href={item.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-purple-700 hover:bg-purple-50"
+                      >
+                        <item.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
+                        {item.name}
+                        <span className="ml-auto text-xs text-purple-400">↗</span>
+                      </a>
                     </li>
                   ))}
                 </ul>

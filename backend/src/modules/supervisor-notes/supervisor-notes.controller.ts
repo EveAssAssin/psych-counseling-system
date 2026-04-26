@@ -19,8 +19,9 @@ export class SupervisorNotesController {
   @Get('auth/check')
   @ApiOperation({ summary: '確認主管是否有權限' })
   async checkAuth(@Query('identifier') identifier: string) {
-    const ok = await this.svc.isSupervisorAuthorized(identifier);
-    return { authorized: ok };
+    const info = await this.svc.getSupervisorInfo(identifier);
+    if (!info) return { authorized: false, role: null, name: null };
+    return { authorized: true, role: info.role, name: info.name };
   }
 
   // ── 分類 ──
