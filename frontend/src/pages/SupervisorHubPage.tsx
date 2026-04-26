@@ -580,12 +580,11 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
   const [personas, setPersonas] = useState<AiPersona[]>([]);
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#7c3aed');
-  const [newSvId, setNewSvId] = useState('');
-  const [newSvName, setNewSvName] = useState('');
+  const [newSvEmp, setNewSvEmp] = useState<Employee | null>(null);
   const [newSvPassword, setNewSvPassword] = useState('');
   const [editPwdId, setEditPwdId] = useState<string | null>(null);
   const [editPwdValue, setEditPwdValue] = useState('');
-  const [newConfEmp, setNewConfEmp] = useState('');
+  const [newConfEmp, setNewConfEmp] = useState<Employee | null>(null);
   const [newConfReason, setNewConfReason] = useState('');
   const [editPersona, setEditPersona] = useState<AiPersona | null>(null);
 
@@ -642,19 +641,20 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
       {section === 'supervisors' && isAdmin && (
         <div style={cardStyle}>
           <h4 style={{ margin:'0 0 12px', color:'#1e293b' }}>有權使用的主管</h4>
-          <div style={{ display:'flex', gap:8, marginBottom:4, flexWrap:'wrap' }}>
-            <input style={{ ...inputStyle, flex:1, margin:0, minWidth:100 }} placeholder="員工編號" value={newSvId} onChange={e => setNewSvId(e.target.value)} />
-            <input style={{ ...inputStyle, flex:1, margin:0, minWidth:80 }} placeholder="姓名" value={newSvName} onChange={e => setNewSvName(e.target.value)} />
-            <input style={{ ...inputStyle, flex:1, margin:0, minWidth:80, letterSpacing:1 }} type="password" placeholder="密碼" value={newSvPassword} onChange={e => setNewSvPassword(e.target.value)} />
-            <button onClick={async () => {
-              if (!newSvId.trim() || !newSvName.trim() || !newSvPassword.trim()) return;
-              const res = await axios.post(`${API}/supervisor-hub/supervisors`, { identifier: newSvId, name: newSvName, display_name: newSvName });
-              if (res.data?.id) {
-                await axios.patch(`${API}/supervisor-hub/supervisors/${res.data.id}/password`, { password: newSvPassword });
-              }
-              setNewSvId(''); setNewSvName(''); setNewSvPassword(''); load();
-            }} style={{ ...btnStyle, background:'#7c3aed', color:'#fff' }}>新增</button>
-          </div>
+          <EmployeeSearchPicker selected={newSvEmp} onSelect={setNewSvEmp} placeholder="搜尋人員加入主管名單..." />
+          {newSvEmp && (
+            <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+              <input style={{ ...inputStyle, flex:1, margin:0, letterSpacing:1 }} type="password" placeholder="設定登入密碼" value={newSvPassword} onChange={e => setNewSvPassword(e.target.value)} />
+              <button onClick={async () => {
+                if (!newSvPassword.trim()) { alert('請設定密碼'); return; }
+                const res = await axios.post(`${API}/supervisor-hub/supervisors`, { identifier: newSvEmp!.app_number, name: newSvEmp!.name, display_name: newSvEmp!.name });
+                if (res.data?.id) {
+                  await axios.patch(`${API}/supervisor-hub/supervisors/${res.data.id}/password`, { password: newSvPassword });
+                }
+                setNewSvEmp(null); setNewSvPassword(''); load();
+              }} style={{ ...btnStyle, background:'#7c3aed', color:'#fff', whiteSpace:'nowrap' }}>新增主管</button>
+            </div>
+          )}
           {supervisors.map((s: any) => (
             <div key={s.id} style={{ borderBottom:'1px solid #f1f5f9', padding:'6px 0' }}>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -693,15 +693,16 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
         <div style={cardStyle}>
           <h4 style={{ margin:'0 0 4px', color:'#1e293b' }}>AI 機密名單</h4>
           <p style={{ color:'#64748b', fontSize:12, marginBottom:12 }}>列入名單的人員可以被記錄隨手記，但 AI 無法討論其資料。</p>
-          <div style={{ display:'flex', gap:8, marginBottom:12 }}>
-            <input style={{ ...inputStyle, flex:1, margin:0 }} placeholder="員工編號" value={newConfEmp} onChange={e => setNewConfEmp(e.target.value)} />
-            <input style={{ ...inputStyle, flex:1, margin:0 }} placeholder="列入原因（選填）" value={newConfReason} onChange={e => setNewConfReason(e.target.value)} />
-            <button onClick={async () => {
-              if (!newConfEmp.trim()) return;
-              await axios.post(`${API}/supervisor-hub/confidential`, { employee_app_number: newConfEmp, reason: newConfReason, created_by: supervisor.identifier });
-              setNewConfEmp(''); setNewConfReason(''); load();
-            }} style={{ ...btnStyle, background:'#dc2626', color:'#fff' }}>加入</button>
-          </div>
+          <EmployeeSearchPicker selected={newConfEmp} onSelect={setNewConfEmp} placeholder="搜尋人員加入 AI 機密名單..." />
+          {newConfEmp && (
+            <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+              <input style={{ ...inputStyle, flex:1, margin:0 }} placeholder="列入原因（選填）" value={newConfReason} onChange={e => setNewConfReason(e.target.value)} />
+              <button onClick={async () => {
+                await axios.post(`${API}/supervisor-hub/confidential`, { employee_app_number: newConfEmp!.app_number, reason: newConfReason, created_by: supervisor.identifier });
+                setNewConfEmp(null); setNewConfReason(''); load();
+              }} style={{ ...btnStyle, background:'#dc2626', color:'#fff', whiteSpace:'nowrap' }}>加入名單</button>
+            </div>
+          )}
           {confidential.map((c: any) => (
             <div key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
               <div style={{ flex:1 }}>
@@ -752,6 +753,66 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
               ) : (
                 <p style={{ fontSize:12, color:'#64748b', margin:0, lineHeight:1.6 }}>{p.system_prompt.slice(0, 80)}...</p>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────
+//  共用：員工快搜下拉
+// ────────────────────────────────────────────
+function EmployeeSearchPicker({
+  selected, onSelect, placeholder = '輸入姓名或員工編號搜尋...'
+}: {
+  selected: Employee | null;
+  onSelect: (e: Employee | null) => void;
+  placeholder?: string;
+}) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<Employee[]>([]);
+
+  useEffect(() => {
+    if (!q.trim()) { setResults([]); return; }
+    const t = setTimeout(() => {
+      axios.get(`${API}/supervisor-hub/employees/search`, { params: { q } })
+        .then(r => setResults(r.data || []));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  if (selected) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', gap:8, background:'#f3f0ff', borderRadius:8, padding:'6px 10px', marginBottom:8 }}>
+        <span style={{ flex:1, fontWeight:600, color:'#6d28d9', fontSize:13 }}>
+          {selected.name}
+          <span style={{ fontWeight:400, color:'#7c3aed', fontSize:11, marginLeft:6 }}>{selected.store_name} · {selected.app_number}</span>
+        </span>
+        <button onClick={() => { onSelect(null); setQ(''); }} style={{ background:'none', border:'none', color:'#9ca3af', cursor:'pointer', fontSize:16 }}>✕</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position:'relative', marginBottom:8 }}>
+      <input
+        style={{ ...inputStyle, margin:0 }}
+        placeholder={placeholder}
+        value={q}
+        onChange={e => setQ(e.target.value)}
+      />
+      {results.length > 0 && (
+        <div style={{ position:'absolute', top:'100%', left:0, right:0, zIndex:100, background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, maxHeight:200, overflowY:'auto', boxShadow:'0 4px 12px rgba(0,0,0,0.1)' }}>
+          {results.map(e => (
+            <div key={e.app_number}
+              onClick={() => { onSelect(e); setQ(''); setResults([]); }}
+              style={{ padding:'8px 12px', cursor:'pointer', borderBottom:'1px solid #f8fafc', display:'flex', justifyContent:'space-between', alignItems:'center' }}
+              onMouseEnter={el => (el.currentTarget.style.background='#f8f4ff')}
+              onMouseLeave={el => (el.currentTarget.style.background='#fff')}>
+              <span style={{ fontWeight:600, color:'#1e293b', fontSize:13 }}>{e.name}</span>
+              <span style={{ color:'#94a3b8', fontSize:11 }}>{e.store_name} · {e.app_number}</span>
             </div>
           ))}
         </div>
