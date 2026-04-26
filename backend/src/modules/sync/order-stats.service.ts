@@ -61,17 +61,21 @@ export class OrderStatsService {
 
     while (true) {
       try {
+        const params = new URLSearchParams();
+        params.append('companyId', String(this.E0123_COMPANY_ID));
+        params.append('token', this.E0123_TOKEN);
+        params.append('createDateStart', startDate);
+        params.append('createDateEnd', endDate);
+        params.append('pageNum', String(pageNum));
+        params.append('pageSize', String(pageSize));
+
         const resp = await axios.post(
           `${this.E0123_BASE_URL}/getOrderList`,
+          params,
           {
-            companyId: this.E0123_COMPANY_ID,
-            token: this.E0123_TOKEN,
-            createDateStart: startDate,
-            createDateEnd: endDate,
-            pageNum,
-            pageSize,
+            timeout: 30000,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           },
-          { timeout: 30000 },
         );
 
         const data = resp.data;
