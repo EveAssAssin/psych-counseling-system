@@ -296,7 +296,8 @@ export class SupervisorNotesService {
       .limit(30);
 
     if (storeId) {
-      query = query.eq('store_id', storeId);
+      // storeId 實際傳入的是 store_name 值
+      query = query.eq('store_name', storeId);
     }
     if (keyword && keyword.trim().length > 0) {
       query = query.or(`name.ilike.%${keyword}%,employeeappnumber.ilike.%${keyword}%`);

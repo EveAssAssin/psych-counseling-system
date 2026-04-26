@@ -140,7 +140,6 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
   const [categories, setCategories] = useState<Category[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [stores, setStores] = useState<any[]>([]);
-  const [searchQ, setSearchQ] = useState('');
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [isExternal, setIsExternal] = useState(false);
   const [extName, setExtName] = useState('');
@@ -159,15 +158,6 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
     axios.get(`${API}/supervisor-hub/categories`).then(r => setCategories(r.data || []));
     axios.get(`${API}/supervisor-hub/stores`).then(r => setStores(r.data || []));
   }, []);
-
-  useEffect(() => {
-    if (!searchQ.trim()) { setEmployees([]); return; }
-    const t = setTimeout(() => {
-      axios.get(`${API}/supervisor-hub/employees/search`, { params: { q: searchQ } })
-        .then(r => setEmployees(r.data || []));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [searchQ]);
 
   const loadNotes = (forMode?: typeof mode) => {
     const m = forMode ?? mode;
@@ -243,36 +233,44 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
 
           {!isExternal ? (
             <>
-              <input style={inputStyle} placeholder="輸入姓名或員工編號搜尋..." value={searchQ}
-                onChange={e => { setSearchQ(e.target.value); setSelectedEmp(null); }} />
-              {selectedEmp ? (
-                <div style={{ background:'#f3f0ff', borderRadius:8, padding:'8px 12px', marginBottom:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <span style={{ fontWeight:600, color:'#6d28d9' }}>{selectedEmp.name} <span style={{ fontWeight:400, color:'#7c3aed', fontSize:12 }}>{selectedEmp.store_name}</span></span>
-                  <button onClick={() => { setSelectedEmp(null); setSearchQ(''); }} style={{ background:'none', border:'none', color:'#9ca3af', cursor:'pointer', fontSize:16 }}>✕</button>
-                </div>
-              ) : employees.length > 0 && (
-                <div style={{ border:'1px solid #e2e8f0', borderRadius:8, maxHeight:180, overflowY:'auto', marginBottom:8 }}>
-                  {employees.map(e => (
-                    <div key={e.app_number} onClick={() => { setSelectedEmp(e); setSearchQ(''); setEmployees([]); }}
-                      style={{ padding:'8px 12px', cursor:'pointer', borderBottom:'1px solid #f1f5f9' }}
-                      onMouseEnter={el => (el.currentTarget.style.background='#f8fafc')}
-                      onMouseLeave={el => (el.currentTarget.style.background='#fff')}>
-                      <span style={{ fontWeight:600 }}>{e.name}</span>
-                      <span style={{ color:'#94a3b8', fontSize:12, marginLeft:8 }}>{e.store_name} · {e.position}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* 按店家選 */}
+              {/* 姓名快搜 */}
+              <EmployeeSearchPicker
+                selected={selectedEmp}
+                onSelect={emp => { setSelectedEmp(emp); setEmployees([]); }}
+                placeholder="輸入姓名或員工編號搜尋..."
+              />
+              {/* 按店家選 — 未選人員時顯示 */}
               {stores.length > 0 && !selectedEmp && (
-                <select style={{ ...inputStyle, color:'#475569' }} onChange={async e => {
-                  if (!e.target.value) return;
-                  const r = await axios.get(`${API}/supervisor-hub/employees/search`, { params: { store_id: e.target.value } });
-                  setEmployees(r.data || []);
-                }}>
-                  <option value="">📍 或按店家篩選...</option>
-                  {stores.map((s, i) => <option key={i} value={s.store_id || s.store_name}>{s.store_name}</option>)}
-                </select>
+                <>
+                  <select style={{ ...inputStyle, color: '#475569' }}
+                    onChange={async e => {
+                      const storeName = e.target.value;
+                      if (!storeName) { setEmployees([]); return; }
+                      const r = await axios.get(`${API}/supervisor-hub/employees/search`, { params: { store_id: storeName } });
+                      setEmployees(r.data || []);
+                    }}>
+                    <option value="">📍 或按店家篩選...</option>
+                    {stores.map((s: any, i: number) => <option key={i} value={s.store_name}>{s.store_name}</option>)}
+                  </select>
+                  {/* 店家員工清單 */}
+                  {employees.length > 0 && (
+                    <div style={{ border:'1px solid #e2e8f0', borderRadius:8, maxHeight:220, overflowY:'auto', marginBottom:8, marginTop:-6 }}>
+                      <div style={{ padding:'6px 12px', background:'#f8f4ff', fontSize:11, color:'#7c3aed', fontWeight:600, borderBottom:'1px solid #e2e8f0' }}>
+                        共 {employees.length} 人，點選加入記錄
+                      </div>
+                      {employees.map(e => (
+                        <div key={e.app_number}
+                          onClick={() => { setSelectedEmp(e); setEmployees([]); }}
+                          style={{ padding:'8px 12px', cursor:'pointer', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}
+                          onMouseEnter={el => (el.currentTarget.style.background='#f8f4ff')}
+                          onMouseLeave={el => (el.currentTarget.style.background='#fff')}>
+                          <span style={{ fontWeight:600, color:'#1e293b', fontSize:13 }}>{e.name}</span>
+                          <span style={{ color:'#94a3b8', fontSize:11 }}>{e.position}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </>
           ) : (
@@ -357,9 +355,8 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
 // ────────────────────────────────────────────
 function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: string; role: string } }) {
   const [step, setStep] = useState<'select' | 'chat'>('select');
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [searchQ, setSearchQ] = useState('');
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [personas, setPersonas] = useState<Record<string, string>>({});
   const [aiType, setAiType] = useState<'claude' | 'openai' | 'gemini'>('claude');
   const [session, setSession] = useState<AiSession | null>(null);
   const [messages, setMessages] = useState<AiMessage[]>([]);
@@ -370,13 +367,16 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!searchQ.trim()) { setEmployees([]); return; }
-    const t = setTimeout(() => {
-      axios.get(`${API}/supervisor-hub/employees/search`, { params: { q: searchQ } })
-        .then(r => setEmployees(r.data || []));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [searchQ]);
+    // 載入 AI 人格簡介
+    axios.get(`${API}/supervisor-hub/ai/personas`).then(r => {
+      const map: Record<string, string> = {};
+      (r.data || []).forEach((p: any) => {
+        // 取 system_prompt 前 40 字當摘要
+        map[p.ai_type] = p.system_prompt?.slice(0, 40) || '';
+      });
+      setPersonas(map);
+    });
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -466,36 +466,26 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
 
         <div style={cardStyle}>
           <label style={labelStyle}>搜尋人員</label>
-          <input style={inputStyle} placeholder="輸入姓名或員工編號..." value={searchQ}
-            onChange={e => { setSearchQ(e.target.value); setSelectedEmp(null); }} />
-          {selectedEmp ? (
-            <div style={{ background:'#f3f0ff', borderRadius:8, padding:'8px 12px', marginBottom:12, display:'flex', justifyContent:'space-between' }}>
-              <span style={{ fontWeight:600, color:'#6d28d9' }}>{selectedEmp.name} <span style={{ fontWeight:400, color:'#7c3aed', fontSize:12 }}>{selectedEmp.store_name}</span></span>
-              <button onClick={() => { setSelectedEmp(null); setSearchQ(''); }} style={{ background:'none', border:'none', color:'#9ca3af', cursor:'pointer' }}>✕</button>
-            </div>
-          ) : employees.length > 0 && (
-            <div style={{ border:'1px solid #e2e8f0', borderRadius:8, maxHeight:160, overflowY:'auto', marginBottom:12 }}>
-              {employees.map(e => (
-                <div key={e.app_number} onClick={() => { setSelectedEmp(e); setSearchQ(''); setEmployees([]); }}
-                  style={{ padding:'8px 12px', cursor:'pointer', borderBottom:'1px solid #f1f5f9' }}>
-                  <span style={{ fontWeight:600 }}>{e.name}</span>
-                  <span style={{ color:'#94a3b8', fontSize:12, marginLeft:8 }}>{e.store_name}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <EmployeeSearchPicker selected={selectedEmp} onSelect={setSelectedEmp} placeholder="輸入姓名或員工編號..." />
 
           <label style={labelStyle}>選擇 AI</label>
-          <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+          <div style={{ display:'flex', gap:8, marginBottom:4 }}>
             {(['claude', 'openai', 'gemini'] as const).map(ai => (
               <button key={ai} onClick={() => setAiType(ai)}
-                style={{ flex:1, padding:'10px 0', border:'none', borderRadius:10, cursor:'pointer', fontWeight:600, fontSize:13,
-                  background: aiType===ai ? AI_LABELS[ai].color : '#e2e8f0',
+                style={{ flex:1, padding:'10px 8px', border: aiType===ai ? `2px solid ${AI_LABELS[ai].color}` : '2px solid transparent',
+                  borderRadius:10, cursor:'pointer', fontWeight:600, fontSize:13,
+                  background: aiType===ai ? AI_LABELS[ai].color : '#f1f5f9',
                   color: aiType===ai ? '#fff' : '#475569', transition:'all 0.2s' }}>
                 {AI_LABELS[ai].emoji} {AI_LABELS[ai].label}
               </button>
             ))}
           </div>
+          {/* AI 人格摘要 */}
+          {personas[aiType] && (
+            <div style={{ background:'#f8f4ff', borderRadius:8, padding:'8px 12px', marginBottom:12, fontSize:12, color:'#6d28d9', lineHeight:1.5 }}>
+              💬 {personas[aiType]}…
+            </div>
+          )}
 
           <button onClick={startChat}
             style={{ ...btnStyle, background: aiInfo.color, color:'#fff', width:'100%' }}>
