@@ -350,7 +350,7 @@ export class SupervisorAiService {
         prompt += `\n\n【⚠️ 風險標記（進行中 ${openFlags.length} 筆）】\n`;
         openFlags.forEach((f: any) => {
           const date = new Date(f.created_at).toLocaleDateString('zh-TW');
-          const severityLabel = { critical: '🔴 嚴重', high: '🟠 高', medium: '🟡 中', low: '🟢 低' }[f.severity] || f.severity;
+          const severityLabel = ({ critical: '🔴 嚴重', high: '🟠 高', medium: '🟡 中', low: '🟢 低' } as Record<string, string>)[f.severity] || f.severity;
           prompt += `\n[${date}] ${severityLabel} ｜ ${f.risk_type} ｜ ${f.title}\n`;
           if (f.description) prompt += `說明：${f.description}\n`;
           if (f.evidence_text) prompt += `依據：${f.evidence_text.slice(0, 200)}\n`;
@@ -393,7 +393,7 @@ export class SupervisorAiService {
           const date = r.event_date
             ? new Date(r.event_date).toLocaleDateString('zh-TW')
             : new Date(r.created_at).toLocaleDateString('zh-TW');
-          const typeLabel = { positive: '✅ 正面', negative: '❌ 負面', complaint: '⚠️ 投訴', praise: '🌟 表揚', other: '📝 其他' }[r.review_type] || r.review_type;
+          const typeLabel = ({ positive: '✅ 正面', negative: '❌ 負面', complaint: '⚠️ 投訴', praise: '🌟 表揚', other: '📝 其他' } as Record<string, string>)[r.review_type] || r.review_type;
           prompt += `\n[${i + 1}] ${date} ｜ ${typeLabel} ｜ 急迫度：${r.urgency || 'normal'} ｜ 狀態：${r.status || '未知'}\n`;
           prompt += `${(r.content || '').slice(0, 200)}${(r.content || '').length > 200 ? '...' : ''}\n`;
         });
@@ -408,7 +408,7 @@ export class SupervisorAiService {
             ? new Date(m.message_time).toLocaleDateString('zh-TW')
             : '未知時間';
           const channelLabel = m.channel === 'official-line' ? '📱 LINE' : '🎫 工單留言';
-          const dirLabel = { inbound: '👤 員工', store: '🏪 門市', engineer: '🔧 工程師', reviewer: '📋 審核' }[m.direction] || m.direction;
+          const dirLabel = ({ inbound: '👤 員工', store: '🏪 門市', engineer: '🔧 工程師', reviewer: '📋 審核' } as Record<string, string>)[m.direction] || m.direction;
           prompt += `\n[${i + 1}] ${time} ｜ ${channelLabel} ｜ 發送方：${dirLabel}`;
           if (m.ticket_no) prompt += ` ｜ 工單：${m.ticket_no}`;
           prompt += '\n';
