@@ -75,9 +75,10 @@ export class OrderStatsService {
         );
 
         const data = resp.data;
+        this.logger.log(`E0123 response: returnCode=${data.returnCode}, returnMsg=${data.returnMsg}, orders=${(data.orderList || []).length}`);
         if (data.returnCode !== 'SUCCESS') {
-          this.logger.warn(`E0123 API error: ${data.returnMsg}`);
-          break;
+          this.logger.warn(`E0123 API error: ${data.returnMsg} (full: ${JSON.stringify(data).slice(0, 300)})`);
+          return { success: false, synced: 0, message: `E0123 API 錯誤：${data.returnMsg || JSON.stringify(data).slice(0, 200)}` };
         }
 
         const orders: any[] = data.orderList || [];
@@ -94,7 +95,8 @@ export class OrderStatsService {
     }
 
     if (allOrders.length === 0) {
-      return { success: true, synced: 0, message: '該月份無訂單資料' };
+      this.logger.warn(`No orders found for ${year}-${month}. Token set: ${!!this.E0123_TOKEN}, CompanyId: ${this.E0123_COMPANY_ID}`);
+      return { success: true, synced: 0, message: `該月份無訂單資料（token=${this.E0123_TOKEN ? '已設定' : '未設定'}）` };
     }
 
     // ── 聚合：saleOpId + label ──

@@ -344,9 +344,15 @@ function OrderStatsBackfill() {
     setSyncing(key);
     try {
       const res = await syncApi.syncOrderStatsMonth(year, month);
-      const { upserted } = res.data;
-      toast.success(`${year}/${month} 完成，寫入 ${upserted ?? 0} 筆`);
-      setDone((prev) => new Set([...prev, key]));
+      const synced: number = res.data.synced ?? res.data.upserted ?? 0;
+      const message: string = res.data.message || '';
+      if (synced > 0) {
+        toast.success(`${year}/${month} 完成，寫入 ${synced} 筆`);
+        setDone((prev) => new Set([...prev, key]));
+      } else {
+        toast(`${year}/${month} 同步完成但無資料（${message}）`, { icon: '⚠️' });
+        setDone((prev) => new Set([...prev, key]));
+      }
     } catch {
       toast.error(`${year}/${month} 同步失敗`);
     } finally {
