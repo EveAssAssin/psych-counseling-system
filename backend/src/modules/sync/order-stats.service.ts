@@ -23,7 +23,7 @@ export interface EmployeeOrderTrend {
 export class OrderStatsService {
   private readonly logger = new Logger(OrderStatsService.name);
 
-  private readonly E0123_BASE_URL = 'http://api.lohasglasses.com/openApi';
+  private readonly E0123_BASE_URL = 'https://api.lohasglasses.com/openApi';
   private readonly E0123_COMPANY_ID: number;
   private readonly E0123_TOKEN: string;
 
