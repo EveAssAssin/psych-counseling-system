@@ -595,23 +595,19 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
 
   useEffect(() => { load(); }, []);
 
-  if (supervisor.role !== 'admin') {
-    return (
-      <div style={{ padding:32, textAlign:'center' }}>
-        <div style={{ fontSize:40, marginBottom:12 }}>🔒</div>
-        <p style={{ color:'#64748b', fontSize:14 }}>管理功能僅限超級管理員使用</p>
-        <p style={{ color:'#94a3b8', fontSize:12 }}>請聯繫系統管理員（app_number: 28095198）</p>
-      </div>
-    );
-  }
+  const isAdmin = supervisor.role === 'admin';
 
   return (
     <div style={{ padding:16 }}>
       <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }}>
-        {([['categories','分類'],['supervisors','主管名單'],['confidential','AI 機密'],['personas','AI 人格']] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setSection(k)}
-            style={{ ...smallBtnStyle, background: section===k ? '#7c3aed':'#e2e8f0', color: section===k ? '#fff':'#475569' }}>{l}</button>
-        ))}
+        {([['categories','分類'],['supervisors','主管名單'],['confidential','AI 機密'],['personas','AI 人格']] as const).map(([k, l]) => {
+          const adminOnly = k !== 'categories';
+          if (adminOnly && !isAdmin) return null;
+          return (
+            <button key={k} onClick={() => setSection(k)}
+              style={{ ...smallBtnStyle, background: section===k ? '#7c3aed':'#e2e8f0', color: section===k ? '#fff':'#475569' }}>{l}</button>
+          );
+        })}
       </div>
 
       {/* 分類管理 */}
@@ -639,8 +635,8 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
         </div>
       )}
 
-      {/* 主管名單 */}
-      {section === 'supervisors' && (
+      {/* 主管名單（admin only） */}
+      {section === 'supervisors' && isAdmin && (
         <div style={cardStyle}>
           <h4 style={{ margin:'0 0 12px', color:'#1e293b' }}>有權使用的主管</h4>
           <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap' }}>
@@ -668,8 +664,8 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
         </div>
       )}
 
-      {/* AI 機密名單 */}
-      {section === 'confidential' && (
+      {/* AI 機密名單（admin only） */}
+      {section === 'confidential' && isAdmin && (
         <div style={cardStyle}>
           <h4 style={{ margin:'0 0 4px', color:'#1e293b' }}>AI 機密名單</h4>
           <p style={{ color:'#64748b', fontSize:12, marginBottom:12 }}>列入名單的人員可以被記錄隨手記，但 AI 無法討論其資料。</p>
@@ -695,8 +691,8 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
         </div>
       )}
 
-      {/* AI 人格設定 */}
-      {section === 'personas' && (
+      {/* AI 人格設定（admin only） */}
+      {section === 'personas' && isAdmin && (
         <div>
           {personas.map(p => (
             <div key={p.id} style={cardStyle}>
