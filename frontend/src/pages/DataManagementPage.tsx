@@ -323,6 +323,20 @@ export default function DataManagementPage() {
   const [logs, setLogs] = useState<SyncLog[]>([]);
   const [cursors, setCursors] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
+  const [patchingStores, setPatchingStores] = useState(false);
+
+  const handlePatchStoreNames = async () => {
+    setPatchingStores(true);
+    try {
+      const res = await syncApi.patchStoreNames();
+      const { updated, skipped } = res.data;
+      toast.success(`門市資料補充完成：更新 ${updated} 筆，跳過 ${skipped} 筆（無門市資料）`);
+    } catch (err) {
+      toast.error('補充門市資料失敗');
+    } finally {
+      setPatchingStores(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -374,13 +388,23 @@ export default function DataManagementPage() {
           </h1>
           <p className="mt-1 text-sm text-gray-500">管理各資料源的同步狀態、排程、手動觸發與歷史日誌</p>
         </div>
-        <button
-          onClick={fetchData}
-          className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 hover:bg-gray-50"
-        >
-          <ArrowPathIcon className="h-4 w-4" />
-          重新整理
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handlePatchStoreNames}
+            disabled={patchingStores}
+            className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 border border-amber-300 hover:bg-amber-100 disabled:opacity-50"
+          >
+            <ArrowPathIcon className={`h-4 w-4 ${patchingStores ? 'animate-spin' : ''}`} />
+            補充門市資料
+          </button>
+          <button
+            onClick={fetchData}
+            className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 hover:bg-gray-50"
+          >
+            <ArrowPathIcon className="h-4 w-4" />
+            重新整理
+          </button>
+        </div>
       </div>
 
       {/* Overview cards */}

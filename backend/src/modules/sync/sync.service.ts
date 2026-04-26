@@ -1245,4 +1245,46 @@ export class SyncService {
       );
     }
   }
+  /**
+   * 從 source_payload 補充 store_name（快速修復，不需要 API 呼叫）
+   */
+  async patchStoreNamesFromPayload(): Promise<{ updated: number; skipped: number }> {
+    this.logger.log('Patching store_name from source_payload...');
+
+    const client = this.supabase.getAdminClient();
+
+    // 取出 store_name 為 null 但 source_payload 不為 null 的員工
+    const { data: employees, error } = await client
+      .from('employees')
+      .select('id, store_name, source_payload')
+      .is('store_name', null)
+      .not('source_payload', 'is', null);
+
+    if (error) {
+      this.logger.error('Error fetching employees for patch:', error);
+      throw error;
+    }
+
+    this.logger.log(`Found ${employees?.length || 0} employees with null store_name`);
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const emp of employees || []) {
+      const groupname = emp.source_payload?.groupname;
+      if (groupname) {
+        await client
+          .from('employees')
+          .update({ store_name: groupname })
+          .eq('id', emp.id);
+        updated++;
+      } else {
+        skipped++;
+      }
+    }
+
+    this.logger.log(`Patch complete: ${updated} updated, ${skipped} skipped (no groupname in payload)`);
+    return { updated, skipped };
+  }
+
 }

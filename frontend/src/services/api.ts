@@ -229,6 +229,8 @@ export const syncApi = {
   getLogs: (limit?: number) => api.get('/sync/logs', { params: { limit } }),
 
   getLog: (id: string) => api.get(`/sync/logs/${id}`),
+
+  patchStoreNames: () => api.post('/sync/patch-store-names'),
 };
 
 // ============================================

@@ -69,4 +69,11 @@ export class SyncController {
   async getSyncLog(@Param('id') id: string) {
     return this.syncService.getSyncLog(id);
   }
+
+  @Post('patch-store-names')
+  @ApiOperation({ summary: '從 source_payload 補充門市名稱（修復 store_name 為 null 的員工）' })
+  @ApiResponse({ status: 201, description: '修復結果' })
+  async patchStoreNames() {
+    return this.syncService.patchStoreNamesFromPayload();
+  }
 }

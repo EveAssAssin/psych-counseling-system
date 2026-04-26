@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   Employee,
@@ -10,12 +10,12 @@ import {
 @Injectable()
 export class EmployeesService {
   private readonly logger = new Logger(EmployeesService.name);
-  private readonly TABLE = 'employees_view';
+  private readonly TABLE = 'employees';
 
   constructor(private readonly supabase: SupabaseService) {}
 
   /**
-   * 建立員工
+   * 撱箇??∪極
    */
   async create(dto: CreateEmployeeDto): Promise<Employee> {
     this.logger.log(`Creating employee: ${dto.employeeappnumber}`);
@@ -36,7 +36,7 @@ export class EmployeesService {
   }
 
   /**
-   * 取得單一員工（by ID）
+   * ???桐??∪極嚗y ID嚗?
    */
   async findById(id: string): Promise<Employee> {
     const employee = await this.supabase.findOne<Employee>(
@@ -53,18 +53,28 @@ export class EmployeesService {
   }
 
   /**
-   * 取得單一員工（by employeeappnumber）
+   * ???桐??∪極嚗y employeeappnumber嚗?
    */
   async findByAppNumber(employeeappnumber: string): Promise<Employee | null> {
-    return this.supabase.findOne<Employee>(
-      this.TABLE,
-      { employeeappnumber },
-      { useAdmin: true },
-    );
+    // Use direct query with limit(1) to handle duplicate records gracefully
+    const client = this.supabase.getAdminClient();
+    const { data, error } = await client
+      .from(this.TABLE)
+      .select('*')
+      .eq('employeeappnumber', employeeappnumber)
+      .order('synced_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      this.logger.error(`Error finding employee by app number ${employeeappnumber}:`, error);
+      throw error;
+    }
+
+    return data && data.length > 0 ? (data[0] as Employee) : null;
   }
 
   /**
-   * 取得單一員工（by employeeerpid）
+   * ???桐??∪極嚗y employeeerpid嚗?
    */
   async findByErpId(employeeerpid: string): Promise<Employee | null> {
     return this.supabase.findOne<Employee>(
@@ -75,7 +85,7 @@ export class EmployeesService {
   }
 
   /**
-   * 搜尋員工
+   * ???∪極
    */
   async search(dto: SearchEmployeeDto): Promise<{
     data: Employee[];
@@ -88,9 +98,9 @@ export class EmployeesService {
 
     const client = this.supabase.getAdminClient();
     
-    // 如果有搜尋關鍵字，使用 filter 方式
+    // 憒???撠??萄?嚗蝙??filter ?孵?
     if (dto.q) {
-      // 先取得所有符合其他條件的員工，再用 JavaScript 過濾
+      // ??敺??泵?隞?隞嗥??∪極嚗???JavaScript ?蕪
       let query = client.from(this.TABLE).select('*');
       
       if (dto.store_id) {
@@ -110,7 +120,7 @@ export class EmployeesService {
         throw error;
       }
 
-      // JavaScript 過濾中文名字
+      // JavaScript ?蕪銝剜???
       const searchTerm = dto.q.toLowerCase();
       const filtered = (allData || []).filter((emp: Employee) => {
         return (
@@ -122,7 +132,7 @@ export class EmployeesService {
         );
       });
 
-      // 分頁
+      // ??
       const paged = filtered.slice(offset, offset + limit);
 
       return {
@@ -133,7 +143,7 @@ export class EmployeesService {
       };
     }
 
-    // 沒有搜尋關鍵字，使用原本的查詢方式
+    // 瘝????摮?雿輻??閰Ｘ撘?
     let query = client.from(this.TABLE).select('*', { count: 'exact' });
 
     if (dto.store_id) {
@@ -166,7 +176,7 @@ export class EmployeesService {
   }
 
   /**
-   * 取得所有員工
+   * ????撌?
    */
   async findAll(options?: {
     is_active?: boolean;
@@ -183,7 +193,7 @@ export class EmployeesService {
   }
 
   /**
-   * 更新員工
+   * ?湔?∪極
    */
   async update(id: string, dto: UpdateEmployeeDto): Promise<Employee> {
     this.logger.log(`Updating employee: ${id}`);
@@ -203,7 +213,7 @@ export class EmployeesService {
   }
 
   /**
-   * Upsert 員工（同步用）
+   * Upsert ?∪極嚗?甇亦嚗?
    */
   async upsert(dto: CreateEmployeeDto, sourcePayload?: Record<string, any>): Promise<Employee> {
     this.logger.debug(`Upserting employee: ${dto.employeeappnumber}`);
@@ -222,7 +232,7 @@ export class EmployeesService {
   }
 
   /**
-   * 批量 Upsert
+   * ?寥? Upsert
    */
   async bulkUpsert(
     employees: (CreateEmployeeDto & { source_payload?: Record<string, any> })[],
@@ -268,14 +278,14 @@ export class EmployeesService {
   }
 
   /**
-   * 刪除員工（軟刪除）
+   * ?芷?∪極嚗??芷嚗?
    */
   async softDelete(id: string): Promise<Employee> {
     return this.update(id, { is_active: false });
   }
 
   /**
-   * 取得員工統計
+   * ???∪極蝯梯?
    */
   async getStats(): Promise<{
     total: number;
@@ -298,7 +308,7 @@ export class EmployeesService {
   }
 
   /**
-   * 對人識別（根據各種識別資訊找到員工）
+   * 撠犖霅嚗??蝔株??亥?閮?啣撌伐?
    */
   async identify(identifiers: {
     employeeappnumber?: string;
@@ -306,7 +316,7 @@ export class EmployeesService {
     name?: string;
     store_name?: string;
   }): Promise<Employee | null> {
-    // 優先序：employeeappnumber > employeeerpid > name + store
+    // ?芸?摨?employeeappnumber > employeeerpid > name + store
 
     if (identifiers.employeeappnumber) {
       const emp = await this.findByAppNumber(identifiers.employeeappnumber);
@@ -318,7 +328,7 @@ export class EmployeesService {
       if (emp) return emp;
     }
 
-    // 名字 + 門市（模糊比對，僅供人工判定參考）
+    // ?? + ?撣?璅∠?瘥?嚗?靘犖撌亙摰???
     if (identifiers.name) {
       const client = this.supabase.getAdminClient();
       let query = client
@@ -343,3 +353,4 @@ export class EmployeesService {
     return null;
   }
 }
+
