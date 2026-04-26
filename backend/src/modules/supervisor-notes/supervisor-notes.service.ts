@@ -287,55 +287,45 @@ export class SupervisorNotesService {
     return { success: true };
   }
 
-  // 搜尋人員（從 employees_cache 表）
+  // 搜尋人員（直接查 employees 表，支援單字快搜）
   async searchEmployees(keyword: string, storeId?: string) {
     let query = this.db
-      .from('employees_cache')
-      .select('app_number, name, store_name, position, status')
-      .eq('status', 'active')
-      .limit(20);
+      .from('employees')
+      .select('employeeappnumber, name, store_name, title, is_active')
+      .eq('is_active', true)
+      .limit(30);
 
     if (storeId) {
       query = query.eq('store_id', storeId);
-    } else if (keyword) {
-      query = query.or(`name.ilike.%${keyword}%,app_number.ilike.%${keyword}%`);
     }
+    if (keyword && keyword.trim().length > 0) {
+      query = query.or(`name.ilike.%${keyword}%,employeeappnumber.ilike.%${keyword}%`);
+    }
+
+    query = query.order('name', { ascending: true });
 
     const { data, error } = await query;
-    if (error) {
-      // fallback to employees table
-      let q2 = this.db
-        .from('employees')
-        .select('id, app_number, name, store_name, position')
-        .limit(20);
-      if (keyword) q2 = q2.or(`name.ilike.%${keyword}%,app_number.ilike.%${keyword}%`);
-      const { data: d2, error: e2 } = await q2;
-      if (e2) throw e2;
-      return d2;
-    }
-    return data;
+    if (error) throw error;
+
+    // 統一回傳格式（前端介面使用 app_number）
+    return (data || []).map(e => ({
+      app_number: e.employeeappnumber,
+      name: e.name,
+      store_name: e.store_name,
+      position: e.title,
+    }));
   }
 
-  // 取得店家清單
+  // 取得店家清單（從 employees 表）
   async getStores() {
     const { data, error } = await this.db
-      .from('employees_cache')
-      .select('store_id, store_name')
-      .eq('status', 'active')
+      .from('employees')
+      .select('store_name')
+      .eq('is_active', true)
       .not('store_name', 'is', null);
-    if (error) {
-      const { data: d2 } = await this.db
-        .from('employees')
-        .select('store_name')
-        .not('store_name', 'is', null);
-      const stores = [...new Set((d2 || []).map(e => e.store_name))].filter(Boolean);
-      return stores.map(s => ({ store_name: s }));
-    }
-    const unique: Record<string, any> = {};
-    (data || []).forEach(e => {
-      if (e.store_id && !unique[e.store_id]) unique[e.store_id] = e;
-    });
-    return Object.values(unique);
+    if (error) throw error;
+    const stores = [...new Set((data || []).map((e: any) => e.store_name))].filter(Boolean).sort();
+    return stores.map(s => ({ store_name: s }));
   }
 
   // ═══════════════════════════════════════════
