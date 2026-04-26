@@ -12,7 +12,7 @@ export interface UploadResult {
   error?: string;
 }
 
-export type UploadCategory = 'reviews' | 'responses' | 'conversations';
+export type UploadCategory = 'reviews' | 'responses' | 'conversations' | 'supervisor-notes';
 
 @Injectable()
 export class UploadService {
@@ -23,13 +23,25 @@ export class UploadService {
     image: 10 * 1024 * 1024,      // 10MB
     video: 100 * 1024 * 1024,     // 100MB
     audio: 50 * 1024 * 1024,      // 50MB
+    document: 30 * 1024 * 1024,   // 30MB
   };
 
   // 允許的 MIME 類型
   private readonly ALLOWED_TYPES = {
-    image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-    video: ['video/mp4', 'video/quicktime', 'video/webm'],
+    image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'],
+    video: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo', 'video/x-ms-wmv'],
     audio: ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/m4a', 'audio/x-m4a'],
+    document: [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain',
+      'text/csv',
+    ],
   };
 
   constructor(private readonly supabase: SupabaseService) {}
@@ -126,10 +138,11 @@ export class UploadService {
   /**
    * 判斷檔案類型
    */
-  private getFileType(mimeType: string): 'image' | 'video' | 'audio' | null {
+  private getFileType(mimeType: string): 'image' | 'video' | 'audio' | 'document' | null {
     if (this.ALLOWED_TYPES.image.includes(mimeType)) return 'image';
     if (this.ALLOWED_TYPES.video.includes(mimeType)) return 'video';
     if (this.ALLOWED_TYPES.audio.includes(mimeType)) return 'audio';
+    if (this.ALLOWED_TYPES.document.includes(mimeType)) return 'document';
     return null;
   }
 

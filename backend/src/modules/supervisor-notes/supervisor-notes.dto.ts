@@ -38,6 +38,7 @@ export class CreateNoteDto {
 
   @ApiProperty() @IsString() content: string;
   @ApiPropertyOptional() @IsOptional() @IsArray() images?: string[];
+  @ApiPropertyOptional() @IsOptional() @IsArray() attachments?: any[];
 }
 
 export class UpdateNoteDto {
@@ -45,6 +46,7 @@ export class UpdateNoteDto {
   @ApiPropertyOptional() @IsOptional() @IsString() category_name?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() content?: string;
   @ApiPropertyOptional() @IsOptional() @IsArray() images?: string[];
+  @ApiPropertyOptional() @IsOptional() @IsArray() attachments?: any[];
 }
 
 // ── 有權主管 ──

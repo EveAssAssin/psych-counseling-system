@@ -127,20 +127,57 @@ export class SupervisorNotesService {
   //  紀錄分類 CRUD
   // ═══════════════════════════════════════════
 
-  async getCategories() {
-    const { data, error } = await this.db
+  async getCategories(supervisorId?: string) {
+    // 取得全域分類（supervisor_id IS NULL）+ 個人分類
+    let query = this.db
       .from('note_categories')
       .select('*')
-      .eq('is_active', true)
-      .order('sort_order');
+      .eq('is_active', true);
+
+    if (supervisorId) {
+      query = query.or(`supervisor_id.is.null,supervisor_id.eq.${supervisorId}`);
+    } else {
+      query = query.is('supervisor_id', null);
+    }
+
+    const { data, error } = await query.order('sort_order').order('created_at');
     if (error) throw error;
-    return data;
+
+    if (!supervisorId || !data) return data;
+
+    // 依主管自訂排序
+    const { data: svData } = await this.db
+      .from('authorized_supervisors')
+      .select('category_order')
+      .eq('identifier', supervisorId)
+      .limit(1);
+
+    const order: string[] = svData?.[0]?.category_order || [];
+    if (order.length === 0) return data;
+
+    // 依 order 排序，沒出現在 order 裡的放最後
+    const orderMap: Record<string, number> = {};
+    order.forEach((id, i) => { orderMap[id] = i; });
+    return [...data].sort((a, b) => {
+      const ai = orderMap[a.id] ?? 9999;
+      const bi = orderMap[b.id] ?? 9999;
+      return ai - bi;
+    });
   }
 
-  async createCategory(dto: CreateCategoryDto, createdBy?: string) {
+  async updateCategoryOrder(supervisorId: string, orderedIds: string[]) {
+    const { error } = await this.db
+      .from('authorized_supervisors')
+      .update({ category_order: orderedIds, updated_at: new Date().toISOString() })
+      .eq('identifier', supervisorId);
+    if (error) throw error;
+    return { success: true };
+  }
+
+  async createCategory(dto: CreateCategoryDto, createdBy?: string, supervisorId?: string) {
     const { data, error } = await this.db
       .from('note_categories')
-      .insert({ ...dto, created_by: createdBy })
+      .insert({ ...dto, created_by: createdBy, supervisor_id: supervisorId || null })
       .select()
       .single();
     if (error) throw error;

@@ -1,9 +1,12 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, HttpCode, HttpStatus,
+  UseInterceptors, UploadedFiles,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { SupervisorNotesService } from './supervisor-notes.service';
+import { UploadService } from '../upload/upload.service';
 import {
   CreateNoteDto, UpdateNoteDto,
   CreateCategoryDto, UpdateCategoryDto,
@@ -13,7 +16,10 @@ import {
 @ApiTags('supervisor-hub')
 @Controller('supervisor-hub')
 export class SupervisorNotesController {
-  constructor(private readonly svc: SupervisorNotesService) {}
+  constructor(
+    private readonly svc: SupervisorNotesService,
+    private readonly uploadSvc: UploadService,
+  ) {}
 
   // ── 身份驗證 ──
   @Get('auth/check')
@@ -22,13 +28,11 @@ export class SupervisorNotesController {
     @Query('identifier') identifier: string,
     @Query('password') password?: string,
   ) {
-    // 密碼登入模式
     if (password) {
       const result = await this.svc.verifyLogin(identifier, password);
       if (!result.success) return { authorized: false, role: null, name: null };
       return { authorized: true, role: result.info!.role, name: result.info!.name };
     }
-    // 舊模式（識別碼查詢，供內部使用）
     const info = await this.svc.getSupervisorInfo(identifier);
     if (!info) return { authorized: false, role: null, name: null };
     return { authorized: true, role: info.role, name: info.name };
@@ -36,15 +40,23 @@ export class SupervisorNotesController {
 
   // ── 分類 ──
   @Get('categories')
-  @ApiOperation({ summary: '取得所有啟用分類' })
-  getCategories() { return this.svc.getCategories(); }
+  @ApiOperation({ summary: '取得分類（全域+個人）' })
+  getCategories(@Query('supervisor_id') supervisorId?: string) {
+    return this.svc.getCategories(supervisorId);
+  }
 
   @Post('categories')
   @ApiOperation({ summary: '新增分類' })
   createCategory(
     @Body() dto: CreateCategoryDto,
     @Query('supervisor_id') supervisorId?: string,
-  ) { return this.svc.createCategory(dto, supervisorId); }
+  ) { return this.svc.createCategory(dto, supervisorId, supervisorId); }
+
+  @Patch('categories/order')
+  @ApiOperation({ summary: '更新主管分類排序' })
+  updateCategoryOrder(
+    @Body() body: { supervisor_id: string; ordered_ids: string[] },
+  ) { return this.svc.updateCategoryOrder(body.supervisor_id, body.ordered_ids); }
 
   @Patch('categories/:id')
   @ApiOperation({ summary: '更新分類' })
@@ -55,6 +67,26 @@ export class SupervisorNotesController {
   @Delete('categories/:id')
   @ApiOperation({ summary: '刪除分類（軟刪除）' })
   deleteCategory(@Param('id') id: string) { return this.svc.deleteCategory(id); }
+
+  // ── 附件上傳 ──
+  @Post('upload')
+  @ApiOperation({ summary: '上傳附件（圖片/影片/文件）' })
+  @UseInterceptors(FilesInterceptor('files', 10))
+  async uploadAttachments(@UploadedFiles() files: Express.Multer.File[]) {
+    if (!files || files.length === 0) return { attachments: [] };
+    const results = await Promise.all(
+      files.map(f => this.uploadSvc.uploadFile(f, 'reviews', 'supervisor-notes'))
+    );
+    const attachments = results
+      .filter(r => r.success)
+      .map(r => ({
+        url: r.url,
+        originalName: r.fileName,
+        type: r.mimeType,
+        size: r.fileSize,
+      }));
+    return { attachments };
+  }
 
   // ── 隨手記 ──
   @Post('notes')
@@ -109,39 +141,31 @@ export class SupervisorNotesController {
 
   // ── 有權主管管理 ──
   @Get('supervisors')
-  @ApiOperation({ summary: '取得主管名單' })
   getSupervisors() { return this.svc.getSupervisors(); }
 
   @Post('supervisors')
-  @ApiOperation({ summary: '新增主管' })
   createSupervisor(@Body() dto: CreateSupervisorDto) { return this.svc.createSupervisor(dto); }
 
   @Patch('supervisors/:id')
-  @ApiOperation({ summary: '更新主管資料' })
   updateSupervisor(@Param('id') id: string, @Body() dto: any) {
     return this.svc.updateSupervisor(id, dto);
   }
 
   @Delete('supervisors/:id')
-  @ApiOperation({ summary: '停用主管' })
   deleteSupervisor(@Param('id') id: string) { return this.svc.deleteSupervisor(id); }
 
   @Patch('supervisors/:id/password')
-  @ApiOperation({ summary: '設定主管密碼' })
   setPassword(@Param('id') id: string, @Body() body: { password: string }) {
     return this.svc.setPassword(id, body.password);
   }
 
   // ── AI 機密名單 ──
   @Get('confidential')
-  @ApiOperation({ summary: '取得 AI 機密名單' })
   getConfidentialList() { return this.svc.getConfidentialList(); }
 
   @Post('confidential')
-  @ApiOperation({ summary: '加入 AI 機密名單' })
   addConfidential(@Body() dto: AddConfidentialDto) { return this.svc.addToConfidential(dto); }
 
   @Delete('confidential/:id')
-  @ApiOperation({ summary: '從 AI 機密名單移除' })
   removeConfidential(@Param('id') id: string) { return this.svc.removeFromConfidential(id); }
 }

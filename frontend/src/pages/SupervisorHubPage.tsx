@@ -7,8 +7,9 @@ const API = import.meta.env.VITE_API_URL || 'https://psych-counseling-backend.on
 //  Types
 // ────────────────────────────────────────────
 interface Employee { app_number: string; name: string; store_name?: string; position?: string; }
-interface Category { id: string; name: string; color: string; }
-interface Note { id: string; content: string; category_name?: string; supervisor_name: string; created_at: string; employee_app_number?: string; non_employee_name?: string; images?: string[]; }
+interface Category { id: string; name: string; color: string; supervisor_id?: string | null; }
+interface Attachment { url: string; originalName: string; type: string; size: number; }
+interface Note { id: string; content: string; category_name?: string; supervisor_name: string; created_at: string; employee_app_number?: string; non_employee_name?: string; images?: string[]; attachments?: Attachment[]; }
 interface AiMessage { role: 'user' | 'assistant'; content: string; }
 interface AiSession { id: string; employee_name?: string; ai_type: string; title: string; created_at: string; }
 interface AiPersona { id: string; ai_type: string; persona_name: string; system_prompt: string; model?: string; }
@@ -145,7 +146,8 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
   const [extName, setExtName] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [content, setContent] = useState('');
-  const [images, setImages] = useState<string[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   // 列表
@@ -153,9 +155,11 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
   const [listSearch, setListSearch] = useState('');
   const [editNote, setEditNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    axios.get(`${API}/supervisor-hub/categories`).then(r => setCategories(r.data || []));
+    axios.get(`${API}/supervisor-hub/categories`, { params: { supervisor_id: supervisor.identifier } })
+      .then(r => setCategories(r.data || []));
     axios.get(`${API}/supervisor-hub/stores`).then(r => setStores(r.data || []));
   }, []);
 
@@ -170,11 +174,41 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
 
   useEffect(() => { if (mode === 'list' || mode === 'all') loadNotes(mode); }, [mode, listSearch]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const newFiles = Array.from(e.target.files);
+    setPendingFiles(prev => [...prev, ...newFiles]);
+    e.target.value = '';
+  };
+
+  const removeFile = (idx: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSave = async () => {
     if (!content.trim()) { alert('請輸入內容'); return; }
     if (!isExternal && !selectedEmp) { alert('請選擇人員'); return; }
     if (isExternal && !extName.trim()) { alert('請輸入姓名'); return; }
     setSaving(true);
+
+    // 先上傳附件
+    let attachments: Attachment[] = [];
+    if (pendingFiles.length > 0) {
+      setUploading(true);
+      try {
+        const formData = new FormData();
+        pendingFiles.forEach(f => formData.append('files', f));
+        const r = await axios.post(`${API}/supervisor-hub/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        attachments = r.data.attachments || [];
+      } catch (e: any) {
+        alert('附件上傳失敗：' + (e.response?.data?.message || e.message));
+        setSaving(false); setUploading(false); return;
+      }
+      setUploading(false);
+    }
+
     try {
       await axios.post(`${API}/supervisor-hub/notes`, {
         supervisor_id: supervisor.identifier,
@@ -184,10 +218,11 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
         is_external: isExternal,
         category_id: categoryId || undefined,
         content,
-        images,
+        attachments,
       });
       setSaved(true);
-      setContent(''); setSelectedEmp(null); setExtName(''); setIsExternal(false); setCategoryId(''); setImages([]);
+      setContent(''); setSelectedEmp(null); setExtName(''); setIsExternal(false);
+      setCategoryId(''); setPendingFiles([]);
       setTimeout(() => setSaved(false), 2000);
     } catch (e: any) { alert(e.response?.data?.message || '儲存失敗'); }
     setSaving(false);
@@ -285,7 +320,7 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
             {categories.map(c => (
               <button key={c.id} onClick={() => setCategoryId(c.id)}
                 style={{ ...smallBtnStyle, background: categoryId===c.id ? c.color:'#e2e8f0', color: categoryId===c.id ? '#fff':'#475569' }}>
-                {c.name}
+                {c.name}{c.supervisor_id ? ' 🔹' : ''}
               </button>
             ))}
           </div>
@@ -295,14 +330,48 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
           <textarea style={{ ...inputStyle, minHeight:100, resize:'vertical' }} placeholder="輸入記錄內容..."
             value={content} onChange={e => setContent(e.target.value)} />
 
-          <button onClick={handleSave} disabled={saving}
+          {/* 附件上傳 */}
+          <label style={labelStyle}>附件（圖片 / 影片 / 文件）</label>
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            style={{ border:'2px dashed #c4b5fd', borderRadius:10, padding:'14px 12px', cursor:'pointer', background:'#faf5ff', marginBottom:8, textAlign:'center', color:'#7c3aed', fontSize:13 }}>
+            📎 點擊選擇檔案（可多選）
+          </div>
+          <input ref={fileInputRef} type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+            style={{ display:'none' }} onChange={handleFileSelect} />
+
+          {/* 已選附件預覽 */}
+          {pendingFiles.length > 0 && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:12 }}>
+              {pendingFiles.map((f, i) => (
+                <div key={i} style={{ position:'relative', width:80, height:80, borderRadius:8, overflow:'hidden', border:'1px solid #e2e8f0', background:'#f8fafc' }}>
+                  {f.type.startsWith('image/') ? (
+                    <img src={URL.createObjectURL(f)} alt={f.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                  ) : (
+                    <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4 }}>
+                      <span style={{ fontSize:22 }}>{getFileEmoji(f.type)}</span>
+                      <span style={{ fontSize:9, color:'#64748b', textAlign:'center', padding:'0 4px', wordBreak:'break-all', lineHeight:1.2 }}>
+                        {f.name.length > 12 ? f.name.slice(0,10)+'…' : f.name}
+                      </span>
+                    </div>
+                  )}
+                  <button onClick={() => removeFile(i)}
+                    style={{ position:'absolute', top:2, right:2, background:'rgba(0,0,0,0.55)', color:'#fff', border:'none', borderRadius:'50%', width:18, height:18, cursor:'pointer', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}>
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button onClick={handleSave} disabled={saving || uploading}
             style={{ ...btnStyle, background: saved ? '#22c55e':'#7c3aed', color:'#fff', width:'100%' }}>
-            {saving ? '儲存中...' : saved ? '✓ 已儲存！' : '儲存記錄'}
+            {uploading ? '上傳附件中...' : saving ? '儲存中...' : saved ? '✓ 已儲存！' : '儲存記錄'}
           </button>
         </div>
       )}
 
-      {mode === 'list' && (
+      {(mode === 'list' || mode === 'all') && (
         <div>
           <input style={inputStyle} placeholder="搜尋記錄內容..." value={listSearch}
             onChange={e => setListSearch(e.target.value)} />
@@ -321,14 +390,20 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
                 ) : (
                   <>
                     <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
-                      <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                      <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
                         {n.category_name && <span style={{ background:'#ede9fe', color:'#7c3aed', borderRadius:99, padding:'2px 10px', fontSize:11 }}>{n.category_name}</span>}
                         <span style={{ fontSize:12, color:'#94a3b8' }}>{n.employee_app_number || n.non_employee_name || '外部'}</span>
                       </div>
-                      <span style={{ fontSize:11, color:'#cbd5e1' }}>{new Date(n.created_at).toLocaleDateString('zh-TW')}</span>
+                      <span style={{ fontSize:11, color:'#cbd5e1', whiteSpace:'nowrap' }}>{new Date(n.created_at).toLocaleDateString('zh-TW')}</span>
                     </div>
                     <p style={{ margin:'0 0 8px', color:'#1e293b', lineHeight:1.6 }}>{n.content}</p>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+
+                    {/* 附件顯示 */}
+                    {n.attachments && n.attachments.length > 0 && (
+                      <AttachmentViewer attachments={n.attachments} />
+                    )}
+
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:6 }}>
                       <span style={{ fontSize:12, color:'#94a3b8' }}>記錄者：{n.supervisor_name}</span>
                       <div style={{ display:'flex', gap:6 }}>
                         {(supervisor.role === 'admin' || n.supervisor_name === supervisor.name) && (
@@ -348,6 +423,62 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
       )}
     </div>
   );
+}
+
+// ────────────────────────────────────────────
+//  附件檢視器
+// ────────────────────────────────────────────
+function AttachmentViewer({ attachments }: { attachments: Attachment[] }) {
+  return (
+    <div style={{ marginBottom:8 }}>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+        {attachments.map((a, i) => {
+          const isImage = a.type?.startsWith('image/');
+          const isVideo = a.type?.startsWith('video/');
+          if (isImage) {
+            return (
+              <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
+                style={{ display:'block', width:80, height:80, borderRadius:8, overflow:'hidden', border:'1px solid #e2e8f0', flexShrink:0 }}>
+                <img src={a.url} alt={a.originalName} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+              </a>
+            );
+          }
+          if (isVideo) {
+            return (
+              <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
+                style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', width:80, height:80, borderRadius:8, border:'1px solid #e2e8f0', background:'#f1f5f9', gap:4, textDecoration:'none', flexShrink:0 }}>
+                <span style={{ fontSize:24 }}>🎬</span>
+                <span style={{ fontSize:9, color:'#64748b', textAlign:'center', padding:'0 4px', wordBreak:'break-all' }}>
+                  {a.originalName.length > 10 ? a.originalName.slice(0,9)+'…' : a.originalName}
+                </span>
+              </a>
+            );
+          }
+          // Document / other
+          return (
+            <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" download={a.originalName}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:8, border:'1px solid #e2e8f0', background:'#f8fafc', textDecoration:'none', color:'#374151', fontSize:12, flexShrink:0, maxWidth:200 }}>
+              <span style={{ fontSize:18, flexShrink:0 }}>{getFileEmoji(a.type)}</span>
+              <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.originalName}</span>
+              <span style={{ color:'#94a3b8', fontSize:10, flexShrink:0 }}>⬇</span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function getFileEmoji(mimeType: string): string {
+  if (!mimeType) return '📎';
+  if (mimeType.includes('pdf')) return '📄';
+  if (mimeType.includes('word') || mimeType.includes('msword')) return '📝';
+  if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return '📊';
+  if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return '📋';
+  if (mimeType.includes('video')) return '🎬';
+  if (mimeType.includes('audio')) return '🎵';
+  if (mimeType.includes('text')) return '📃';
+  return '📎';
 }
 
 // ────────────────────────────────────────────
@@ -570,6 +701,7 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
   const [personas, setPersonas] = useState<AiPersona[]>([]);
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#7c3aed');
+  const [newCatPersonal, setNewCatPersonal] = useState(false);
   const [newSvEmp, setNewSvEmp] = useState<Employee | null>(null);
   const [newSvPassword, setNewSvPassword] = useState('');
   const [editPwdId, setEditPwdId] = useState<string | null>(null);
@@ -578,8 +710,13 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
   const [newConfReason, setNewConfReason] = useState('');
   const [editPersona, setEditPersona] = useState<AiPersona | null>(null);
 
+  const loadCategories = () => {
+    axios.get(`${API}/supervisor-hub/categories`, { params: { supervisor_id: supervisor.identifier } })
+      .then(r => setCategories(r.data || []));
+  };
+
   const load = () => {
-    axios.get(`${API}/supervisor-hub/categories`).then(r => setCategories(r.data || []));
+    loadCategories();
     axios.get(`${API}/supervisor-hub/supervisors`).then(r => setSupervisors(r.data || []));
     axios.get(`${API}/supervisor-hub/confidential`).then(r => setConfidential(r.data || []));
     axios.get(`${API}/supervisor-hub/ai/personas`).then(r => setPersonas(r.data || []));
@@ -588,6 +725,19 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
   useEffect(() => { load(); }, []);
 
   const isAdmin = supervisor.role === 'admin';
+
+  // ── 分類排序 ──
+  const moveCategory = async (idx: number, dir: -1 | 1) => {
+    const newCats = [...categories];
+    const targetIdx = idx + dir;
+    if (targetIdx < 0 || targetIdx >= newCats.length) return;
+    [newCats[idx], newCats[targetIdx]] = [newCats[targetIdx], newCats[idx]];
+    setCategories(newCats);
+    await axios.patch(`${API}/supervisor-hub/categories/order`, {
+      supervisor_id: supervisor.identifier,
+      ordered_ids: newCats.map(c => c.id),
+    });
+  };
 
   return (
     <div style={{ padding:16 }}>
@@ -606,22 +756,53 @@ function ManageTab({ supervisor }: { supervisor: { identifier: string; name: str
       {section === 'categories' && (
         <div style={cardStyle}>
           <h4 style={{ margin:'0 0 12px', color:'#1e293b' }}>紀錄分類</h4>
-          <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+          <p style={{ color:'#64748b', fontSize:12, margin:'0 0 12px' }}>
+            🌐 全域分類由管理員建立，🔹 個人分類只有您自己看得到。可拖曳↑↓調整順序。
+          </p>
+
+          {/* 新增分類 */}
+          <div style={{ display:'flex', gap:8, marginBottom:4, alignItems:'center' }}>
             <input style={{ ...inputStyle, flex:1, margin:0 }} placeholder="分類名稱" value={newCatName} onChange={e => setNewCatName(e.target.value)} />
             <input type="color" value={newCatColor} onChange={e => setNewCatColor(e.target.value)}
-              style={{ border:'1px solid #e2e8f0', borderRadius:8, padding:4, cursor:'pointer', height:38 }} />
+              style={{ border:'1px solid #e2e8f0', borderRadius:8, padding:4, cursor:'pointer', height:38, flexShrink:0 }} />
+          </div>
+          <div style={{ display:'flex', gap:8, marginBottom:12, alignItems:'center' }}>
+            <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:12, color:'#475569' }}>
+              <input type="checkbox" checked={newCatPersonal} onChange={e => setNewCatPersonal(e.target.checked)}
+                style={{ cursor:'pointer' }} />
+              設為我的個人分類（只有我看得到）
+            </label>
             <button onClick={async () => {
               if (!newCatName.trim()) return;
-              await axios.post(`${API}/supervisor-hub/categories`, { name: newCatName, color: newCatColor });
-              setNewCatName(''); load();
-            }} style={{ ...btnStyle, background:'#7c3aed', color:'#fff' }}>新增</button>
+              await axios.post(`${API}/supervisor-hub/categories`,
+                { name: newCatName, color: newCatColor },
+                { params: { supervisor_id: newCatPersonal ? supervisor.identifier : undefined } }
+              );
+              setNewCatName(''); loadCategories();
+            }} style={{ ...btnStyle, background:'#7c3aed', color:'#fff', marginLeft:'auto' }}>新增</button>
           </div>
-          {categories.map(c => (
-            <div key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
-              <span style={{ width:16, height:16, borderRadius:'50%', background:c.color, display:'inline-block' }} />
-              <span style={{ flex:1, color:'#1e293b' }}>{c.name}</span>
-              <button onClick={async () => { await axios.delete(`${API}/supervisor-hub/categories/${c.id}`); load(); }}
-                style={{ ...smallBtnStyle, background:'#fee2e2', color:'#dc2626' }}>刪除</button>
+
+          {/* 分類列表 */}
+          {categories.map((c, idx) => (
+            <div key={c.id} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 0', borderBottom:'1px solid #f1f5f9' }}>
+              {/* 排序按鈕 */}
+              <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                <button onClick={() => moveCategory(idx, -1)} disabled={idx === 0}
+                  style={{ background:'none', border:'none', cursor: idx===0 ? 'default':'pointer', color: idx===0 ? '#d1d5db':'#7c3aed', padding:'0 4px', fontSize:12, lineHeight:1 }}>▲</button>
+                <button onClick={() => moveCategory(idx, 1)} disabled={idx === categories.length - 1}
+                  style={{ background:'none', border:'none', cursor: idx===categories.length-1 ? 'default':'pointer', color: idx===categories.length-1 ? '#d1d5db':'#7c3aed', padding:'0 4px', fontSize:12, lineHeight:1 }}>▼</button>
+              </div>
+              <span style={{ width:14, height:14, borderRadius:'50%', background:c.color, display:'inline-block', flexShrink:0 }} />
+              <span style={{ flex:1, color:'#1e293b', fontSize:14 }}>{c.name}</span>
+              {c.supervisor_id
+                ? <span style={{ fontSize:10, background:'#ede9fe', color:'#7c3aed', borderRadius:99, padding:'1px 7px', flexShrink:0 }}>我的</span>
+                : <span style={{ fontSize:10, background:'#f1f5f9', color:'#64748b', borderRadius:99, padding:'1px 7px', flexShrink:0 }}>全域</span>
+              }
+              {/* 只能刪自己的分類（admin 可刪全域） */}
+              {(isAdmin || c.supervisor_id === supervisor.identifier) && (
+                <button onClick={async () => { await axios.delete(`${API}/supervisor-hub/categories/${c.id}`); loadCategories(); }}
+                  style={{ ...smallBtnStyle, background:'#fee2e2', color:'#dc2626', flexShrink:0 }}>刪除</button>
+              )}
             </div>
           ))}
         </div>
