@@ -19,6 +19,8 @@ interface EmployeeSummary {
   conversations: any[];
   reviews: any[];
   riskFlags: any[];
+  channelMessages: any[];
+  ticketHistory: any[];
 }
 
 const AI_LABELS: Record<string, { label: string; color: string; emoji: string }> = {
@@ -496,7 +498,7 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [empSummary, setEmpSummary] = useState<EmployeeSummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
-  const [summaryOpen, setSummaryOpen] = useState<Record<string, boolean>>({ notes: true, conversations: false, reviews: false, riskFlags: true });
+  const [summaryOpen, setSummaryOpen] = useState<Record<string, boolean>>({ notes: true, conversations: false, reviews: false, riskFlags: true, channelMessages: false, ticketHistory: false });
   const [personas, setPersonas] = useState<Record<string, string>>({});
   const [aiType, setAiType] = useState<'claude' | 'openai' | 'gemini'>('claude');
   const [session, setSession] = useState<AiSession | null>(null);
@@ -977,8 +979,10 @@ function EmployeeSummaryPanel({
   open: Record<string, boolean>;
   onToggle: (key: string) => void;
 }) {
-  const { employee, notes, conversations, reviews, riskFlags } = summary;
+  const { employee, notes, conversations, reviews, riskFlags, channelMessages = [], ticketHistory = [] } = summary;
   const openFlags = riskFlags.filter((f: any) => ['open', 'acknowledged', 'in_progress'].includes(f.status));
+  const openTickets = ticketHistory.filter((t: any) => !['closed', 'resolved', 'cancelled'].includes(t.status));
+  const inboundMsgs = channelMessages.filter((m: any) => m.direction === 'inbound');
 
   const SectionHeader = ({ id, icon, label, count, badgeColor }: { id: string; icon: string; label: string; count: number; badgeColor?: string }) => (
     <button onClick={() => onToggle(id)}
@@ -1018,15 +1022,17 @@ function EmployeeSummaryPanel({
             )}
           </div>
         </div>
-        <div style={{ display:'flex', gap:12, marginTop:10 }}>
+        <div style={{ display:'flex', gap:8, marginTop:10, flexWrap:'wrap' }}>
           {[
             { label:'隨手記', val: notes.length, color:'#c4b5fd' },
             { label:'對話', val: conversations.length, color:'#93c5fd' },
             { label:'評價', val: reviews.length, color:'#6ee7b7' },
-            { label:'風險標記', val: riskFlags.length, color: openFlags.length > 0 ? '#fca5a5':'#cbd5e1' },
+            { label:'風險', val: riskFlags.length, color: openFlags.length > 0 ? '#fca5a5':'#cbd5e1' },
+            { label:'頻道訊息', val: channelMessages.length, color:'#fde68a' },
+            { label:'工單', val: ticketHistory.length, color: openTickets.length > 0 ? '#fca5a5':'#cbd5e1' },
           ].map(item => (
-            <div key={item.label} style={{ textAlign:'center', flex:1 }}>
-              <div style={{ fontWeight:800, fontSize:18, color: item.color }}>{item.val}</div>
+            <div key={item.label} style={{ textAlign:'center', flex:'1 1 50px' }}>
+              <div style={{ fontWeight:800, fontSize:16, color: item.color }}>{item.val}</div>
               <div style={{ fontSize:10, color:'rgba(255,255,255,0.7)' }}>{item.label}</div>
             </div>
           ))}
@@ -1130,6 +1136,95 @@ function EmployeeSummaryPanel({
               );
             })}
             {reviews.length > 10 && <div style={{ padding:'8px 14px', background:'#f8fafc', fontSize:12, color:'#94a3b8', textAlign:'center' }}>…還有 {reviews.length - 10} 筆</div>}
+          </div>
+        )}
+      </div>
+
+      {/* 官方頻道訊息 */}
+      <div style={{ marginBottom:8 }}>
+        <SectionHeader id="channelMessages" icon="📱" label="官方頻道訊息" count={channelMessages.length} />
+        {open.channelMessages && (
+          <div style={{ border:'1px solid #e2e8f0', borderTop:'none', borderRadius:'0 0 10px 10px', overflow:'hidden', marginBottom:8 }}>
+            {channelMessages.length === 0 ? (
+              <div style={{ padding:14, color:'#94a3b8', fontSize:13, textAlign:'center' }}>尚無頻道訊息</div>
+            ) : (
+              <>
+                {inboundMsgs.length > 0 && (
+                  <div style={{ padding:'6px 14px', background:'#fefce8', fontSize:11, color:'#854d0e' }}>
+                    📊 員工本人發出 {inboundMsgs.length} 筆訊息
+                  </div>
+                )}
+                {channelMessages.slice(0, 15).map((m: any, i: number) => {
+                  const channelLabel = m.channel === 'official-line' ? '📱 LINE' : '🎫 工單留言';
+                  const dirLabel: Record<string, string> = { inbound:'👤 員工', store:'🏪 門市', engineer:'🔧 工程師', reviewer:'📋 審核' };
+                  const isEmployee = m.direction === 'inbound';
+                  return (
+                    <div key={m.id || i} style={{ padding:'8px 14px', borderBottom:'1px solid #f8fafc', background: isEmployee ? '#fffbeb':'#fff' }}>
+                      <div style={{ display:'flex', gap:6, marginBottom:3, alignItems:'center', flexWrap:'wrap' }}>
+                        <span style={{ fontSize:11, color:'#64748b' }}>{channelLabel} ｜ {dirLabel[m.direction] || m.direction}</span>
+                        {m.ticket_no && <span style={{ background:'#ede9fe', color:'#7c3aed', borderRadius:99, padding:'1px 6px', fontSize:10 }}>{m.ticket_no}</span>}
+                        <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>
+                          {m.message_time ? new Date(m.message_time).toLocaleDateString('zh-TW') : ''}
+                        </span>
+                      </div>
+                      {m.message_text && <div style={{ fontSize:12, color:'#374151', lineHeight:1.5 }}>{m.message_text.slice(0, 120)}{m.message_text.length > 120 ? '...' : ''}</div>}
+                    </div>
+                  );
+                })}
+                {channelMessages.length > 15 && <div style={{ padding:'8px 14px', background:'#f8fafc', fontSize:12, color:'#94a3b8', textAlign:'center' }}>…還有 {channelMessages.length - 15} 筆</div>}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 工單回報歷史 */}
+      <div style={{ marginBottom:8 }}>
+        <SectionHeader id="ticketHistory" icon="🎫" label="工單回報歷史" count={ticketHistory.length} badgeColor={openTickets.length > 0 ? '#f97316' : undefined} />
+        {open.ticketHistory && (
+          <div style={{ border:'1px solid #e2e8f0', borderTop:'none', borderRadius:'0 0 10px 10px', overflow:'hidden', marginBottom:8 }}>
+            {ticketHistory.length === 0 ? (
+              <div style={{ padding:14, color:'#94a3b8', fontSize:13, textAlign:'center' }}>尚無工單記錄</div>
+            ) : (
+              <>
+                {openTickets.length > 0 && (
+                  <div style={{ padding:'6px 14px', background:'#fff7ed', fontSize:11, color:'#9a3412' }}>
+                    🔓 目前進行中工單 {openTickets.length} 筆
+                  </div>
+                )}
+                {ticketHistory.slice(0, 15).map((t: any, i: number) => {
+                  const statusStyle: Record<string, { bg: string; color: string; label: string }> = {
+                    pending:     { bg:'#fef3c7', color:'#92400e', label:'⏳ 待處理' },
+                    open:        { bg:'#dbeafe', color:'#1e40af', label:'🔓 處理中' },
+                    in_progress: { bg:'#e0f2fe', color:'#0c4a6e', label:'🔧 進行中' },
+                    resolved:    { bg:'#dcfce7', color:'#166534', label:'✅ 已解決' },
+                    closed:      { bg:'#f1f5f9', color:'#475569', label:'🔒 已關閉' },
+                    cancelled:   { bg:'#fee2e2', color:'#991b1b', label:'❌ 已取消' },
+                  };
+                  const ss = statusStyle[t.status] || { bg:'#f1f5f9', color:'#475569', label: t.status };
+                  const priorityEmoji: Record<string, string> = { urgent:'🚨', high:'🔴', medium:'🟡', low:'🟢' };
+                  return (
+                    <div key={t.id || i} style={{ padding:'10px 14px', borderBottom:'1px solid #f8fafc', background:'#fff' }}>
+                      <div style={{ display:'flex', gap:6, marginBottom:4, alignItems:'center', flexWrap:'wrap' }}>
+                        <span style={{ background: ss.bg, color: ss.color, borderRadius:99, padding:'1px 7px', fontSize:10, fontWeight:700 }}>{ss.label}</span>
+                        <span style={{ fontSize:11, color:'#64748b' }}>{priorityEmoji[t.priority] || ''} {t.ticket_no}</span>
+                        <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>
+                          {t.ticket_created_at ? new Date(t.ticket_created_at).toLocaleDateString('zh-TW') : ''}
+                        </span>
+                      </div>
+                      {(t.parent_category || t.category) && (
+                        <div style={{ fontSize:10, color:'#94a3b8', marginBottom:2 }}>
+                          {[t.parent_category, t.category, t.sub_category].filter(Boolean).join(' › ')}
+                        </div>
+                      )}
+                      {t.issue_title && <div style={{ fontSize:13, color:'#1e293b', fontWeight:600 }}>{t.issue_title}</div>}
+                      {t.issue_desc && <div style={{ fontSize:12, color:'#475569', marginTop:2, lineHeight:1.5 }}>{t.issue_desc.slice(0, 100)}{t.issue_desc.length > 100 ? '...' : ''}</div>}
+                    </div>
+                  );
+                })}
+                {ticketHistory.length > 15 && <div style={{ padding:'8px 14px', background:'#f8fafc', fontSize:12, color:'#94a3b8', textAlign:'center' }}>…還有 {ticketHistory.length - 15} 筆</div>}
+              </>
+            )}
           </div>
         )}
       </div>

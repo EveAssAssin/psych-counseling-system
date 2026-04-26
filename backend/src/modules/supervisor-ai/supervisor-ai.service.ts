@@ -275,12 +275,43 @@ export class SupervisorAiService {
       riskFlags = flags || [];
     }
 
+    // 6. 官方頻道訊息（official_channel_messages）- 員工發出的 LINE 訊息
+    let channelMessages: any[] = [];
+    {
+      let q = this.db
+        .from('official_channel_messages')
+        .select('id, channel, direction, message_time, message_text, ticket_no, author_name, author_role, group_name')
+        .order('message_time', { ascending: false })
+        .limit(30);
+      if (employeeUUID) {
+        q = q.eq('employee_id', employeeUUID);
+      } else {
+        q = q.eq('employee_app_number', appNumber);
+      }
+      const { data: msgs } = await q;
+      channelMessages = msgs || [];
+    }
+
+    // 7. 工單回報歷史（employee_ticket_history）
+    let ticketHistory: any[] = [];
+    {
+      const { data: tickets } = await this.db
+        .from('employee_ticket_history')
+        .select('id, ticket_no, issue_title, issue_desc, category, parent_category, sub_category, status, priority, ticket_created_at, ticket_closed_at')
+        .eq('employee_app_number', appNumber)
+        .order('ticket_created_at', { ascending: false })
+        .limit(20);
+      ticketHistory = tickets || [];
+    }
+
     return {
       employee: emp,
       notes,
       conversations,
       reviews,
       riskFlags,
+      channelMessages,
+      ticketHistory,
     };
   }
 
@@ -294,7 +325,7 @@ export class SupervisorAiService {
 
     if (session.employee_app_number) {
       const summary = await this.getEmployeeSummary(session.employee_app_number);
-      const { employee: emp, notes, conversations, reviews, riskFlags } = summary;
+      const { employee: emp, notes, conversations, reviews, riskFlags, channelMessages, ticketHistory } = summary;
 
       // ── 員工基本資料 ──
       prompt += `\n\n【員工基本資料】\n`;
@@ -359,6 +390,43 @@ export class SupervisorAiService {
           const typeLabel = { positive: '✅ 正面', negative: '❌ 負面', complaint: '⚠️ 投訴', praise: '🌟 表揚', other: '📝 其他' }[r.review_type] || r.review_type;
           prompt += `\n[${i + 1}] ${date} ｜ ${typeLabel} ｜ 急迫度：${r.urgency || 'normal'} ｜ 狀態：${r.status || '未知'}\n`;
           prompt += `${(r.content || '').slice(0, 200)}${(r.content || '').length > 200 ? '...' : ''}\n`;
+        });
+      }
+
+      // ── 官方頻道訊息 ──
+      if (channelMessages.length > 0) {
+        const inbound = channelMessages.filter((m: any) => m.direction === 'inbound');
+        prompt += `\n\n【官方頻道訊息（共 ${channelMessages.length} 筆，其中員工發出 ${inbound.length} 筆，最近 15 筆）】\n`;
+        channelMessages.slice(0, 15).forEach((m: any, i: number) => {
+          const time = m.message_time
+            ? new Date(m.message_time).toLocaleDateString('zh-TW')
+            : '未知時間';
+          const channelLabel = m.channel === 'official-line' ? '📱 LINE' : '🎫 工單留言';
+          const dirLabel = { inbound: '👤 員工', store: '🏪 門市', engineer: '🔧 工程師', reviewer: '📋 審核' }[m.direction] || m.direction;
+          prompt += `\n[${i + 1}] ${time} ｜ ${channelLabel} ｜ 發送方：${dirLabel}`;
+          if (m.ticket_no) prompt += ` ｜ 工單：${m.ticket_no}`;
+          prompt += '\n';
+          if (m.message_text) prompt += `${m.message_text.slice(0, 200)}${m.message_text.length > 200 ? '...' : ''}\n`;
+        });
+      }
+
+      // ── 工單回報歷史 ──
+      if (ticketHistory.length > 0) {
+        const openTickets = ticketHistory.filter((t: any) => !['closed', 'resolved', 'cancelled'].includes(t.status));
+        prompt += `\n\n【工單回報歷史（共 ${ticketHistory.length} 筆，進行中 ${openTickets.length} 筆）】\n`;
+        ticketHistory.slice(0, 15).forEach((t: any, i: number) => {
+          const date = t.ticket_created_at
+            ? new Date(t.ticket_created_at).toLocaleDateString('zh-TW')
+            : '未知日期';
+          const statusLabel: Record<string, string> = {
+            pending: '⏳ 待處理', open: '🔓 處理中', in_progress: '🔧 進行中',
+            resolved: '✅ 已解決', closed: '🔒 已關閉', cancelled: '❌ 已取消',
+          };
+          const priorityLabel: Record<string, string> = { high: '🔴 高', medium: '🟡 中', low: '🟢 低', urgent: '🚨 緊急' };
+          prompt += `\n[${i + 1}] ${date} ｜ ${t.ticket_no} ｜ ${statusLabel[t.status] || t.status} ｜ ${priorityLabel[t.priority] || t.priority}\n`;
+          if (t.parent_category || t.category) prompt += `分類：${[t.parent_category, t.category, t.sub_category].filter(Boolean).join(' > ')}\n`;
+          if (t.issue_title) prompt += `標題：${t.issue_title}\n`;
+          if (t.issue_desc) prompt += `描述：${t.issue_desc.slice(0, 150)}${t.issue_desc.length > 150 ? '...' : ''}\n`;
         });
       }
 
