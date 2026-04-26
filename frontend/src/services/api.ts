@@ -231,6 +231,9 @@ export const syncApi = {
   getLog: (id: string) => api.get(`/sync/logs/${id}`),
 
   patchStoreNames: () => api.post('/sync/patch-store-names'),
+
+  syncOrderStats: () => api.post('/sync/order-stats'),
+  syncOrderStatsMonth: (year: number, month: number) => api.post(`/sync/order-stats/${year}/${month}`),
 };
 
 // ============================================

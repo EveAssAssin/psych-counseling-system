@@ -67,6 +67,16 @@ const DATA_SOURCES: DataSource[] = [
     icon: '⭐',
   },
   {
+    id: 'order-stats',
+    name: '接單業績統計',
+    description: '從 E0123 同步近 2 個月各員工接單量與業績，按訂單標籤分類',
+    syncType: 'order_stats',
+    cursorKeys: [],
+    triggerFn: () => syncApi.syncOrderStats(),
+    schedule: '每月 1 日 03:00',
+    icon: '📈',
+  },
+  {
     id: 'daily',
     name: '每日資料同步',
     description: '多來源每日增量資料同步',
@@ -319,6 +329,83 @@ function DataSourceCard({
   );
 }
 
+function OrderStatsBackfill() {
+  const now = new Date();
+  // 產生近 6 個月的年月列表
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  });
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [done, setDone] = useState<Set<string>>(new Set());
+
+  const handleSync = async (year: number, month: number) => {
+    const key = `${year}-${month}`;
+    setSyncing(key);
+    try {
+      const res = await syncApi.syncOrderStatsMonth(year, month);
+      const { upserted } = res.data;
+      toast.success(`${year}/${month} 完成，寫入 ${upserted ?? 0} 筆`);
+      setDone((prev) => new Set([...prev, key]));
+    } catch {
+      toast.error(`${year}/${month} 同步失敗`);
+    } finally {
+      setSyncing(null);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    for (const { year, month } of months) {
+      await handleSync(year, month);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">📈 接單業績歷史補齊</h3>
+          <p className="text-sm text-gray-500 mt-0.5">首次部署後，手動補齊近 6 個月歷史資料</p>
+        </div>
+        <button
+          onClick={handleSyncAll}
+          disabled={!!syncing}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+        >
+          <ArrowPathIcon className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+          全部補齊
+        </button>
+      </div>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        {months.map(({ year, month }) => {
+          const key = `${year}-${month}`;
+          const isDone = done.has(key);
+          const isRunning = syncing === key;
+          return (
+            <button
+              key={key}
+              onClick={() => handleSync(year, month)}
+              disabled={!!syncing}
+              className={`flex flex-col items-center justify-center p-3 rounded-lg border text-sm font-medium transition-colors
+                ${isDone ? 'bg-green-50 border-green-300 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-primary-50 hover:border-primary-300'}
+                disabled:opacity-60`}
+            >
+              {isRunning ? (
+                <ArrowPathIcon className="h-4 w-4 animate-spin mb-1" />
+              ) : isDone ? (
+                <CheckCircleIcon className="h-4 w-4 mb-1 text-green-600" />
+              ) : (
+                <span className="text-lg mb-0.5">📅</span>
+              )}
+              <span>{year}/{month}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function DataManagementPage() {
   const [logs, setLogs] = useState<SyncLog[]>([]);
   const [cursors, setCursors] = useState<Record<string, any>>({});
@@ -446,6 +533,9 @@ export default function DataManagementPage() {
           />
         ))}
       </div>
+
+      {/* 業績歷史補齊 */}
+      <OrderStatsBackfill />
     </div>
   );
 }
