@@ -13,6 +13,20 @@ interface Note { id: string; content: string; category_name?: string; supervisor
 interface AiMessage { role: 'user' | 'assistant'; content: string; }
 interface AiSession { id: string; employee_name?: string; ai_type: string; title: string; created_at: string; }
 interface AiPersona { id: string; ai_type: string; persona_name: string; system_prompt: string; model?: string; }
+interface OrderTrendItem {
+  label: string;
+  recentAvg: number;
+  prevAvg: number;
+  trend: 'up' | 'down' | 'stable' | 'new';
+  changePercent: number | null;
+  months: Array<{ year: number; month: number; count: number }>;
+}
+interface EmployeeOrderTrend {
+  hasData: boolean;
+  lastSyncedMonth: string | null;
+  totalTrend: OrderTrendItem;
+  byLabel: OrderTrendItem[];
+}
 interface EmployeeSummary {
   employee: { name: string; store_name?: string; title?: string; department?: string; hire_date?: string; is_active: boolean; is_leave: boolean; leave_type?: string; } | null;
   notes: any[];
@@ -21,6 +35,7 @@ interface EmployeeSummary {
   riskFlags: any[];
   channelMessages: any[];
   ticketHistory: any[];
+  orderTrend?: EmployeeOrderTrend;
 }
 
 const AI_LABELS: Record<string, { label: string; color: string; emoji: string }> = {
@@ -498,7 +513,7 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [empSummary, setEmpSummary] = useState<EmployeeSummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
-  const [summaryOpen, setSummaryOpen] = useState<Record<string, boolean>>({ notes: true, conversations: false, reviews: false, riskFlags: true, channelMessages: false, ticketHistory: false });
+  const [summaryOpen, setSummaryOpen] = useState<Record<string, boolean>>({ notes: true, conversations: false, reviews: false, riskFlags: true, channelMessages: false, ticketHistory: false, orderTrend: true });
   const [personas, setPersonas] = useState<Record<string, string>>({});
   const [aiType, setAiType] = useState<'claude' | 'openai' | 'gemini'>('claude');
   const [session, setSession] = useState<AiSession | null>(null);
@@ -979,10 +994,12 @@ function EmployeeSummaryPanel({
   open: Record<string, boolean>;
   onToggle: (key: string) => void;
 }) {
-  const { employee, notes, conversations, reviews, riskFlags, channelMessages = [], ticketHistory = [] } = summary;
+  const { employee, notes, conversations, reviews, riskFlags, channelMessages = [], ticketHistory = [], orderTrend } = summary;
   const openFlags = riskFlags.filter((f: any) => ['open', 'acknowledged', 'in_progress'].includes(f.status));
   const openTickets = ticketHistory.filter((t: any) => !['closed', 'resolved', 'cancelled'].includes(t.status));
   const inboundMsgs = channelMessages.filter((m: any) => m.direction === 'inbound');
+  const trendEmoji = { up:'📈', down:'📉', stable:'➡️', new:'🆕' };
+  const trendColor = { up:'#16a34a', down:'#dc2626', stable:'#64748b', new:'#7c3aed' };
 
   const SectionHeader = ({ id, icon, label, count, badgeColor }: { id: string; icon: string; label: string; count: number; badgeColor?: string }) => (
     <button onClick={() => onToggle(id)}
@@ -1036,6 +1053,14 @@ function EmployeeSummaryPanel({
               <div style={{ fontSize:10, color:'rgba(255,255,255,0.7)' }}>{item.label}</div>
             </div>
           ))}
+          {orderTrend?.hasData && (
+            <div style={{ textAlign:'center', flex:'1 1 50px' }}>
+              <div style={{ fontWeight:800, fontSize:16, color: trendColor[orderTrend.totalTrend.trend] }}>
+                {trendEmoji[orderTrend.totalTrend.trend]}
+              </div>
+              <div style={{ fontSize:10, color:'rgba(255,255,255,0.7)' }}>接單趨勢</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1223,6 +1248,101 @@ function EmployeeSummaryPanel({
                   );
                 })}
                 {ticketHistory.length > 15 && <div style={{ padding:'8px 14px', background:'#f8fafc', fontSize:12, color:'#94a3b8', textAlign:'center' }}>…還有 {ticketHistory.length - 15} 筆</div>}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 接單業績趨勢 */}
+      <div style={{ marginBottom:8 }}>
+        <SectionHeader
+          id="orderTrend"
+          icon={orderTrend?.hasData ? trendEmoji[orderTrend.totalTrend.trend] : '📊'}
+          label="接單業績趨勢"
+          count={orderTrend?.hasData ? orderTrend.totalTrend.recentAvg : 0}
+          badgeColor={orderTrend?.hasData ? trendColor[orderTrend.totalTrend.trend] : undefined}
+        />
+        {open.orderTrend && (
+          <div style={{ border:'1px solid #e2e8f0', borderTop:'none', borderRadius:'0 0 10px 10px', overflow:'hidden', marginBottom:8 }}>
+            {!orderTrend?.hasData ? (
+              <div style={{ padding:14, color:'#94a3b8', fontSize:13, textAlign:'center' }}>
+                尚無業績資料，請先執行訂單同步
+              </div>
+            ) : (
+              <>
+                {/* 整體趨勢摘要 */}
+                <div style={{ padding:'10px 14px', background: orderTrend.totalTrend.trend === 'down' ? '#fff7ed' : '#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                    <span style={{ fontSize:20 }}>{trendEmoji[orderTrend.totalTrend.trend]}</span>
+                    <div style={{ flex:1 }}>
+                      <span style={{ fontWeight:700, color: trendColor[orderTrend.totalTrend.trend], fontSize:14 }}>
+                        {orderTrend.totalTrend.trend === 'up' && '接單量上升中'}
+                        {orderTrend.totalTrend.trend === 'down' && '接單量下滑中'}
+                        {orderTrend.totalTrend.trend === 'stable' && '接單量持平'}
+                        {orderTrend.totalTrend.trend === 'new' && '近期開始接單'}
+                      </span>
+                      {orderTrend.totalTrend.changePercent !== null && (
+                        <span style={{ marginLeft:8, fontSize:12, color: trendColor[orderTrend.totalTrend.trend] }}>
+                          {orderTrend.totalTrend.changePercent > 0 ? '+' : ''}{orderTrend.totalTrend.changePercent}%
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ textAlign:'right' }}>
+                      <div style={{ fontSize:11, color:'#64748b' }}>近3月均 <strong>{orderTrend.totalTrend.recentAvg}</strong> 單</div>
+                      <div style={{ fontSize:11, color:'#94a3b8' }}>前3月均 {orderTrend.totalTrend.prevAvg} 單</div>
+                    </div>
+                  </div>
+
+                  {/* 月份 bar chart（簡易） */}
+                  {orderTrend.totalTrend.months.length > 0 && (() => {
+                    const maxCount = Math.max(...orderTrend.totalTrend.months.map(m => m.count), 1);
+                    return (
+                      <div style={{ display:'flex', gap:4, alignItems:'flex-end', height:48, marginTop:6 }}>
+                        {orderTrend.totalTrend.months.map((m, i) => {
+                          const isRecent = i >= 3;
+                          const height = Math.max((m.count / maxCount) * 40, m.count > 0 ? 4 : 0);
+                          return (
+                            <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                              <span style={{ fontSize:10, color:'#94a3b8' }}>{m.count}</span>
+                              <div style={{
+                                width:'100%', height, borderRadius:'3px 3px 0 0',
+                                background: isRecent
+                                  ? (orderTrend.totalTrend.trend === 'down' ? '#fca5a5' : orderTrend.totalTrend.trend === 'up' ? '#86efac' : '#a5b4fc')
+                                  : '#e2e8f0',
+                                minHeight: m.count > 0 ? 4 : 0,
+                              }} />
+                              <span style={{ fontSize:9, color:'#94a3b8' }}>{m.month}月</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* 各標籤趨勢 */}
+                {orderTrend.byLabel.filter((t: OrderTrendItem) => t.recentAvg > 0 || t.prevAvg > 0).map((t: OrderTrendItem) => (
+                  <div key={t.label} style={{ padding:'8px 14px', borderBottom:'1px solid #f8fafc', background:'#fff', display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:14 }}>{trendEmoji[t.trend]}</span>
+                    <span style={{ flex:1, fontSize:13, color:'#1e293b' }}>{t.label}</span>
+                    <span style={{ fontSize:12, color:'#475569' }}>近3月均 <strong>{t.recentAvg}</strong> 單</span>
+                    {t.changePercent !== null && (
+                      <span style={{
+                        fontSize:11, borderRadius:99, padding:'1px 7px',
+                        background: t.changePercent >= 10 ? '#dcfce7' : t.changePercent <= -10 ? '#fee2e2' : '#f1f5f9',
+                        color: t.changePercent >= 10 ? '#16a34a' : t.changePercent <= -10 ? '#dc2626' : '#64748b',
+                        fontWeight:700,
+                      }}>
+                        {t.changePercent > 0 ? '+' : ''}{t.changePercent}%
+                      </span>
+                    )}
+                  </div>
+                ))}
+
+                <div style={{ padding:'6px 14px', background:'#f8fafc', fontSize:11, color:'#94a3b8', textAlign:'right' }}>
+                  同步至 {orderTrend.lastSyncedMonth}
+                </div>
               </>
             )}
           </div>

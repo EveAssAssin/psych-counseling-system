@@ -1,11 +1,15 @@
 import { Controller, Get, Post, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { SyncService } from './sync.service';
+import { OrderStatsService } from './order-stats.service';
 
 @ApiTags('sync')
 @Controller('sync')
 export class SyncController {
-  constructor(private readonly syncService: SyncService) {}
+  constructor(
+    private readonly syncService: SyncService,
+    private readonly orderStatsService: OrderStatsService,
+  ) {}
 
   @Post('employees')
   @ApiOperation({ summary: '執行員工主檔同步' })
@@ -75,5 +79,27 @@ export class SyncController {
   @ApiResponse({ status: 201, description: '修復結果' })
   async patchStoreNames() {
     return this.syncService.patchStoreNamesFromPayload();
+  }
+
+  // ── 訂單統計同步 ──
+  @Post('order-stats')
+  @ApiOperation({ summary: '同步近 2 個月訂單業績統計（自動）' })
+  async syncOrderStats() {
+    return this.orderStatsService.syncRecentMonths();
+  }
+
+  @Post('order-stats/:year/:month')
+  @ApiOperation({ summary: '同步指定月份訂單業績統計' })
+  async syncOrderStatsMonth(
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.orderStatsService.syncMonthOrderStats(parseInt(year), parseInt(month));
+  }
+
+  @Get('order-stats/trend/:appNumber')
+  @ApiOperation({ summary: '取得員工接單趨勢（近 6 個月）' })
+  async getOrderTrend(@Param('appNumber') appNumber: string) {
+    return this.orderStatsService.getEmployeeOrderTrend(appNumber);
   }
 }

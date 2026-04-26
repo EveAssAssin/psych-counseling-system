@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import axios from 'axios';
 import { SupabaseService } from '../supabase/supabase.service';
 import { SupervisorNotesService } from '../supervisor-notes/supervisor-notes.service';
+import { OrderStatsService } from '../sync/order-stats.service';
 
 export type AiType = 'claude' | 'openai' | 'gemini';
 
@@ -16,6 +17,7 @@ export class SupervisorAiService {
     private readonly supabase: SupabaseService,
     private readonly config: ConfigService,
     private readonly notesService: SupervisorNotesService,
+    private readonly orderStatsService: OrderStatsService,
   ) {
     this.anthropic = new Anthropic({
       apiKey: this.config.get<string>('ANTHROPIC_API_KEY'),
@@ -304,6 +306,9 @@ export class SupervisorAiService {
       ticketHistory = tickets || [];
     }
 
+    // 8. 訂單業績趨勢
+    const orderTrend = await this.orderStatsService.getEmployeeOrderTrend(appNumber);
+
     return {
       employee: emp,
       notes,
@@ -312,6 +317,7 @@ export class SupervisorAiService {
       riskFlags,
       channelMessages,
       ticketHistory,
+      orderTrend,
     };
   }
 
@@ -325,7 +331,7 @@ export class SupervisorAiService {
 
     if (session.employee_app_number) {
       const summary = await this.getEmployeeSummary(session.employee_app_number);
-      const { employee: emp, notes, conversations, reviews, riskFlags, channelMessages, ticketHistory } = summary;
+      const { employee: emp, notes, conversations, reviews, riskFlags, channelMessages, ticketHistory, orderTrend } = summary;
 
       // ── 員工基本資料 ──
       prompt += `\n\n【員工基本資料】\n`;
@@ -428,6 +434,42 @@ export class SupervisorAiService {
           if (t.issue_title) prompt += `標題：${t.issue_title}\n`;
           if (t.issue_desc) prompt += `描述：${t.issue_desc.slice(0, 150)}${t.issue_desc.length > 150 ? '...' : ''}\n`;
         });
+      }
+
+      // ── 訂單業績趨勢 ──
+      if (orderTrend?.hasData) {
+        const { totalTrend, byLabel } = orderTrend;
+        const trendEmoji = { up:'📈', down:'📉', stable:'➡️', new:'🆕' };
+        prompt += `\n\n【接單業績趨勢（近6個月，以月為單位）】\n`;
+        prompt += `整體：${trendEmoji[totalTrend.trend]} 近3月平均 ${totalTrend.recentAvg} 單 / 前3月平均 ${totalTrend.prevAvg} 單`;
+        if (totalTrend.changePercent !== null) {
+          prompt += `（${totalTrend.changePercent > 0 ? '+' : ''}${totalTrend.changePercent}%）`;
+        }
+        prompt += '\n';
+
+        // 月份明細
+        if (totalTrend.months.length > 0) {
+          prompt += '月份明細：' + totalTrend.months.map(m => `${m.year}/${m.month}=${m.count}單`).join('、') + '\n';
+        }
+
+        // 各標籤趨勢（只列有接單的標籤）
+        const activeLabelTrends = byLabel.filter(t => t.recentAvg > 0 || t.prevAvg > 0);
+        if (activeLabelTrends.length > 0) {
+          prompt += '\n各訂單類型趨勢：\n';
+          activeLabelTrends.forEach(t => {
+            prompt += `  ${trendEmoji[t.trend]} ${t.label}：近3月均 ${t.recentAvg} 單`;
+            if (t.changePercent !== null) prompt += `（${t.changePercent > 0 ? '+' : ''}${t.changePercent}%）`;
+            prompt += '\n';
+          });
+        }
+
+        const trendDesc = { up:'明顯上升', down:'明顯下滑', stable:'基本持平', new:'近期新出現' };
+        prompt += `\n整體接單趨勢判斷：${trendDesc[totalTrend.trend]}。`;
+        if (totalTrend.trend === 'down') {
+          prompt += '⚠️ 建議主管關注是否有狀態或業績問題。';
+        }
+      } else {
+        prompt += `\n\n【接單業績趨勢：尚無同步資料，需先執行訂單同步】\n`;
       }
 
       prompt += `\n\n以上為系統中關於「${emp?.name || session.employee_name}」的所有相關資料，請根據這些資料協助主管分析員工狀況。`;

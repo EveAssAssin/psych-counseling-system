@@ -4,6 +4,7 @@ import { SyncController } from './sync.controller';
 import { SyncService } from './sync.service';
 import { LefthandApiService } from './lefthand-api.service';
 import { TicketApiService } from './ticket-api.service';
+import { OrderStatsService } from './order-stats.service';
 import { EmployeesModule } from '../employees/employees.module';
 import { StoresModule } from '../stores/stores.module';
 import { SupabaseModule } from '../supabase/supabase.module';
@@ -16,7 +17,7 @@ import { SupabaseModule } from '../supabase/supabase.module';
     StoresModule,
   ],
   controllers: [SyncController],
-  providers: [SyncService, LefthandApiService, TicketApiService],
-  exports: [SyncService, LefthandApiService, TicketApiService],
+  providers: [SyncService, LefthandApiService, TicketApiService, OrderStatsService],
+  exports: [SyncService, LefthandApiService, TicketApiService, OrderStatsService],
 })
 export class SyncModule {}
