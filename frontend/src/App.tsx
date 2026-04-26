@@ -17,6 +17,8 @@ import ReviewDetailPage from './pages/ReviewDetailPage';
 import ReviewRespondPage from './pages/ReviewRespondPage';
 import DataManagementPage from './pages/DataManagementPage';
 import EntryPage from './pages/EntryPage';
+import PeriodAnalysisPage from './pages/PeriodAnalysisPage';
+import SupervisorHubPage from './pages/SupervisorHubPage';
 
 function App() {
   return (
@@ -26,6 +28,9 @@ function App() {
 
       {/* 員工回覆頁面（公開） */}
       <Route path="/review/respond/:token" element={<ReviewRespondPage />} />
+
+      {/* 主管輔助中心（獨立入口，無側邊欄） */}
+      <Route path="/supervisor-hub" element={<SupervisorHubPage />} />
       
       {/* 主要頁面（不需登入） */}
       <Route element={<MainLayout />}>
@@ -41,6 +46,7 @@ function App() {
         <Route path="/reviews" element={<ReviewsPage />} />
         <Route path="/reviews/:id" element={<ReviewDetailPage />} />
         <Route path="/data-management" element={<DataManagementPage />} />
+        <Route path="/period-analysis" element={<PeriodAnalysisPage />} />
       </Route>
       
       {/* Catch all */}

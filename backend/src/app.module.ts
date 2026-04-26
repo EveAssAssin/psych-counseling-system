@@ -25,6 +25,9 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { EmployeeSyncModule } from './modules/employee-sync/employee-sync.module';
 import { TicketHistoryModule } from './modules/ticket-history/ticket-history.module';
+import { PeriodAnalysisModule } from './modules/period-analysis/period-analysis.module';
+import { SupervisorNotesModule } from './modules/supervisor-notes/supervisor-notes.module';
+import { SupervisorAiModule } from './modules/supervisor-ai/supervisor-ai.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -60,6 +63,9 @@ import { HealthController } from './health.controller';
     UploadModule,
     EmployeeSyncModule,
     TicketHistoryModule,
+    PeriodAnalysisModule,
+    SupervisorNotesModule,
+    SupervisorAiModule,
   ],
   controllers: [HealthController],
 })
