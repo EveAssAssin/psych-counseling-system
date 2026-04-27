@@ -240,8 +240,8 @@ export class SupervisorNotesService {
     page?: number;
     limit?: number;
   }) {
-    const page = filters.page ?? 1;
-    const limit = Math.min(filters.limit ?? 20, 100);
+    const page = parseInt(String(filters.page ?? 1), 10) || 1;
+    const limit = Math.min(parseInt(String(filters.limit ?? 20), 10) || 20, 100);
     const offset = (page - 1) * limit;
 
     let query = this.db
