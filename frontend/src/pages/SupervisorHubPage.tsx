@@ -178,6 +178,9 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
   const [notes, setNotes] = useState<Note[]>([]);
   const [listSearch, setListSearch] = useState('');
   const [editNote, setEditNote] = useState<Note | null>(null);
+  const [editPendingFiles, setEditPendingFiles] = useState<File[]>([]);
+  const [editUploading, setEditUploading] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -265,11 +268,39 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
 
   const handleUpdate = async () => {
     if (!editNote) return;
-    await axios.patch(`${API}/supervisor-hub/notes/${editNote.id}`, {
-      content: editNote.content,
-      category_id: editNote.category_id || null,
-    }, { params: { supervisor_id: supervisor.identifier } });
-    setEditNote(null); loadNotes();
+    setEditUploading(true);
+
+    // 上傳新附件
+    let newAttachments: Attachment[] = [];
+    if (editPendingFiles.length > 0) {
+      try {
+        const formData = new FormData();
+        editPendingFiles.forEach(f => formData.append('files', f));
+        const r = await axios.post(`${API}/supervisor-hub/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        newAttachments = r.data.attachments || [];
+      } catch (e: any) {
+        alert('附件上傳失敗：' + (e.response?.data?.message || e.message));
+        setEditUploading(false); return;
+      }
+    }
+
+    const mergedAttachments = [...(editNote.attachments || []), ...newAttachments];
+
+    try {
+      await axios.patch(`${API}/supervisor-hub/notes/${editNote.id}`, {
+        content: editNote.content,
+        category_id: editNote.category_id || null,
+        attachments: mergedAttachments,
+      }, { params: { supervisor_id: supervisor.identifier } });
+      setEditNote(null);
+      setEditPendingFiles([]);
+      loadNotes();
+    } catch (e: any) {
+      alert(e.response?.data?.message || '儲存失敗');
+    }
+    setEditUploading(false);
   };
 
   return (
@@ -429,9 +460,64 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
                     </div>
                     {/* 編輯內容 */}
                     <textarea style={{ ...inputStyle, minHeight:80 }} value={editNote.content} onChange={e => setEditNote({ ...editNote, content: e.target.value })} />
+
+                    {/* 現有附件（可刪除） */}
+                    {editNote.attachments && editNote.attachments.length > 0 && (
+                      <div style={{ marginBottom:8 }}>
+                        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>現有附件（點 ✕ 移除）</div>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                          {editNote.attachments.map((a, i) => (
+                            <div key={i} style={{ position:'relative' }}>
+                              {a.type?.startsWith('image/') ? (
+                                <img src={a.url} alt={a.originalName} style={{ width:72, height:72, objectFit:'cover', borderRadius:8, border:'1px solid #e2e8f0' }} />
+                              ) : (
+                                <div style={{ width:72, height:72, borderRadius:8, border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', fontSize:10, color:'#64748b', background:'#f8fafc', padding:4, textAlign:'center' }}>
+                                  📎<br/>{a.originalName?.slice(-10)}
+                                </div>
+                              )}
+                              <button
+                                onClick={() => setEditNote({ ...editNote, attachments: editNote.attachments!.filter((_, j) => j !== i) })}
+                                style={{ position:'absolute', top:-6, right:-6, background:'#ef4444', color:'#fff', border:'none', borderRadius:'50%', width:18, height:18, fontSize:11, cursor:'pointer', lineHeight:'18px', textAlign:'center', padding:0 }}>
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 待上傳的新附件 */}
+                    {editPendingFiles.length > 0 && (
+                      <div style={{ marginBottom:8 }}>
+                        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>待上傳（{editPendingFiles.length} 個）</div>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                          {editPendingFiles.map((f, i) => (
+                            <div key={i} style={{ display:'flex', alignItems:'center', gap:4, background:'#f1f5f9', borderRadius:6, padding:'2px 8px', fontSize:12 }}>
+                              <span>{f.name.length > 14 ? '...' + f.name.slice(-12) : f.name}</span>
+                              <button onClick={() => setEditPendingFiles(prev => prev.filter((_, j) => j !== i))}
+                                style={{ background:'none', border:'none', color:'#ef4444', cursor:'pointer', padding:0, fontSize:13 }}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 新增附件按鈕 */}
+                    <div style={{ marginBottom:8 }}>
+                      <input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx"
+                        ref={editFileInputRef} style={{ display:'none' }}
+                        onChange={e => { if (e.target.files) { setEditPendingFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; } }} />
+                      <button onClick={() => editFileInputRef.current?.click()}
+                        style={{ ...smallBtnStyle, background:'#f1f5f9', color:'#475569' }}>
+                        📎 新增圖片 / 附件
+                      </button>
+                    </div>
+
                     <div style={{ display:'flex', gap:8 }}>
-                      <button onClick={handleUpdate} style={{ ...btnStyle, background:'#7c3aed', color:'#fff', flex:1 }}>儲存</button>
-                      <button onClick={() => setEditNote(null)} style={{ ...btnStyle, background:'#e2e8f0', color:'#475569', flex:1 }}>取消</button>
+                      <button onClick={handleUpdate} disabled={editUploading} style={{ ...btnStyle, background:'#7c3aed', color:'#fff', flex:1, opacity: editUploading ? 0.7 : 1 }}>
+                        {editUploading ? '上傳中...' : '儲存'}
+                      </button>
+                      <button onClick={() => { setEditNote(null); setEditPendingFiles([]); }} style={{ ...btnStyle, background:'#e2e8f0', color:'#475569', flex:1 }}>取消</button>
                     </div>
                   </>
                 ) : (
