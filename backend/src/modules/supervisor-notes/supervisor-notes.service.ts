@@ -263,8 +263,22 @@ export class SupervisorNotesService {
     // Apply range AFTER all filters so pagination is based on filtered results
     query = query.range(offset, offset + limit - 1);
 
-    const { data, error, count } = await query;
+    const { data: rawData, error, count } = await query;
     if (error) throw error;
+
+    // Augment notes with employee names via batch lookup
+    let data: any[] = rawData || [];
+    const appNumbers = [...new Set(data.filter(n => n.employee_app_number).map(n => n.employee_app_number))];
+    if (appNumbers.length > 0) {
+      const { data: emps } = await this.db
+        .from('employees')
+        .select('employeeappnumber, name')
+        .in('employeeappnumber', appNumbers);
+      const empMap: Record<string, string> = {};
+      (emps || []).forEach((e: any) => { if (e.employeeappnumber) empMap[e.employeeappnumber] = e.name; });
+      data = data.map(n => ({ ...n, employee_name: n.employee_app_number ? (empMap[n.employee_app_number] || null) : null }));
+    }
+
     return { data, total: count, page, limit };
   }
 

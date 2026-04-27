@@ -9,7 +9,7 @@ const API = import.meta.env.VITE_API_URL || 'https://psych-counseling-backend.on
 interface Employee { app_number: string; name: string; store_name?: string; position?: string; }
 interface Category { id: string; name: string; color: string; supervisor_id?: string | null; }
 interface Attachment { url: string; originalName: string; type: string; size: number; }
-interface Note { id: string; content: string; category_id?: string; category_name?: string; supervisor_name: string; created_at: string; employee_app_number?: string; non_employee_name?: string; images?: string[]; attachments?: Attachment[]; }
+interface Note { id: string; content: string; category_id?: string; category_name?: string; supervisor_name: string; created_at: string; employee_app_number?: string; employee_name?: string; non_employee_name?: string; images?: string[]; attachments?: Attachment[]; }
 interface AiMessage { role: 'user' | 'assistant'; content: string; }
 interface AiSession { id: string; employee_name?: string; ai_type: string; title: string; created_at: string; }
 interface AiPersona { id: string; ai_type: string; persona_name: string; system_prompt: string; model?: string; }
@@ -183,6 +183,29 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 釘選人員（持久化到 localStorage）
+  const [pinnedEmps, setPinnedEmps] = useState<Employee[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`pinned_emps_${supervisor.identifier}`) || '[]'); } catch { return []; }
+  });
+  // 摺疊狀態（預設全部展開）
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const togglePin = (emp: Employee) => {
+    setPinnedEmps(prev => {
+      const exists = prev.some(p => p.app_number === emp.app_number);
+      const next = exists ? prev.filter(p => p.app_number !== emp.app_number) : [...prev, emp];
+      localStorage.setItem(`pinned_emps_${supervisor.identifier}`, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   useEffect(() => {
     axios.get(`${API}/supervisor-hub/categories`, { params: { supervisor_id: supervisor.identifier } })
@@ -303,6 +326,20 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
     setEditUploading(false);
   };
 
+  // ── 按人員分組（在 JSX 外預先計算）──
+  type NoteGroup = { key: string; displayName: string; latestDate: string; notes: Note[] };
+  const noteGroups: NoteGroup[] = (() => {
+    const groupMap: Record<string, NoteGroup> = {};
+    for (const n of notes) {
+      const key = n.employee_app_number || n.non_employee_name || '__ext__';
+      const displayName = n.employee_name || n.non_employee_name || (n.employee_app_number ? n.employee_app_number : '外部人員');
+      if (!groupMap[key]) groupMap[key] = { key, displayName, latestDate: n.created_at, notes: [] };
+      groupMap[key].notes.push(n);
+      if (n.created_at > groupMap[key].latestDate) groupMap[key].latestDate = n.created_at;
+    }
+    return Object.values(groupMap).sort((a, b) => b.latestDate.localeCompare(a.latestDate));
+  })();
+
   return (
     <div style={{ padding:16 }}>
       <div style={{ display:'flex', gap:8, marginBottom:16 }}>
@@ -331,11 +368,32 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
 
           {!isExternal ? (
             <>
+              {/* 釘選人員快選 */}
+              {pinnedEmps.length > 0 && !selectedEmp && (
+                <div style={{ marginBottom:8 }}>
+                  <div style={{ fontSize:11, color:'#94a3b8', marginBottom:5 }}>📌 釘選人員（點選快速記錄）</div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                    {pinnedEmps.map(emp => (
+                      <div key={emp.app_number} style={{ display:'flex', alignItems:'center', background:'#f3f0ff', borderRadius:20, border:'1px solid #c4b5fd', overflow:'hidden' }}>
+                        <span onClick={() => setSelectedEmp(emp)}
+                          style={{ padding:'4px 10px', fontSize:12, color:'#6d28d9', cursor:'pointer', fontWeight:600 }}>
+                          {emp.name}
+                        </span>
+                        <button onClick={() => togglePin(emp)}
+                          title="取消釘選"
+                          style={{ padding:'4px 8px', background:'none', border:'none', borderLeft:'1px solid #c4b5fd', color:'#9ca3af', cursor:'pointer', fontSize:11 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* 姓名快搜 */}
               <EmployeeSearchPicker
                 selected={selectedEmp}
                 onSelect={emp => { setSelectedEmp(emp); setEmployees([]); }}
                 placeholder="輸入姓名或員工編號搜尋..."
+                pinnedEmps={pinnedEmps}
+                onPin={togglePin}
               />
               {/* 按店家選 — 未選人員時顯示 */}
               {stores.length > 0 && !selectedEmp && (
@@ -358,12 +416,16 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
                       </div>
                       {employees.map(e => (
                         <div key={e.app_number}
-                          onClick={() => { setSelectedEmp(e); setEmployees([]); }}
-                          style={{ padding:'8px 12px', cursor:'pointer', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}
+                          style={{ padding:'8px 12px', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}
                           onMouseEnter={el => (el.currentTarget.style.background='#f8f4ff')}
                           onMouseLeave={el => (el.currentTarget.style.background='#fff')}>
-                          <span style={{ fontWeight:600, color:'#1e293b', fontSize:13 }}>{e.name}</span>
-                          <span style={{ color:'#94a3b8', fontSize:11 }}>{e.position}</span>
+                          <span onClick={() => { setSelectedEmp(e); setEmployees([]); }}
+                            style={{ fontWeight:600, color:'#1e293b', fontSize:13, flex:1, cursor:'pointer' }}>{e.name}</span>
+                          <span style={{ color:'#94a3b8', fontSize:11, marginRight:8 }}>{e.position}</span>
+                          <button onClick={() => togglePin(e)} title={pinnedEmps.some(p => p.app_number === e.app_number) ? '取消釘選' : '釘選'}
+                            style={{ background:'none', border:'none', cursor:'pointer', fontSize:14, color: pinnedEmps.some(p => p.app_number === e.app_number) ? '#7c3aed' : '#cbd5e1' }}>
+                            📌
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -440,8 +502,25 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
             onChange={e => setListSearch(e.target.value)} />
           {loading ? <p style={{ textAlign:'center', color:'#94a3b8', padding:32 }}>載入中...</p> :
             notes.length === 0 ? <p style={{ textAlign:'center', color:'#94a3b8', padding:32 }}>尚無記錄</p> :
-            notes.map(n => (
-              <div key={n.id} style={cardStyle}>
+            noteGroups.map(group => {
+              const isCollapsed = collapsedGroups.has(group.key);
+              return (
+                <div key={group.key} style={{ marginBottom:10 }}>
+                  {/* 人員分組標題 */}
+                  <div onClick={() => toggleGroup(group.key)}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', background:'#f3f0ff', borderRadius:10, cursor:'pointer', border:'1px solid #ede9fe', userSelect:'none' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontWeight:700, color:'#6d28d9', fontSize:14 }}>{group.displayName}</span>
+                      <span style={{ background:'#ede9fe', color:'#7c3aed', borderRadius:99, padding:'1px 8px', fontSize:11 }}>{group.notes.length} 筆</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:11, color:'#94a3b8' }}>最近：{new Date(group.latestDate).toLocaleDateString('zh-TW')}</span>
+                      <span style={{ fontSize:12, color:'#7c3aed' }}>{isCollapsed ? '▶' : '▼'}</span>
+                    </div>
+                  </div>
+                  {/* 展開的筆記列表 */}
+                  {!isCollapsed && group.notes.map(n => (
+                    <div key={n.id} style={{ ...cardStyle, marginTop:6, borderLeft:'3px solid #c4b5fd' }}>
                 {editNote?.id === n.id ? (
                   <>
                     {/* 編輯分類 */}
@@ -549,8 +628,11 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
                     </div>
                   </>
                 )}
-              </div>
-            ))
+                    </div>
+                  ))}
+                </div>
+              );
+            })
           }
         </div>
       )}
@@ -1465,11 +1547,13 @@ function EmployeeSummaryPanel({
 //  共用：員工快搜下拉
 // ────────────────────────────────────────────
 function EmployeeSearchPicker({
-  selected, onSelect, placeholder = '輸入姓名或員工編號搜尋...'
+  selected, onSelect, placeholder = '輸入姓名或員工編號搜尋...', pinnedEmps, onPin
 }: {
   selected: Employee | null;
   onSelect: (e: Employee | null) => void;
   placeholder?: string;
+  pinnedEmps?: Employee[];
+  onPin?: (e: Employee) => void;
 }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<Employee[]>([]);
@@ -1505,16 +1589,26 @@ function EmployeeSearchPicker({
       />
       {results.length > 0 && (
         <div style={{ position:'absolute', top:'100%', left:0, right:0, zIndex:100, background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, maxHeight:200, overflowY:'auto', boxShadow:'0 4px 12px rgba(0,0,0,0.1)' }}>
-          {results.map(e => (
-            <div key={e.app_number}
-              onClick={() => { onSelect(e); setQ(''); setResults([]); }}
-              style={{ padding:'8px 12px', cursor:'pointer', borderBottom:'1px solid #f8fafc', display:'flex', justifyContent:'space-between', alignItems:'center' }}
-              onMouseEnter={el => (el.currentTarget.style.background='#f8f4ff')}
-              onMouseLeave={el => (el.currentTarget.style.background='#fff')}>
-              <span style={{ fontWeight:600, color:'#1e293b', fontSize:13 }}>{e.name}</span>
-              <span style={{ color:'#94a3b8', fontSize:11 }}>{e.store_name} · {e.app_number}</span>
-            </div>
-          ))}
+          {results.map(e => {
+            const isPinned = pinnedEmps?.some(p => p.app_number === e.app_number) ?? false;
+            return (
+              <div key={e.app_number}
+                style={{ padding:'8px 12px', borderBottom:'1px solid #f8fafc', display:'flex', justifyContent:'space-between', alignItems:'center' }}
+                onMouseEnter={el => (el.currentTarget.style.background='#f8f4ff')}
+                onMouseLeave={el => (el.currentTarget.style.background='#fff')}>
+                <span onClick={() => { onSelect(e); setQ(''); setResults([]); }}
+                  style={{ flex:1, fontWeight:600, color:'#1e293b', fontSize:13, cursor:'pointer' }}>{e.name}</span>
+                <span style={{ color:'#94a3b8', fontSize:11, marginRight:8 }}>{e.store_name} · {e.app_number}</span>
+                {onPin && (
+                  <button onClick={ev => { ev.stopPropagation(); onPin(e); }}
+                    title={isPinned ? '取消釘選' : '釘選此人員'}
+                    style={{ background:'none', border:'none', cursor:'pointer', fontSize:14, color: isPinned ? '#7c3aed' : '#cbd5e1', padding:0 }}>
+                    📌
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
