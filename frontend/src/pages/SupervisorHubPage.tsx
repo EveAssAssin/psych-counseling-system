@@ -405,7 +405,6 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
 
       {(mode === 'list' || mode === 'all') && (
         <div>
-          {mode === 'list' && <p style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>查詢 ID：{supervisor.identifier}</p>}
           <input style={inputStyle} placeholder="搜尋記錄內容..." value={listSearch}
             onChange={e => setListSearch(e.target.value)} />
           {loading ? <p style={{ textAlign:'center', color:'#94a3b8', padding:32 }}>載入中...</p> :

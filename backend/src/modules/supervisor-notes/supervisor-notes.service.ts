@@ -248,8 +248,7 @@ export class SupervisorNotesService {
       .from('supervisor_notes')
       .select('*, note_categories(name, color)', { count: 'exact' })
       .eq('is_deleted', false)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .order('created_at', { ascending: false });
 
     if (filters.supervisor_id) query = query.eq('supervisor_id', filters.supervisor_id);
     if (filters.employee_id)   query = query.eq('employee_id', filters.employee_id);
@@ -260,6 +259,9 @@ export class SupervisorNotesService {
         `content.ilike.%${filters.search}%,supervisor_name.ilike.%${filters.search}%,non_employee_name.ilike.%${filters.search}%`
       );
     }
+
+    // Apply range AFTER all filters so pagination is based on filtered results
+    query = query.range(offset, offset + limit - 1);
 
     const { data, error, count } = await query;
     if (error) throw error;
