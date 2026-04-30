@@ -47,13 +47,6 @@ export class AnalysisController {
     return this.analysisService.getHighRiskAnalyses(limit);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: '取得單一分析結果' })
-  @ApiResponse({ status: 200, description: '分析結果' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.analysisService.findById(id);
-  }
-
   @Get('conversation/:conversationId')
   @ApiOperation({ summary: '取得對話的分析結果' })
   @ApiResponse({ status: 200, description: '分析結果' })
@@ -70,18 +63,25 @@ export class AnalysisController {
   @Get('employee/:employeeId')
   @ApiOperation({ summary: '取得員工的所有分析結果' })
   @ApiResponse({ status: 200, description: '分析列表' })
-  async findByEmployee(@Param('employeeId', ParseUUIDPipe) employeeId: string) {
+  async findByEmployee(@Param('employeeId') employeeId: string) {
     return this.analysisService.findByEmployee(employeeId);
   }
 
   @Get('employee/:employeeId/latest')
   @ApiOperation({ summary: '取得員工最新分析結果' })
   @ApiResponse({ status: 200, description: '最新分析結果' })
-  async getLatestByEmployee(@Param('employeeId', ParseUUIDPipe) employeeId: string) {
+  async getLatestByEmployee(@Param('employeeId') employeeId: string) {
     const result = await this.analysisService.getLatestByEmployee(employeeId);
     if (!result) {
       return { found: false, message: 'No analysis found for this employee' };
     }
     return result;
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: '取得單一分析結果' })
+  @ApiResponse({ status: 200, description: '分析結果' })
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.analysisService.findById(id);
   }
 }

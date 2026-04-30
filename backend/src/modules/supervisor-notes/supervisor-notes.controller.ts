@@ -11,6 +11,7 @@ import {
   CreateNoteDto, UpdateNoteDto,
   CreateCategoryDto, UpdateCategoryDto,
   CreateSupervisorDto, AddConfidentialDto,
+  CreateReviewRecordDto, UpdateReviewRecordDto,
 } from './supervisor-notes.dto';
 
 @ApiTags('supervisor-hub')
@@ -157,6 +158,44 @@ export class SupervisorNotesController {
   @Patch('supervisors/:id/password')
   setPassword(@Param('id') id: string, @Body() body: { password: string }) {
     return this.svc.setPassword(id, body.password);
+  }
+
+  // ── 人評會記錄 ──
+  @Get('review-records')
+  @ApiOperation({ summary: '查詢人評會記錄' })
+  getReviewRecords(
+    @Query('employee_app_number') employeeAppNumber?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.svc.getReviewRecords({ employee_app_number: employeeAppNumber, search, page, limit });
+  }
+
+  @Post('review-records')
+  @ApiOperation({ summary: '建立人評會記錄' })
+  createReviewRecord(@Body() dto: CreateReviewRecordDto) {
+    return this.svc.createReviewRecord(dto);
+  }
+
+  @Patch('review-records/:id')
+  @ApiOperation({ summary: '更新人評會記錄' })
+  updateReviewRecord(
+    @Param('id') id: string,
+    @Body() dto: UpdateReviewRecordDto,
+    @Query('supervisor_id') supervisorId: string,
+  ) {
+    return this.svc.updateReviewRecord(id, supervisorId, dto);
+  }
+
+  @Delete('review-records/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '刪除人評會記錄（軟刪除）' })
+  deleteReviewRecord(
+    @Param('id') id: string,
+    @Query('supervisor_id') supervisorId: string,
+  ) {
+    return this.svc.deleteReviewRecord(id, supervisorId);
   }
 
   // ── AI 機密名單 ──

@@ -5,6 +5,7 @@ import {
   CreateNoteDto, UpdateNoteDto,
   CreateCategoryDto, UpdateCategoryDto,
   CreateSupervisorDto, AddConfidentialDto,
+  CreateReviewRecordDto, UpdateReviewRecordDto,
 } from './supervisor-notes.dto';
 
 @Injectable()
@@ -421,6 +422,85 @@ export class SupervisorNotesService {
       .eq('employee_app_number', employeeAppNumber)
       .single();
     return !!data;
+  }
+
+  // ═══════════════════════════════════════════
+  //  取得某人員的所有隨手記（供 AI 分析使用）
+  // ═══════════════════════════════════════════
+
+  // ═══════════════════════════════════════════
+  //  人評會記錄 CRUD
+  // ═══════════════════════════════════════════
+
+  async getReviewRecords(filters: {
+    employee_app_number?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = parseInt(String(filters.page ?? 1), 10) || 1;
+    const limit = Math.min(parseInt(String(filters.limit ?? 20), 10) || 20, 100);
+    const offset = (page - 1) * limit;
+
+    let query = this.db
+      .from('personnel_review_records')
+      .select('*', { count: 'exact' })
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false });
+
+    if (filters.employee_app_number) query = query.eq('employee_app_number', filters.employee_app_number);
+    if (filters.search) {
+      query = query.or(`content.ilike.%${filters.search}%,employee_name.ilike.%${filters.search}%`);
+    }
+
+    query = query.range(offset, offset + limit - 1);
+    const { data, error, count } = await query;
+    if (error) throw error;
+    return { data, total: count, page, limit };
+  }
+
+  async createReviewRecord(dto: CreateReviewRecordDto) {
+    await this.requireAuthorized(dto.created_by || '');
+    const { data, error } = await this.db
+      .from('personnel_review_records')
+      .insert({ ...dto, is_deleted: false })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async updateReviewRecord(id: string, supervisorId: string, dto: UpdateReviewRecordDto) {
+    await this.requireAuthorized(supervisorId);
+    const { data, error } = await this.db
+      .from('personnel_review_records')
+      .update({ ...dto, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async deleteReviewRecord(id: string, supervisorId: string) {
+    await this.requireAuthorized(supervisorId);
+    const { error } = await this.db
+      .from('personnel_review_records')
+      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+    return { success: true };
+  }
+
+  async getReviewRecordsByEmployee(employeeAppNumber: string) {
+    const { data, error } = await this.db
+      .from('personnel_review_records')
+      .select('*')
+      .eq('employee_app_number', employeeAppNumber)
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
   }
 
   // ═══════════════════════════════════════════

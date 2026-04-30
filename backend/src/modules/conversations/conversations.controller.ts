@@ -90,6 +90,13 @@ export class ConversationsController {
     return this.conversationsService.getStats();
   }
 
+  @Get('employee/:employeeId')
+  @ApiOperation({ summary: '取得員工的所有對話' })
+  @ApiResponse({ status: 200, description: '對話列表' })
+  async findByEmployee(@Param('employeeId') employeeId: string) {
+    return this.conversationsService.findByEmployee(employeeId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '取得單一對話' })
   @ApiResponse({ status: 200, description: '對話資料' })
@@ -103,13 +110,6 @@ export class ConversationsController {
   @ApiResponse({ status: 200, description: '附件列表' })
   async getAttachments(@Param('id', ParseUUIDPipe) id: string) {
     return this.conversationsService.getAttachments(id);
-  }
-
-  @Get('employee/:employeeId')
-  @ApiOperation({ summary: '取得員工的所有對話' })
-  @ApiResponse({ status: 200, description: '對話列表' })
-  async findByEmployee(@Param('employeeId', ParseUUIDPipe) employeeId: string) {
-    return this.conversationsService.findByEmployee(employeeId);
   }
 
   @Put(':id')

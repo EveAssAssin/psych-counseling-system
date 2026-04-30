@@ -309,6 +309,15 @@ export class SupervisorAiService {
     // 8. 訂單業績趨勢
     const orderTrend = await this.orderStatsService.getEmployeeOrderTrend(appNumber);
 
+    // 9. 門市業績比較（同店其他成員）
+    let storeTrend: any = null;
+    if (emp?.store_name) {
+      storeTrend = await this.orderStatsService.getStoreMemberTrends(emp.store_name, appNumber);
+    }
+
+    // 10. 人評會記錄（全主管共享）
+    const reviewRecords = await this.notesService.getReviewRecordsByEmployee(appNumber);
+
     return {
       employee: emp,
       notes,
@@ -318,6 +327,8 @@ export class SupervisorAiService {
       channelMessages,
       ticketHistory,
       orderTrend,
+      storeTrend,
+      reviewRecords,
     };
   }
 
@@ -331,7 +342,7 @@ export class SupervisorAiService {
 
     if (session.employee_app_number) {
       const summary = await this.getEmployeeSummary(session.employee_app_number, session.supervisor_id);
-      const { employee: emp, notes, conversations, reviews, riskFlags, channelMessages, ticketHistory, orderTrend } = summary;
+      const { employee: emp, notes, conversations, reviews, riskFlags, channelMessages, ticketHistory, orderTrend, storeTrend, reviewRecords } = summary;
 
       // ── 員工基本資料 ──
       prompt += `\n\n【員工基本資料】\n`;
@@ -468,8 +479,41 @@ export class SupervisorAiService {
         if (totalTrend.trend === 'down') {
           prompt += '⚠️ 建議主管關注是否有狀態或業績問題。';
         }
+
+        // ── 門市業績比較 ──
+        if (storeTrend && storeTrend.memberCount > 0) {
+          prompt += `\n\n【同門市其他成員業績比較（${emp?.store_name}，共 ${storeTrend.memberCount} 名）】\n`;
+          const sa = storeTrend.storeAvg;
+          prompt += `門市平均：近3月 ${sa.recentAvg} 單 / 前3月 ${sa.prevAvg} 單`;
+          if (sa.changePercent !== null) {
+            prompt += `（${sa.changePercent > 0 ? '+' : ''}${sa.changePercent}%，${sa.trend === 'down' ? '📉 門市整體也下滑' : sa.trend === 'up' ? '📈 門市整體上升' : '➡️ 門市持平'}）`;
+          }
+          prompt += '\n';
+          storeTrend.members.slice(0, 8).forEach((m: any) => {
+            const emoji = m.trend === 'up' ? '📈' : m.trend === 'down' ? '📉' : '➡️';
+            prompt += `  ${emoji} ${m.name}：近3月 ${m.recentAvg} 單`;
+            if (m.changePercent !== null) prompt += `（${m.changePercent > 0 ? '+' : ''}${m.changePercent}%）`;
+            prompt += '\n';
+          });
+          if (totalTrend.trend === 'down' && sa.trend === 'down') {
+            prompt += `⚠️ 本人下滑且門市整體也在下滑，可能屬大環境或門市因素，建議留意門市整體狀況。\n`;
+          } else if (totalTrend.trend === 'down' && sa.trend !== 'down') {
+            prompt += `⚠️ 本人下滑但門市整體持平或上升，較可能為個人因素，建議重點關注本人狀況。\n`;
+          }
+        }
       } else {
         prompt += `\n\n【接單業績趨勢：尚無同步資料，需先執行訂單同步】\n`;
+      }
+
+      // ── 人評會記錄（全主管共享）──
+      if (reviewRecords && reviewRecords.length > 0) {
+        prompt += `\n\n【人評會記錄（共 ${reviewRecords.length} 筆）】\n`;
+        reviewRecords.slice(0, 10).forEach((r: any, i: number) => {
+          const date = new Date(r.created_at).toLocaleDateString('zh-TW');
+          const tags = (r.categories || []).map((c: any) => c.name).join('、');
+          prompt += `\n[${i + 1}] ${date} ｜ 議題：${tags || '未分類'} ｜ 記錄者：${r.created_by_name || '未知'}\n`;
+          prompt += `${r.content}\n`;
+        });
       }
 
       prompt += `\n\n以上為系統中關於「${emp?.name || session.employee_name}」的所有相關資料，請根據這些資料協助主管分析員工狀況。`;

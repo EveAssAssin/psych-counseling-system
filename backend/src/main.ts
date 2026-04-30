@@ -1,24 +1,21 @@
-import { NestFactory } from '@nestjs/core';
+﻿import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
   // Global prefix
   app.setGlobalPrefix('api');
-
   // CORS
   app.enableCors({
     origin: [
       'http://localhost:3001',
       'http://localhost:5173',
+      'http://localhost:5174',
       'https://psych.ruki-ai.com',
     ],
     credentials: true,
   });
-
   // Validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
@@ -30,7 +27,6 @@ async function bootstrap() {
       },
     }),
   );
-
   // Swagger API 文件
   const config = new DocumentBuilder()
     .setTitle('心理輔導系統 API')
@@ -43,22 +39,18 @@ async function bootstrap() {
     .addTag('analysis', 'AI 分析')
     .addTag('risk-flags', '風險標記')
     .addTag('sync', '資料同步')
-    .addTag('query', '問答查詢')
+    .addTag('query', '智能問答')
     .build();
-
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
-
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 3001;
   await app.listen(port);
-
   console.log(`
-╔═══════════════════════════════════════════════════╗
-║       心理輔導系統 Backend v2.0                    ║
-║       Server running on http://localhost:${port}      ║
-║       API Docs: http://localhost:${port}/api/docs     ║
-╚═══════════════════════════════════════════════════╝
+======================================================
+      心理輔導系統 Backend v2.0
+      Server running on http://localhost:${port}
+      API Docs: http://localhost:${port}/api/docs
+======================================================
   `);
 }
-
 bootstrap();

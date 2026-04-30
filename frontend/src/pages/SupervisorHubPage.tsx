@@ -48,7 +48,7 @@ const AI_LABELS: Record<string, { label: string; color: string; emoji: string }>
 //  Main Page
 // ────────────────────────────────────────────
 export default function SupervisorHubPage() {
-  const [tab, setTab] = useState<'note' | 'ai' | 'manage'>('note');
+  const [tab, setTab] = useState<'note' | 'review' | 'ai' | 'manage'>('note');
   const [supervisor, setSupervisor] = useState<{ identifier: string; name: string; role: string } | null>(null);
   const [loginInput, setLoginInput] = useState({ identifier: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -136,9 +136,9 @@ export default function SupervisorHubPage() {
 
       {/* Tabs */}
       <div style={{ display:'flex', background:'#fff', borderBottom:'2px solid #e2e8f0' }}>
-        {([['note','✏️ 隨手記'],['ai','🤖 AI 快問'],['manage','⚙️ 管理']] as const).map(([key, label]) => (
+        {([['note','✏️ 隨手記'],['review','📋 人評會'],['ai','🤖 AI 快問'],['manage','⚙️ 管理']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
-            style={{ flex:1, padding:'14px 0', border:'none', cursor:'pointer', fontSize:14, fontWeight:tab===key?700:400,
+            style={{ flex:1, padding:'12px 0', border:'none', cursor:'pointer', fontSize:13, fontWeight:tab===key?700:400,
               color: tab===key ? '#7c3aed' : '#64748b',
               borderBottom: tab===key ? '3px solid #7c3aed' : '3px solid transparent',
               background:'transparent', transition:'all 0.2s' }}>
@@ -150,6 +150,7 @@ export default function SupervisorHubPage() {
       {/* Content */}
       <div style={{ maxWidth:720, margin:'0 auto', padding:'0 0 80px 0' }}>
         {tab === 'note'   && <QuickNoteTab supervisor={supervisor} />}
+        {tab === 'review' && <ReviewRecordTab supervisor={supervisor} />}
         {tab === 'ai'     && <AiChatTab supervisor={supervisor} />}
         {tab === 'manage' && <ManageTab supervisor={supervisor} />}
       </div>
@@ -628,6 +629,314 @@ function QuickNoteTab({ supervisor }: { supervisor: { identifier: string; name: 
                     </div>
                   </>
                 )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────
+//  Tab 2: 人評會記錄
+// ────────────────────────────────────────────
+interface ReviewRecord { id: string; employee_app_number?: string; employee_name?: string; categories: Array<{id?:string;name:string;color?:string}>; content: string; images?: string[]; attachments?: Attachment[]; created_by?: string; created_by_name?: string; created_at: string; }
+
+function ReviewRecordTab({ supervisor }: { supervisor: { identifier: string; name: string; role: string } }) {
+  const [mode, setMode] = useState<'write' | 'list'>('write');
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [selectedCats, setSelectedCats] = useState<Array<{id?:string;name:string;color?:string}>>([]);
+  const [content, setContent] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // 列表
+  const [records, setRecords] = useState<ReviewRecord[]>([]);
+  const [listSearch, setListSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [editRecord, setEditRecord] = useState<ReviewRecord | null>(null);
+  const [editPendingFiles, setEditPendingFiles] = useState<File[]>([]);
+  const [editUploading, setEditUploading] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    axios.get(`${API}/supervisor-hub/categories`, { params: { supervisor_id: supervisor.identifier } })
+      .then(r => setCategories(r.data || []));
+  }, []);
+
+  const loadRecords = () => {
+    setLoading(true);
+    axios.get(`${API}/supervisor-hub/review-records`, { params: { limit: 100, search: listSearch || undefined } })
+      .then(r => setRecords(r.data?.data || []))
+      .catch(e => alert('載入失敗：' + (e.response?.data?.message || e.message)))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { if (mode === 'list') loadRecords(); }, [mode, listSearch]);
+
+  const toggleCat = (cat: Category) => {
+    const exists = selectedCats.some(c => c.name === cat.name);
+    if (exists) setSelectedCats(prev => prev.filter(c => c.name !== cat.name));
+    else setSelectedCats(prev => [...prev, { id: cat.id, name: cat.name, color: cat.color }]);
+  };
+
+  const toggleGroup = (key: string) => setCollapsedGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  const handleSave = async () => {
+    if (!content.trim()) { alert('請輸入內容'); return; }
+    if (selectedCats.length === 0) { alert('請至少選擇一個議題分類'); return; }
+    setSaving(true);
+    let attachments: Attachment[] = [];
+    if (pendingFiles.length > 0) {
+      setUploading(true);
+      try {
+        const fd = new FormData();
+        pendingFiles.forEach(f => fd.append('files', f));
+        const r = await axios.post(`${API}/supervisor-hub/upload`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        attachments = r.data.attachments || [];
+      } catch (e: any) { alert('附件上傳失敗：' + (e.response?.data?.message || e.message)); setSaving(false); setUploading(false); return; }
+      setUploading(false);
+    }
+    try {
+      await axios.post(`${API}/supervisor-hub/review-records`, {
+        employee_app_number: selectedEmp?.app_number,
+        employee_name: selectedEmp?.name,
+        categories: selectedCats,
+        content,
+        attachments,
+        created_by: supervisor.identifier,
+        created_by_name: supervisor.name,
+      });
+      setSaved(true);
+      setContent(''); setSelectedEmp(null); setSelectedCats([]); setPendingFiles([]);
+      setTimeout(() => { setSaved(false); setMode('list'); }, 1200);
+    } catch (e: any) { alert(e.response?.data?.message || '儲存失敗'); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('確認刪除？')) return;
+    await axios.delete(`${API}/supervisor-hub/review-records/${id}`, { params: { supervisor_id: supervisor.identifier } });
+    loadRecords();
+  };
+
+  const handleUpdate = async () => {
+    if (!editRecord) return;
+    setEditUploading(true);
+    let newAtts: Attachment[] = [];
+    if (editPendingFiles.length > 0) {
+      try {
+        const fd = new FormData();
+        editPendingFiles.forEach(f => fd.append('files', f));
+        const r = await axios.post(`${API}/supervisor-hub/upload`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        newAtts = r.data.attachments || [];
+      } catch (e: any) { alert('附件上傳失敗'); setEditUploading(false); return; }
+    }
+    try {
+      await axios.patch(`${API}/supervisor-hub/review-records/${editRecord.id}`, {
+        categories: editRecord.categories,
+        content: editRecord.content,
+        attachments: [...(editRecord.attachments || []), ...newAtts],
+      }, { params: { supervisor_id: supervisor.identifier } });
+      setEditRecord(null); setEditPendingFiles([]); loadRecords();
+    } catch (e: any) { alert(e.response?.data?.message || '儲存失敗'); }
+    setEditUploading(false);
+  };
+
+  // 分組
+  type RGroup = { key: string; displayName: string; latestDate: string; records: ReviewRecord[] };
+  const groups: RGroup[] = (() => {
+    const map: Record<string, RGroup> = {};
+    for (const r of records) {
+      const key = r.employee_app_number || '__ext__';
+      const displayName = r.employee_name || r.employee_app_number || '未指定人員';
+      if (!map[key]) map[key] = { key, displayName, latestDate: r.created_at, records: [] };
+      map[key].records.push(r);
+      if (r.created_at > map[key].latestDate) map[key].latestDate = r.created_at;
+    }
+    return Object.values(map).sort((a, b) => b.latestDate.localeCompare(a.latestDate));
+  })();
+
+  return (
+    <div style={{ padding:16 }}>
+      <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+        {(['write','list'] as const).map(m => (
+          <button key={m} onClick={() => setMode(m)}
+            style={{ ...btnStyle, flex:1, background: mode===m ? '#0369a1':'#e2e8f0', color: mode===m ? '#fff':'#475569' }}>
+            {m === 'write' ? '✍️ 新增記錄' : '📋 所有記錄'}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'write' && (
+        <div style={cardStyle}>
+          <label style={labelStyle}>記錄對象（人員）</label>
+          <EmployeeSearchPicker selected={selectedEmp} onSelect={setSelectedEmp} placeholder="輸入姓名或員工編號..." />
+
+          <label style={labelStyle}>議題分類（可多選）</label>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:12 }}>
+            {categories.map(c => {
+              const active = selectedCats.some(s => s.name === c.name);
+              return (
+                <button key={c.id} onClick={() => toggleCat(c)}
+                  style={{ ...smallBtnStyle, background: active ? c.color : '#e2e8f0', color: active ? '#fff' : '#475569', outline: active ? `2px solid ${c.color}` : 'none', outlineOffset: 2 }}>
+                  {active ? '✓ ' : ''}{c.name}
+                </button>
+              );
+            })}
+          </div>
+          {selectedCats.length > 0 && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginBottom:8 }}>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>已選：</span>
+              {selectedCats.map((c, i) => (
+                <span key={i} style={{ background: c.color || '#7c3aed', color:'#fff', borderRadius:99, padding:'1px 8px', fontSize:11 }}>{c.name}</span>
+              ))}
+            </div>
+          )}
+
+          <label style={labelStyle}>會議記錄內容</label>
+          <textarea style={{ ...inputStyle, minHeight:120, resize:'vertical' }} placeholder="輸入本次人評會的會議內容、決議、追蹤事項..." value={content} onChange={e => setContent(e.target.value)} />
+
+          <label style={labelStyle}>附件（圖片 / 文件）</label>
+          <div onClick={() => fileInputRef.current?.click()}
+            style={{ border:'2px dashed #7dd3fc', borderRadius:10, padding:'12px', cursor:'pointer', background:'#f0f9ff', marginBottom:8, textAlign:'center', color:'#0369a1', fontSize:13 }}>
+            📎 點擊選擇附件
+          </div>
+          <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx"
+            style={{ display:'none' }} onChange={e => { if (e.target.files) { setPendingFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value=''; }}} />
+          {pendingFiles.length > 0 && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+              {pendingFiles.map((f, i) => (
+                <div key={i} style={{ display:'flex', alignItems:'center', gap:4, background:'#e0f2fe', borderRadius:6, padding:'2px 8px', fontSize:12 }}>
+                  <span>{f.name.length > 14 ? '...'+f.name.slice(-12) : f.name}</span>
+                  <button onClick={() => setPendingFiles(prev => prev.filter((_,j)=>j!==i))} style={{ background:'none', border:'none', color:'#ef4444', cursor:'pointer', fontSize:13 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button onClick={handleSave} disabled={saving || uploading}
+            style={{ ...btnStyle, background: saved ? '#22c55e' : '#0369a1', color:'#fff', width:'100%' }}>
+            {uploading ? '上傳中...' : saving ? '儲存中...' : saved ? '✓ 已儲存！' : '儲存人評會記錄'}
+          </button>
+        </div>
+      )}
+
+      {mode === 'list' && (
+        <div>
+          <input style={inputStyle} placeholder="搜尋記錄內容或人員姓名..." value={listSearch} onChange={e => setListSearch(e.target.value)} />
+          {loading ? <p style={{ textAlign:'center', color:'#94a3b8', padding:32 }}>載入中...</p> :
+            records.length === 0 ? <p style={{ textAlign:'center', color:'#94a3b8', padding:32 }}>尚無記錄</p> :
+            groups.map(group => {
+              const isCollapsed = collapsedGroups.has(group.key);
+              return (
+                <div key={group.key} style={{ marginBottom:10 }}>
+                  <div onClick={() => toggleGroup(group.key)}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', background:'#e0f2fe', borderRadius:10, cursor:'pointer', border:'1px solid #bae6fd', userSelect:'none' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontWeight:700, color:'#0369a1', fontSize:14 }}>{group.displayName}</span>
+                      <span style={{ background:'#bae6fd', color:'#0369a1', borderRadius:99, padding:'1px 8px', fontSize:11 }}>{group.records.length} 筆</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:11, color:'#64748b' }}>最近：{new Date(group.latestDate).toLocaleDateString('zh-TW')}</span>
+                      <span style={{ fontSize:12, color:'#0369a1' }}>{isCollapsed ? '▶' : '▼'}</span>
+                    </div>
+                  </div>
+                  {!isCollapsed && group.records.map(rec => (
+                    <div key={rec.id} style={{ ...cardStyle, marginTop:6, borderLeft:'3px solid #7dd3fc' }}>
+                      {editRecord?.id === rec.id ? (
+                        <>
+                          {/* 編輯分類 */}
+                          <div style={{ marginBottom:8 }}>
+                            <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>議題分類（可多選）</div>
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                              {categories.map(c => {
+                                const active = editRecord.categories.some(s => s.name === c.name);
+                                return (
+                                  <button key={c.id} onClick={() => {
+                                    const exists = editRecord.categories.some(s => s.name === c.name);
+                                    setEditRecord({ ...editRecord, categories: exists
+                                      ? editRecord.categories.filter(s => s.name !== c.name)
+                                      : [...editRecord.categories, { id: c.id, name: c.name, color: c.color }] });
+                                  }} style={{ ...smallBtnStyle, background: active ? c.color : '#e2e8f0', color: active ? '#fff' : '#475569' }}>
+                                    {active ? '✓ ' : ''}{c.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <textarea style={{ ...inputStyle, minHeight:80 }} value={editRecord.content} onChange={e => setEditRecord({ ...editRecord, content: e.target.value })} />
+                          {/* 現有附件 */}
+                          {editRecord.attachments && editRecord.attachments.length > 0 && (
+                            <div style={{ marginBottom:8 }}>
+                              <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>現有附件（點 ✕ 移除）</div>
+                              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                                {editRecord.attachments.map((a, i) => (
+                                  <div key={i} style={{ position:'relative' }}>
+                                    {a.type?.startsWith('image/') ? (
+                                      <img src={a.url} alt={a.originalName} style={{ width:64, height:64, objectFit:'cover', borderRadius:8, border:'1px solid #e2e8f0' }} />
+                                    ) : (
+                                      <div style={{ width:64, height:64, borderRadius:8, border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#64748b', background:'#f8fafc', padding:2, textAlign:'center' }}>📎 {a.originalName?.slice(-8)}</div>
+                                    )}
+                                    <button onClick={() => setEditRecord({ ...editRecord, attachments: editRecord.attachments!.filter((_,j)=>j!==i) })}
+                                      style={{ position:'absolute', top:-6, right:-6, background:'#ef4444', color:'#fff', border:'none', borderRadius:'50%', width:18, height:18, fontSize:11, cursor:'pointer', lineHeight:'18px', textAlign:'center', padding:0 }}>✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {editPendingFiles.length > 0 && (
+                            <div style={{ marginBottom:6, display:'flex', flexWrap:'wrap', gap:4 }}>
+                              {editPendingFiles.map((f,i) => (
+                                <div key={i} style={{ display:'flex', alignItems:'center', gap:4, background:'#e0f2fe', borderRadius:6, padding:'2px 8px', fontSize:12 }}>
+                                  <span>{f.name.slice(-12)}</span>
+                                  <button onClick={() => setEditPendingFiles(prev => prev.filter((_,j)=>j!==i))} style={{ background:'none', border:'none', color:'#ef4444', cursor:'pointer', fontSize:13 }}>✕</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div style={{ marginBottom:8 }}>
+                            <input type="file" multiple accept="image/*,.pdf,.doc,.docx" ref={editFileInputRef} style={{ display:'none' }}
+                              onChange={e => { if (e.target.files) { setEditPendingFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value=''; }}} />
+                            <button onClick={() => editFileInputRef.current?.click()} style={{ ...smallBtnStyle, background:'#e0f2fe', color:'#0369a1' }}>📎 新增附件</button>
+                          </div>
+                          <div style={{ display:'flex', gap:8 }}>
+                            <button onClick={handleUpdate} disabled={editUploading} style={{ ...btnStyle, background:'#0369a1', color:'#fff', flex:1, opacity:editUploading?0.7:1 }}>{editUploading?'上傳中...':'儲存'}</button>
+                            <button onClick={() => { setEditRecord(null); setEditPendingFiles([]); }} style={{ ...btnStyle, background:'#e2e8f0', color:'#475569', flex:1 }}>取消</button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+                            <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                              {rec.categories.map((c, i) => (
+                                <span key={i} style={{ background: c.color || '#0369a1', color:'#fff', borderRadius:99, padding:'2px 9px', fontSize:11 }}>{c.name}</span>
+                              ))}
+                            </div>
+                            <span style={{ fontSize:11, color:'#cbd5e1', whiteSpace:'nowrap' }}>{new Date(rec.created_at).toLocaleDateString('zh-TW')}</span>
+                          </div>
+                          <p style={{ margin:'0 0 8px', color:'#1e293b', lineHeight:1.6 }}>{rec.content}</p>
+                          {rec.attachments && rec.attachments.length > 0 && <AttachmentViewer attachments={rec.attachments} />}
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:6 }}>
+                            <span style={{ fontSize:12, color:'#94a3b8' }}>記錄者：{rec.created_by_name}</span>
+                            <div style={{ display:'flex', gap:6 }}>
+                              <button onClick={() => setEditRecord(rec)} style={{ ...smallBtnStyle, background:'#e0f2fe', color:'#0369a1' }}>編輯</button>
+                              <button onClick={() => handleDelete(rec.id)} style={{ ...smallBtnStyle, background:'#fee2e2', color:'#dc2626' }}>刪除</button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>

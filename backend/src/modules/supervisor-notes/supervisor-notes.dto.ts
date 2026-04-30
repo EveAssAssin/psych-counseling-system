@@ -57,6 +57,25 @@ export class CreateSupervisorDto {
   @ApiPropertyOptional() @IsOptional() @IsString() role?: string;
 }
 
+// ── 人評會記錄 ──
+export class CreateReviewRecordDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() employee_app_number?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() employee_name?: string;
+  @ApiProperty({ description: '多個分類標籤 [{id?,name,color?}]' }) @IsArray() categories: Array<{ id?: string; name: string; color?: string }>;
+  @ApiProperty() @IsString() content: string;
+  @ApiPropertyOptional() @IsOptional() @IsArray() images?: string[];
+  @ApiPropertyOptional() @IsOptional() @IsArray() attachments?: any[];
+  @ApiPropertyOptional() @IsOptional() @IsString() created_by?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() created_by_name?: string;
+}
+
+export class UpdateReviewRecordDto {
+  @ApiPropertyOptional() @IsOptional() @IsArray() categories?: Array<{ id?: string; name: string; color?: string }>;
+  @ApiPropertyOptional() @IsOptional() @IsString() content?: string;
+  @ApiPropertyOptional() @IsOptional() @IsArray() images?: string[];
+  @ApiPropertyOptional() @IsOptional() @IsArray() attachments?: any[];
+}
+
 // ── AI 機密名單 ──
 export class AddConfidentialDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() employee_id?: string;

@@ -306,4 +306,62 @@ export class OrderStatsService {
       months: [],
     };
   }
+
+  // ═══════════════════════════════════════════
+  //  門市業績比較（供 AI 分析使用）
+  // ═══════════════════════════════════════════
+
+  async getStoreMemberTrends(storeName: string, excludeAppNumber?: string): Promise<{
+    memberCount: number;
+    storeAvg: { recentAvg: number; prevAvg: number; changePercent: number | null; trend: string };
+    members: Array<{ name: string; app_number: string; recentAvg: number; prevAvg: number; trend: string; changePercent: number | null }>;
+  }> {
+    const { data: storeEmps } = await this.db
+      .from('employees')
+      .select('employeeappnumber, name')
+      .eq('store_name', storeName)
+      .eq('is_active', true);
+
+    if (!storeEmps || storeEmps.length === 0) {
+      return { memberCount: 0, storeAvg: { recentAvg: 0, prevAvg: 0, changePercent: null, trend: 'stable' }, members: [] };
+    }
+
+    const targets = storeEmps.filter((e: any) => e.employeeappnumber !== excludeAppNumber);
+    if (targets.length === 0) {
+      return { memberCount: 0, storeAvg: { recentAvg: 0, prevAvg: 0, changePercent: null, trend: 'stable' }, members: [] };
+    }
+
+    const memberResults = await Promise.all(
+      targets.map(async (e: any) => {
+        const trend = await this.getEmployeeOrderTrend(e.employeeappnumber);
+        return {
+          name: e.name,
+          app_number: e.employeeappnumber,
+          recentAvg: trend.totalTrend.recentAvg,
+          prevAvg: trend.totalTrend.prevAvg,
+          trend: trend.totalTrend.trend,
+          changePercent: trend.totalTrend.changePercent,
+        };
+      })
+    );
+
+    const membersWithData = memberResults.filter(m => m.recentAvg > 0 || m.prevAvg > 0);
+    const avgRecent = membersWithData.length > 0
+      ? parseFloat((membersWithData.reduce((s, m) => s + m.recentAvg, 0) / membersWithData.length).toFixed(1))
+      : 0;
+    const avgPrev = membersWithData.length > 0
+      ? parseFloat((membersWithData.reduce((s, m) => s + m.prevAvg, 0) / membersWithData.length).toFixed(1))
+      : 0;
+    const storeChangePercent = avgPrev > 0
+      ? parseFloat(((avgRecent - avgPrev) / avgPrev * 100).toFixed(1))
+      : null;
+    const storeTrendDir = storeChangePercent === null ? 'stable'
+      : storeChangePercent >= 10 ? 'up' : storeChangePercent <= -10 ? 'down' : 'stable';
+
+    return {
+      memberCount: targets.length,
+      storeAvg: { recentAvg: avgRecent, prevAvg: avgPrev, changePercent: storeChangePercent, trend: storeTrendDir },
+      members: memberResults,
+    };
+  }
 }
