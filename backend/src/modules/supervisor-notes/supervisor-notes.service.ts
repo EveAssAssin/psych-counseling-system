@@ -427,13 +427,19 @@ export class SupervisorNotesService {
   //  取得某人員的所有隨手記（供 AI 分析使用）
   // ═══════════════════════════════════════════
 
-  async getNotesByEmployee(employeeAppNumber: string) {
-    const { data, error } = await this.db
+  async getNotesByEmployee(employeeAppNumber: string, supervisorId?: string) {
+    let query = this.db
       .from('supervisor_notes')
       .select('*, note_categories(name)')
       .eq('employee_app_number', employeeAppNumber)
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: false });
+      .eq('is_deleted', false);
+
+    // 只納入當前主管自己的筆記
+    if (supervisorId) {
+      query = query.eq('supervisor_id', supervisorId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
   }

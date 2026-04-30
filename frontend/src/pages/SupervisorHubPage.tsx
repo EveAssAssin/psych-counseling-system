@@ -729,7 +729,9 @@ function AiChatTab({ supervisor }: { supervisor: { identifier: string; name: str
   useEffect(() => {
     if (!selectedEmp) { setEmpSummary(null); return; }
     setLoadingSummary(true);
-    axios.get(`${API}/supervisor-hub/ai/employee-summary/${selectedEmp.app_number}`)
+    axios.get(`${API}/supervisor-hub/ai/employee-summary/${selectedEmp.app_number}`, {
+      params: { supervisor_id: supervisor.identifier },
+    })
       .then(r => setEmpSummary(r.data))
       .catch(() => setEmpSummary(null))
       .finally(() => setLoadingSummary(false));

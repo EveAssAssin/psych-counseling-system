@@ -226,7 +226,7 @@ export class SupervisorAiService {
   //  取得人員完整資料彙整（供前端顯示 + AI 分析）
   // ═══════════════════════════════════════════
 
-  async getEmployeeSummary(appNumber: string) {
+  async getEmployeeSummary(appNumber: string, supervisorId?: string) {
     // 1. 員工基本資料
     const { data: empRows } = await this.db
       .from('employees')
@@ -238,8 +238,8 @@ export class SupervisorAiService {
     const emp = empRows?.[0] || null;
     const employeeUUID = emp?.id;
 
-    // 2. 主管隨手記
-    const notes = await this.notesService.getNotesByEmployee(appNumber);
+    // 2. 主管隨手記（只納入當前主管自己的筆記）
+    const notes = await this.notesService.getNotesByEmployee(appNumber, supervisorId);
 
     // 3. 對話記錄（conversation_intakes）
     let conversations: any[] = [];
@@ -330,7 +330,7 @@ export class SupervisorAiService {
     let prompt = persona?.system_prompt || '你是一位專業的職場心理顧問。';
 
     if (session.employee_app_number) {
-      const summary = await this.getEmployeeSummary(session.employee_app_number);
+      const summary = await this.getEmployeeSummary(session.employee_app_number, session.supervisor_id);
       const { employee: emp, notes, conversations, reviews, riskFlags, channelMessages, ticketHistory, orderTrend } = summary;
 
       // ── 員工基本資料 ──

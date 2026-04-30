@@ -53,7 +53,10 @@ export class SupervisorAiController {
   // ── 人員資料彙整（供前端顯示 + 驗證 AI 覆蓋範圍）──
   @Get('employee-summary/:appNumber')
   @ApiOperation({ summary: '取得人員完整資料彙整（隨手記＋對話＋評價＋風險）' })
-  getEmployeeSummary(@Param('appNumber') appNumber: string) {
-    return this.svc.getEmployeeSummary(appNumber);
+  getEmployeeSummary(
+    @Param('appNumber') appNumber: string,
+    @Query('supervisor_id') supervisorId?: string,
+  ) {
+    return this.svc.getEmployeeSummary(appNumber, supervisorId);
   }
 }
