@@ -501,21 +501,18 @@ export class SyncService {
       const lineLastSync = await this.getSyncCursor('official-channel-line');
       const commentsLastSync = await this.getSyncCursor('official-channel-comments');
 
-      // 如果是第一次同步（無 cursor），從 90 天前開始抓全部歷史資料
+      // 第一次同步（無 cursor）不帶 updated_after，抓全部歷史資料
       // 之後的增量同步只抓上次同步之後的新資料
-      const now = new Date();
-      const firstSyncStart = new Date(now);
-      firstSyncStart.setDate(firstSyncStart.getDate() - 90);
-      firstSyncStart.setHours(0, 0, 0, 0);
-
-      const defaultAfter = firstSyncStart.toISOString();
 
       // ========================================
       // Step 2: 同步 LINE 訊息
       // ========================================
       this.logger.log('Step 1: Syncing LINE official channel messages...');
-      const lineUpdatedAfter = lineLastSync?.last_record_time || defaultAfter;
-      
+      const lineUpdatedAfter = lineLastSync?.last_record_time || undefined;
+      this.logger.log(lineUpdatedAfter
+        ? `Incremental sync from: ${lineUpdatedAfter}`
+        : 'First sync: fetching ALL historical LINE messages');
+
       try {
         const lineMessages = await this.ticketApi.getAllOfficialChannelMessages({
           updated_after: lineUpdatedAfter,
@@ -545,7 +542,10 @@ export class SyncService {
       // Step 3: 同步工單留言
       // ========================================
       this.logger.log('Step 2: Syncing ticket comments...');
-      const commentsUpdatedAfter = commentsLastSync?.last_record_time || defaultAfter;
+      const commentsUpdatedAfter = commentsLastSync?.last_record_time || undefined;
+      this.logger.log(commentsUpdatedAfter
+        ? `Incremental sync from: ${commentsUpdatedAfter}`
+        : 'First sync: fetching ALL historical ticket comments');
 
       try {
         const comments = await this.ticketApi.getAllTicketComments({
