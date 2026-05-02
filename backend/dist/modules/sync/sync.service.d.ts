@@ -46,11 +46,22 @@ export declare class SyncService {
     private createSyncLog;
     private updateSyncLog;
     getSyncLog(id: string): Promise<SyncLog>;
+    getSyncStatus(): Promise<{
+        cursors: Record<string, any>;
+        recentLogs: SyncLog[];
+    }>;
     getRecentSyncLogs(limit?: number): Promise<SyncLog[]>;
     private readonly OCM_TABLE;
     private readonly SYNC_CURSORS_TABLE;
     syncOfficialChannelMessages(triggeredBy?: string): Promise<SyncLog>;
     private upsertOfficialChannelMessages;
+    private readonly ETH_TABLE;
+    private readonly TC_TABLE;
+    syncTicketHistory(triggeredBy?: string): Promise<SyncLog>;
+    private upsertTicketHistory;
     private getSyncCursor;
+    syncReviewData(triggeredBy?: string): Promise<SyncLog>;
+    private upsertExternalReview;
+    private syncReviewResponses;
     private updateSyncCursor;
 }

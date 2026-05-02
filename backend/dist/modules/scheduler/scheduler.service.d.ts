@@ -17,6 +17,8 @@ export declare class SchedulerService implements OnModuleInit {
     monthlyEmployeeSync(): Promise<void>;
     dailyEmployeeSync(): Promise<void>;
     dailyOfficialChannelSync(): Promise<void>;
+    dailyTicketHistorySync(): Promise<void>;
+    dailyReviewSync(): Promise<void>;
     dailyDataSync(): Promise<void>;
     processExtractionQueue(): Promise<void>;
     processAnalysisQueue(): Promise<void>;
@@ -26,4 +28,6 @@ export declare class SchedulerService implements OnModuleInit {
     triggerEmployeeSync(): Promise<any>;
     triggerDailySync(): Promise<any>;
     triggerOfficialChannelSync(): Promise<any>;
+    triggerTicketHistorySync(): Promise<any>;
+    triggerReviewSync(): Promise<any>;
 }

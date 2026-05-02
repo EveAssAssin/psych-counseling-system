@@ -110,8 +110,25 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
             this.logger.error('Error searching reviews:', error);
             throw error;
         }
+        const reviews = data || [];
+        if (reviews.length > 0) {
+            const employeeIds = [...new Set(reviews.map((r) => r.employee_id).filter(Boolean))];
+            const employees = await this.supabase.findMany('employees', {
+                useAdmin: true,
+                limit: employeeIds.length,
+            });
+            const empMap = {};
+            for (const emp of employees) {
+                empMap[emp.id] = emp.name;
+            }
+            for (const review of reviews) {
+                if (!review.employee_name) {
+                    review.employee_name = empMap[review.employee_id] || null;
+                }
+            }
+        }
         return {
-            data: data || [],
+            data: reviews,
             total: count || 0,
             limit,
             offset,

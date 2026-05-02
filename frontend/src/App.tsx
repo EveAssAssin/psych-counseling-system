@@ -19,6 +19,7 @@ import DataManagementPage from './pages/DataManagementPage';
 import EntryPage from './pages/EntryPage';
 import PeriodAnalysisPage from './pages/PeriodAnalysisPage';
 import SupervisorHubPage from './pages/SupervisorHubPage';
+import LineAssistantPage from './pages/LineAssistantPage';
 
 function App() {
   return (
@@ -31,6 +32,9 @@ function App() {
 
       {/* 主管輔助中心（獨立入口，無側邊欄） */}
       <Route path="/supervisor-hub" element={<SupervisorHubPage />} />
+
+      {/* LINE AI 訊息輔助（獨立入口） */}
+      <Route path="/line-assistant" element={<LineAssistantPage />} />
       
       {/* 主要頁面（不需登入） */}
       <Route element={<MainLayout />}>

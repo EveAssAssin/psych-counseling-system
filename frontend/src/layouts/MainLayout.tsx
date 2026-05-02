@@ -34,6 +34,7 @@ const navigation = [
 // 獨立入口（開新視窗）
 const externalLinks = [
   { name: '主管輔助中心', href: '/supervisor-hub', icon: PencilSquareIcon },
+  { name: 'LINE 訊息助理', href: '/line-assistant', icon: ChatBubbleLeftRightIcon },
 ];
 
 export default function MainLayout() {

@@ -28,6 +28,7 @@ import { TicketHistoryModule } from './modules/ticket-history/ticket-history.mod
 import { PeriodAnalysisModule } from './modules/period-analysis/period-analysis.module';
 import { SupervisorNotesModule } from './modules/supervisor-notes/supervisor-notes.module';
 import { SupervisorAiModule } from './modules/supervisor-ai/supervisor-ai.module';
+import { LineAssistantModule } from './modules/line-assistant/line-assistant.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -66,6 +67,7 @@ import { HealthController } from './health.controller';
     PeriodAnalysisModule,
     SupervisorNotesModule,
     SupervisorAiModule,
+    LineAssistantModule,
   ],
   controllers: [HealthController],
 })

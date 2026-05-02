@@ -18,9 +18,9 @@ export declare class ConversationsController {
         failed: number;
         needFollowup: number;
     }>;
+    findByEmployee(employeeId: string): Promise<import("./conversations.dto").ConversationIntake[]>;
     findOne(id: string): Promise<import("./conversations.dto").ConversationIntake>;
     getAttachments(id: string): Promise<import("./conversations.dto").ConversationAttachment[]>;
-    findByEmployee(employeeId: string): Promise<import("./conversations.dto").ConversationIntake[]>;
     update(id: string, dto: UpdateConversationDto): Promise<import("./conversations.dto").ConversationIntake>;
     delete(id: string): Promise<void>;
 }

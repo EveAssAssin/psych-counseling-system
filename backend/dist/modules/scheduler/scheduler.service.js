@@ -72,6 +72,30 @@ let SchedulerService = SchedulerService_1 = class SchedulerService {
             this.logger.error('Daily official channel sync failed:', error);
         }
     }
+    async dailyTicketHistorySync() {
+        if (!this.isEnabled)
+            return;
+        this.logger.log('Starting daily ticket history sync');
+        try {
+            const result = await this.syncService.syncTicketHistory();
+            this.logger.log(`Daily ticket history sync completed: ${result.total_created} created, ${result.total_updated} updated`);
+        }
+        catch (error) {
+            this.logger.error('Daily ticket history sync failed:', error);
+        }
+    }
+    async dailyReviewSync() {
+        if (!this.isEnabled)
+            return;
+        this.logger.log('Starting daily review data sync');
+        try {
+            const result = await this.syncService.syncReviewData();
+            this.logger.log(`Daily review sync completed: ${result.total_updated} reviews processed`);
+        }
+        catch (error) {
+            this.logger.error('Daily review sync failed:', error);
+        }
+    }
     async dailyDataSync() {
         if (!this.isEnabled)
             return;
@@ -157,6 +181,14 @@ let SchedulerService = SchedulerService_1 = class SchedulerService {
         this.logger.log('Manual official channel sync triggered');
         return this.syncService.syncOfficialChannelMessages('manual');
     }
+    async triggerTicketHistorySync() {
+        this.logger.log('Manual ticket history sync triggered');
+        return this.syncService.syncTicketHistory('manual');
+    }
+    async triggerReviewSync() {
+        this.logger.log('Manual review sync triggered');
+        return this.syncService.syncReviewData('manual');
+    }
 };
 exports.SchedulerService = SchedulerService;
 __decorate([
@@ -179,6 +211,18 @@ __decorate([
 ], SchedulerService.prototype, "dailyOfficialChannelSync", null);
 __decorate([
     (0, schedule_1.Cron)('0 6 * * *'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], SchedulerService.prototype, "dailyTicketHistorySync", null);
+__decorate([
+    (0, schedule_1.Cron)('30 6 * * *'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], SchedulerService.prototype, "dailyReviewSync", null);
+__decorate([
+    (0, schedule_1.Cron)('0 7 * * *'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)

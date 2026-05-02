@@ -35,6 +35,10 @@ const configuration = () => ({
             url: process.env.TICKET_SYSTEM_API_URL,
             apiKey: process.env.TICKET_SYSTEM_API_KEY,
         },
+        reviewSystem: {
+            url: process.env.REVIEW_SYSTEM_API_URL,
+            apiKey: process.env.REVIEW_SYSTEM_API_KEY,
+        },
     },
     upload: {
         maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760', 10),

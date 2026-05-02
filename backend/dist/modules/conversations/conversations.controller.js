@@ -39,14 +39,14 @@ let ConversationsController = class ConversationsController {
     async getStats() {
         return this.conversationsService.getStats();
     }
+    async findByEmployee(employeeId) {
+        return this.conversationsService.findByEmployee(employeeId);
+    }
     async findOne(id) {
         return this.conversationsService.findById(id);
     }
     async getAttachments(id) {
         return this.conversationsService.getAttachments(id);
-    }
-    async findByEmployee(employeeId) {
-        return this.conversationsService.findByEmployee(employeeId);
     }
     async update(id, dto) {
         return this.conversationsService.update(id, dto);
@@ -112,6 +112,15 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ConversationsController.prototype, "getStats", null);
 __decorate([
+    (0, common_1.Get)('employee/:employeeId'),
+    (0, swagger_1.ApiOperation)({ summary: '取得員工的所有對話' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: '對話列表' }),
+    __param(0, (0, common_1.Param)('employeeId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ConversationsController.prototype, "findByEmployee", null);
+__decorate([
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: '取得單一對話' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: '對話資料' }),
@@ -130,15 +139,6 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ConversationsController.prototype, "getAttachments", null);
-__decorate([
-    (0, common_1.Get)('employee/:employeeId'),
-    (0, swagger_1.ApiOperation)({ summary: '取得員工的所有對話' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: '對話列表' }),
-    __param(0, (0, common_1.Param)('employeeId', common_1.ParseUUIDPipe)),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", Promise)
-], ConversationsController.prototype, "findByEmployee", null);
 __decorate([
     (0, common_1.Put)(':id'),
     (0, swagger_1.ApiOperation)({ summary: '更新對話' }),

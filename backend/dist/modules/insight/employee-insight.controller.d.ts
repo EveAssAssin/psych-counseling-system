@@ -50,8 +50,10 @@ export declare class EmployeeInsightController {
                 has_attendance: boolean;
                 has_scores: boolean;
                 has_reviews: boolean;
+                has_ticket_history: boolean;
                 conversation_count: number;
                 official_message_count: number;
+                ticket_count: number;
                 date_range: {
                     from: string;
                     to: string;

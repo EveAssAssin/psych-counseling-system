@@ -18,23 +18,51 @@ const supabase_service_1 = require("../supabase/supabase.service");
 const employees_service_1 = require("../employees/employees.service");
 const official_channel_service_1 = require("../official-channel/official-channel.service");
 const reviews_service_1 = require("../reviews/reviews.service");
+const ticket_history_service_1 = require("../ticket-history/ticket-history.service");
 const INSIGHT_SYSTEM_PROMPT = `你是一位專業的職場心理分析師與人力資源顧問，協助主管理解員工狀況並提供溝通策略。
 
 你會收到一位員工的多種資料（可能包含部分或全部）：
 - 基本資料（姓名、部門、職稱）
-- 官方頻道訊息（LINE 對話、工單留言）
+- 官方頻道訊息（LINE 對話）
+- 工單回報歷史（員工提報的問題工單、類別、處理狀態、對話內容）
 - 對話記錄（主管面談）
 - 出勤紀錄
 - 加扣分紀錄
-- 客戶評價
+- 客戶評價/客訴（含評價回覆對話、處理速度、緊急程度）
 
 請根據**實際提供的資料**進行分析，沒有的資料請標註「資料不足」。
 
+【客戶評價分析重點】
+評價資料是員工面對客戶壓力最直接的指標：
+- **負評比例與頻率**：持續收到負評可能造成自我懷疑或防禦性心態
+- **特急/緊急評價**：頻繁遇到高壓客訴，心理負擔加重
+- **回覆處理速度**：平均回覆時間反映壓力應對能力（過快可能過度緊張，超時未回可能疲憊/逃避）
+- **代理處理情況**：被他人代為處理的評價比例，可能反映協作狀況或問題迴避
+- **待處理積壓**：未結案評價數量，積壓多表示壓力持續堆疊
+- **評價對話內容**：員工回覆客訴的文字風格（是否顯現出道歉過度、情緒化、防禦性）
+- **正評的激勵效果**：正面評價是否帶來明顯正向轉變
+
+【工單分析重點】
+工單回報行為能反映員工的工作壓力與心理狀態：
+- **高頻率回報**：員工主動反映問題，可能是盡責表現，也可能是工作環境困難的訊號
+- **重複性同類問題**：系統/流程未解決，持續造成挫折感
+- **緊急工單比例高**：頻繁遇到突發狀況，壓力負荷可能偏高
+- **工單長期未結案**：等待支援時間長，可能造成無力感
+- **工單內容情緒**：描述用詞是否帶有挫折、抱怨、焦慮情緒
+- **回報類別**：ERP 問題 vs APP 問題 vs 客戶問題，不同類別代表不同壓力來源
+
+【官方頻道分析重點】
+LINE 訊息是員工日常溝通的真實紀錄：
+- **訊息頻率變化**：突然減少或增加都可能有意義
+- **情緒用詞**：是否出現壓力、疲憊、不滿等關鍵詞
+- **回應速度**：對工程師/主管訊息的回應時間
+
 分析時請注意：
 1. **時間軸分析**：觀察資料的時間序列，找出趨勢變化和關鍵轉折點
-2. **交叉驗證**：不同資料來源是否呈現一致的訊號
-3. **脈絡理解**：結合工作環境和時間點理解行為背後原因
-4. **實用建議**：給主管具體可行的溝通策略和話術
+2. **交叉驗證**：客訴評價 + 工單問題 + LINE 訊息 + 面談內容是否呈現一致的訊號
+3. **壓力源識別**：區分是來自「客戶壓力」、「系統/流程問題」還是「職場人際」
+4. **脈絡理解**：結合工作環境和時間點理解行為背後原因
+5. **實用建議**：給主管具體可行的溝通策略和話術
 
 重要原則：
 - 以「風險判讀」表述，不是「醫療診斷」
@@ -45,12 +73,13 @@ const INSIGHT_SYSTEM_PROMPT = `你是一位專業的職場心理分析師與人�
 
 請以 JSON 格式輸出，嚴格遵循指定的 schema。`;
 let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightService {
-    constructor(configService, supabase, employeesService, officialChannelService, reviewsService) {
+    constructor(configService, supabase, employeesService, officialChannelService, reviewsService, ticketHistoryService) {
         this.configService = configService;
         this.supabase = supabase;
         this.employeesService = employeesService;
         this.officialChannelService = officialChannelService;
         this.reviewsService = reviewsService;
+        this.ticketHistoryService = ticketHistoryService;
         this.logger = new common_1.Logger(EmployeeInsightService_1.name);
         const apiKey = this.configService.get('anthropic.apiKey');
         if (apiKey) {
@@ -93,8 +122,10 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
                 has_attendance: collectedData.attendance.length > 0,
                 has_scores: collectedData.scores.length > 0,
                 has_reviews: collectedData.reviews.length > 0,
+                has_ticket_history: collectedData.tickets.length > 0,
                 conversation_count: collectedData.conversations.length,
                 official_message_count: collectedData.officialMessages.length,
+                ticket_count: collectedData.tickets.length,
                 date_range: this.getDateRange(timeline),
             },
             timeline,
@@ -171,7 +202,7 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
                 team_dynamics: insight.team_dynamics || {},
                 historical_patterns: insight.historical_patterns || {},
                 recommended_actions: insight.recommended_actions || {},
-                timeline_snapshot: (insight.timeline || []).slice(0, 20),
+                timeline_snapshot: (insight.timeline || []).slice(0, 30),
                 model_name: insight.analysis_metadata?.model || 'claude-sonnet-4-20250514',
                 confidence_score: insight.analysis_metadata?.confidence_score || 0.7,
                 data_completeness: insight.analysis_metadata?.data_completeness || 0.2,
@@ -215,27 +246,105 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
             limit: 10,
             useAdmin: true,
         });
-        const attendance = [];
-        const scores = [];
-        const allReviews = await this.reviewsService.findByEmployee(employeeId, 100);
+        const allReviewsRaw = await this.reviewsService.findByEmployee(employeeId, 200);
+        const allReviews = allReviewsRaw.filter((r) => !r.deleted_at);
         const reviews = allReviews.filter((r) => r.created_at && r.created_at >= sinceStr);
+        const urgentPlus = reviews.filter((r) => r.urgency === 'urgent_plus').length;
+        const urgent = reviews.filter((r) => r.urgency === 'urgent').length;
+        const respondedReviews = reviews.filter((r) => r.response_speed_hours != null);
+        const fastResponses = respondedReviews.filter((r) => r.response_speed_hours <= 2).length;
+        const slowResponses = respondedReviews.filter((r) => r.response_speed_hours > 24).length;
         const reviewStats = {
             total: reviews.length,
+            all_time_total: allReviews.length,
             positive: reviews.filter((r) => r.review_type === 'positive').length,
             negative: reviews.filter((r) => r.review_type === 'negative').length,
             other: reviews.filter((r) => r.review_type === 'other').length,
             pending: reviews.filter((r) => r.status === 'pending' && r.requires_response).length,
+            responded: reviews.filter((r) => r.status === 'responded').length,
+            closed: reviews.filter((r) => r.status === 'closed').length,
             proxy_count: reviews.filter((r) => r.is_proxy).length,
+            urgent_plus: urgentPlus,
+            urgent: urgent,
             avg_response_hours: this.calculateAvgResponseHours(reviews),
+            fast_responses: fastResponses,
+            slow_responses: slowResponses,
         };
+        const priorityReviews = reviews
+            .filter((r) => r.review_type === 'negative' || r.urgency !== 'normal')
+            .slice(0, 10);
+        const reviewConversations = [];
+        for (const review of priorityReviews) {
+            try {
+                const responses = await this.reviewsService.getResponses(review.id);
+                if (responses.length > 0) {
+                    reviewConversations.push({ review, responses });
+                }
+            }
+            catch {
+            }
+        }
+        const tickets = await this.ticketHistoryService.getByEmployeeAppNumber(appNumber, 100);
+        const recentTickets = tickets.filter(t => t.ticket_created_at && t.ticket_created_at >= sinceStr);
+        const ticketStats = this.calculateTicketStats(tickets, recentTickets);
+        const ticketConversations = [];
+        for (const ticket of recentTickets.slice(0, 10)) {
+            try {
+                const events = await this.ticketHistoryService.getConversationsByTicketId(ticket.ticket_id);
+                if (events.length > 0) {
+                    ticketConversations.push({ ticket, events });
+                }
+            }
+            catch (e) {
+            }
+        }
         return {
             officialMessages: filteredMessages,
             conversations: filteredConversations,
             analyses,
-            attendance,
-            scores,
+            attendance: [],
+            scores: [],
             reviews,
+            allReviews,
             reviewStats,
+            reviewConversations,
+            tickets,
+            recentTickets,
+            ticketStats,
+            ticketConversations,
+        };
+    }
+    calculateTicketStats(allTickets, recentTickets) {
+        const byStatus = {};
+        const byPriority = {};
+        const byCategory = {};
+        for (const t of allTickets) {
+            byStatus[t.status] = (byStatus[t.status] || 0) + 1;
+            byPriority[t.priority] = (byPriority[t.priority] || 0) + 1;
+            if (t.parent_category) {
+                byCategory[t.parent_category] = (byCategory[t.parent_category] || 0) + 1;
+            }
+        }
+        const closedTickets = allTickets.filter(t => t.status === 'closed' && t.ticket_created_at && t.ticket_closed_at);
+        const avgCloseDays = closedTickets.length > 0
+            ? Math.round(closedTickets.reduce((sum, t) => {
+                const diff = new Date(t.ticket_closed_at).getTime() - new Date(t.ticket_created_at).getTime();
+                return sum + diff / (1000 * 60 * 60 * 24);
+            }, 0) / closedTickets.length * 10) / 10
+            : 0;
+        const openTickets = allTickets.filter(t => ['pending', 'in_progress', 'waiting_info'].includes(t.status));
+        return {
+            total: allTickets.length,
+            recent_count: recentTickets.length,
+            by_status: byStatus,
+            by_priority: byPriority,
+            by_category: Object.entries(byCategory)
+                .map(([category, count]) => ({ category, count }))
+                .sort((a, b) => b.count - a.count),
+            avg_close_days: avgCloseDays,
+            open_count: openTickets.length,
+            high_priority_count: allTickets.filter(t => t.priority === 'high').length,
+            open_tickets: openTickets.slice(0, 5),
         };
     }
     calculateAvgResponseHours(reviews) {
@@ -248,24 +357,59 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
     buildTimeline(data) {
         const events = [];
         for (const msg of data.officialMessages) {
+            if (msg.direction === 'inbound') {
+                events.push({
+                    date: msg.message_time,
+                    type: 'line_message',
+                    category: 'LINE 訊息',
+                    content: msg.message_text || '（無文字）',
+                    sentiment: this.detectSentiment(msg.message_text || ''),
+                    metadata: {
+                        direction: msg.direction,
+                        ticket_no: msg.ticket_no,
+                    },
+                });
+            }
+        }
+        for (const ticket of data.recentTickets) {
             events.push({
-                date: msg.message_time,
-                type: msg.channel === 'official-line' ? 'line_message' : 'ticket_comment',
-                category: msg.channel === 'official-line' ? 'LINE 訊息' : '工單留言',
-                content: msg.message_text,
-                sentiment: this.detectSentiment(msg.message_text),
+                date: ticket.ticket_created_at,
+                type: 'ticket_created',
+                category: `工單 [${ticket.parent_category || '未分類'}]`,
+                content: `${ticket.issue_title}${ticket.issue_desc ? `：${ticket.issue_desc.substring(0, 80)}` : ''}`,
+                sentiment: ticket.priority === 'high' ? 'negative' : 'neutral',
                 metadata: {
-                    direction: msg.direction,
-                    ticket_no: msg.ticket_no,
-                    author_name: msg.author_name,
+                    ticket_no: ticket.ticket_no,
+                    status: ticket.status,
+                    priority: ticket.priority,
+                    category: ticket.category,
+                    assigned_engineer: ticket.assigned_engineer,
                 },
             });
+        }
+        for (const { ticket, events: convEvents } of data.ticketConversations) {
+            for (const event of convEvents) {
+                if (event.actor_role === 'store' && event.event_type !== 'ticket_created') {
+                    events.push({
+                        date: event.event_created_at,
+                        type: 'ticket_event',
+                        category: `工單回覆 [${ticket.ticket_no}]`,
+                        content: event.content || `${event.event_type}`,
+                        sentiment: this.detectSentiment(event.content || ''),
+                        metadata: {
+                            ticket_no: ticket.ticket_no,
+                            event_type: event.event_type,
+                            actor_name: event.actor_name,
+                        },
+                    });
+                }
+            }
         }
         for (const conv of data.conversations) {
             events.push({
                 date: conv.conversation_date,
                 type: 'conversation',
-                category: conv.conversation_type || '對話記錄',
+                category: conv.conversation_type || '主管面談',
                 content: conv.raw_text?.substring(0, 200) || '（詳見對話內容）',
                 metadata: {
                     interviewer: conv.interviewer_name,
@@ -273,41 +417,60 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
                 },
             });
         }
+        const urgencyLabel = {
+            urgent_plus: '【特急】',
+            urgent: '【緊急】',
+            normal: '',
+        };
+        const typeLabels = {
+            positive: '正面評價',
+            negative: '負面評價/客訴',
+            other: '其他評價',
+        };
         for (const review of data.reviews) {
-            const typeLabels = {
-                positive: '正面評價',
-                negative: '負面評價/客訴',
-                other: '其他評價',
-            };
-            const sourceLabels = {
-                google_map: 'Google MAP',
-                facebook: 'Facebook',
-                phone: '電話客服',
-                app: 'APP 客服',
-                other: '其他',
-            };
+            const urgencyTag = urgencyLabel[review.urgency] || '';
             events.push({
                 date: review.created_at,
                 type: 'review',
-                category: typeLabels[review.review_type] || '評價',
+                category: `${urgencyTag}${typeLabels[review.review_type] || '評價'}`,
                 content: review.content?.substring(0, 200) || '（無內容）',
                 sentiment: review.review_type === 'positive' ? 'positive' :
                     review.review_type === 'negative' ? 'negative' : 'neutral',
                 metadata: {
-                    source: sourceLabels[review.source] || review.source,
+                    source: review.source,
                     status: review.status,
                     is_proxy: review.is_proxy,
-                    response_speed_hours: review.response_speed_hours,
                     urgency: review.urgency,
+                    response_speed_hours: review.response_speed_hours,
+                    requires_response: review.requires_response,
                 },
             });
+            const convEntry = data.reviewConversations?.find((rc) => rc.review.id === review.id);
+            if (convEntry) {
+                for (const resp of convEntry.responses) {
+                    events.push({
+                        date: resp.created_at,
+                        type: 'review',
+                        category: `評價回覆 [${resp.responder_type === 'employee' ? '員工' : '客戶'}]`,
+                        content: resp.content?.substring(0, 150) || '（無回覆內容）',
+                        sentiment: this.detectSentiment(resp.content || ''),
+                        metadata: {
+                            responder_type: resp.responder_type,
+                            responder_name: resp.responder_name,
+                            review_id: review.id,
+                        },
+                    });
+                }
+            }
         }
         events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         return events;
     }
     detectSentiment(text) {
-        const negativeKeywords = ['壓力', '累', '煩', '不想', '難', '問題', '錯', '抱怨', '生氣', '離職', '不開心'];
-        const positiveKeywords = ['感謝', '謝謝', '好', '棒', '開心', '順利', '成功', '感恩'];
+        if (!text)
+            return 'neutral';
+        const negativeKeywords = ['壓力', '累', '煩', '不想', '難', '問題', '錯', '抱怨', '生氣', '離職', '不開心', '崩潰', '痛苦', '無奈', '異常', '無法', '失敗', '卡住'];
+        const positiveKeywords = ['感謝', '謝謝', '好', '棒', '開心', '順利', '成功', '感恩', '完成', '解決', '恢復'];
         const lowerText = text.toLowerCase();
         const negCount = negativeKeywords.filter(k => lowerText.includes(k)).length;
         const posCount = positiveKeywords.filter(k => lowerText.includes(k)).length;
@@ -319,7 +482,7 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
     }
     calculateDataCompleteness(data) {
         let score = 0;
-        let total = 5;
+        const total = 6;
         if (data.officialMessages.length > 0)
             score++;
         if (data.conversations.length > 0)
@@ -329,6 +492,8 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
         if (data.scores.length > 0)
             score++;
         if (data.reviews.length > 0)
+            score++;
+        if (data.tickets.length > 0)
             score++;
         return Math.round((score / total) * 100) / 100;
     }
@@ -359,7 +524,7 @@ ${analysisInput}
     "risk_level": "low|moderate|high|critical",
     "stress_level": "low|moderate|high|critical",
     "trend": "improving|stable|worsening",
-    "overall_assessment": "整體評估描述（2-3句話）",
+    "overall_assessment": "整體評估描述（2-3句話，需整合工單、LINE、面談等多方資料）",
     "key_concerns": ["主要擔憂1", "主要擔憂2"],
     "positive_signals": ["正面訊號1", "正面訊號2"],
     "last_analyzed": "${new Date().toISOString()}"
@@ -371,7 +536,7 @@ ${analysisInput}
     "avoid_topics": ["避免話題1", "避免話題2"],
     "expected_reactions": ["可能反應1", "可能反應2"],
     "response_strategies": [
-      {"if": "如果員工說...", "then": "建議回應..."},
+      {"if": "如果員工提到工單問題一直沒解決...", "then": "建議回應..."},
       {"if": "如果員工表現...", "then": "建議做法..."}
     ],
     "sample_phrases": ["具體話術範例1", "具體話術範例2", "具體話術範例3"]
@@ -392,15 +557,15 @@ ${analysisInput}
     "interpersonal_notes": ["人際關係觀察1", "人際關係觀察2"]
   },
   "historical_patterns": {
-    "recurring_issues": ["重複出現的問題1"],
+    "recurring_issues": ["重複出現的問題1（可包含重複工單類別）"],
     "improvement_history": ["改善紀錄1"],
     "key_turning_points": [
-      {"date": "日期", "event": "事件", "impact": "影響"}
+      {"date": "日期", "event": "事件（可包含重要工單或面談）", "impact": "影響"}
     ]
   },
   "recommended_actions": {
     "immediate": ["立即行動1", "立即行動2"],
-    "short_term": ["短期行動1", "短期行動2"],
+    "short_term": ["短期行動1（可包含協助解決未結案工單）"],
     "long_term": ["長期行動1"]
   },
   "confidence_score": 0.0-1.0
@@ -413,9 +578,8 @@ ${analysisInput}
                 messages: [{ role: 'user', content: userPrompt }],
             });
             const content = response.content[0];
-            if (content.type !== 'text') {
+            if (content.type !== 'text')
                 throw new Error('Unexpected response type');
-            }
             let jsonText = content.text.trim();
             if (jsonText.startsWith('```json')) {
                 jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
@@ -439,54 +603,116 @@ ${analysisInput}
 狀態：${employee.is_active ? '在職' : '離職'}
 
 `;
+        const ts = data.ticketStats;
+        if (data.tickets.length > 0) {
+            input += `【工單回報統計（全部歷史）】
+工單總數：${ts.total} 筆（近期 ${ts.recent_count} 筆）
+未結案：${ts.open_count} 筆${ts.open_count > 0 ? ' ⚠️' : ''}
+高優先：${ts.high_priority_count} 筆${ts.high_priority_count > 2 ? ' ⚠️' : ''}
+平均結案天數：${ts.avg_close_days > 0 ? ts.avg_close_days + ' 天' : '無資料'}
+
+各狀態：${Object.entries(ts.by_status).map(([k, v]) => `${k}:${v}`).join('、')}
+各優先級：${Object.entries(ts.by_priority).map(([k, v]) => `${k}:${v}`).join('、')}
+常見類別：${ts.by_category.slice(0, 5).map((c) => `${c.category}(${c.count})`).join('、') || '無'}
+
+`;
+            if (ts.open_tickets.length > 0) {
+                input += `【未結案工單】\n`;
+                for (const t of ts.open_tickets) {
+                    const days = t.ticket_created_at
+                        ? Math.floor((Date.now() - new Date(t.ticket_created_at).getTime()) / (1000 * 60 * 60 * 24))
+                        : 0;
+                    input += `- [${t.priority}] ${t.ticket_no} ${t.issue_title}（已 ${days} 天，狀態：${t.status}）\n`;
+                }
+                input += '\n';
+            }
+            if (data.ticketConversations.length > 0) {
+                input += `【近期工單對話內容】\n`;
+                for (const { ticket, events } of data.ticketConversations.slice(0, 5)) {
+                    input += `\n▶ ${ticket.ticket_no} [${ticket.priority}] ${ticket.issue_title}\n`;
+                    input += `  類別：${ticket.category || '未分類'} | 狀態：${ticket.status}\n`;
+                    for (const ev of events) {
+                        const date = new Date(ev.event_created_at).toLocaleDateString('zh-TW');
+                        const roleLabel = ev.actor_role === 'store' ? '員工' : ev.actor_role === 'engineer' ? '工程師' : '審核';
+                        if (ev.content) {
+                            input += `  ${date} [${roleLabel}] ${ev.content.substring(0, 80)}\n`;
+                        }
+                    }
+                }
+                input += '\n';
+            }
+        }
+        else {
+            input += `【工單回報統計】\n無工單資料\n\n`;
+        }
         if (timeline.length > 0) {
-            input += `【時間軸資料】（共 ${timeline.length} 筆，近 30 天）\n`;
-            const recentEvents = timeline.slice(0, 50);
+            input += `【時間軸（近 30 天，共 ${timeline.length} 筆）】\n`;
+            const recentEvents = timeline.slice(0, 60);
             for (const event of recentEvents) {
                 const date = new Date(event.date).toLocaleDateString('zh-TW');
-                const sentiment = event.sentiment === 'negative' ? '⚠️' : event.sentiment === 'positive' ? '✓' : '';
-                input += `${date} [${event.category}] ${sentiment} ${event.content.substring(0, 100)}\n`;
+                const sentiment = event.sentiment === 'negative' ? ' ⚠️' : event.sentiment === 'positive' ? ' ✓' : '';
+                input += `${date} [${event.category}]${sentiment} ${event.content.substring(0, 100)}\n`;
             }
             input += '\n';
         }
         else {
-            input += `【時間軸資料】\n無資料\n\n`;
+            input += `【時間軸】\n無近期資料\n\n`;
         }
         if (data.analyses && data.analyses.length > 0) {
             const latest = data.analyses[0];
-            input += `【最近分析結果】
+            input += `【最近面談分析結果】
 分析日期：${new Date(latest.created_at).toLocaleDateString('zh-TW')}
 風險等級：${latest.risk_level || '未知'}
 壓力等級：${latest.stress_level || '未知'}
-心理狀態：${latest.current_psychological_state || '未知'}
 摘要：${latest.summary || '無'}
 
 `;
         }
-        input += `【資料統計】
-官方頻道訊息：${data.officialMessages.length} 筆
-對話記錄：${data.conversations.length} 筆
-出勤紀錄：${data.attendance.length} 筆（待同步）
-加扣分紀錄：${data.scores.length} 筆（待同步）
-評價/客訴：${data.reviews.length} 筆
-`;
-        if (data.reviewStats && data.reviews.length > 0) {
-            input += `
-【評價/客訴統計】（近 30 天）
-正面評價：${data.reviewStats.positive} 筆
-負面評價/客訴：${data.reviewStats.negative} 筆
-其他評價：${data.reviewStats.other} 筆
-待處理：${data.reviewStats.pending} 筆${data.reviewStats.pending > 0 ? ' ⚠️' : ''}
-代理處理（非針對本人）：${data.reviewStats.proxy_count} 筆
-平均回覆速度：${data.reviewStats.avg_response_hours > 0 ? data.reviewStats.avg_response_hours + ' 小時' : '無資料'}
+        if (data.allReviews.length > 0 || data.reviews.length > 0) {
+            const rs = data.reviewStats;
+            const sourceMap = {
+                google_map: 'Google MAP',
+                facebook: 'Facebook',
+                phone: '電話客服',
+                app: 'APP 客服',
+                other: '其他',
+            };
+            input += `【評價/客訴統計（近${Math.round((Date.now() - new Date(data.reviews[0]?.created_at || Date.now()).getTime()) / 86400000) || 30}天）】
+總計：${rs.total} 筆（歷史累計：${rs.all_time_total} 筆）
+類型分布：正面 ${rs.positive} ｜ 負面 ${rs.negative}${rs.negative > 0 && rs.negative / rs.total > 0.5 ? ' ⚠️高負評比例' : ''} ｜ 其他 ${rs.other}
+緊急程度：特急 ${rs.urgent_plus}${rs.urgent_plus > 0 ? ' 🔴' : ''} ｜ 緊急 ${rs.urgent}${rs.urgent > 0 ? ' 🟡' : ''} ｜ 一般 ${rs.total - rs.urgent_plus - rs.urgent}
+處理狀態：待處理 ${rs.pending}${rs.pending > 0 ? ' ⚠️' : ''} ｜ 已回覆 ${rs.responded} ｜ 已結案 ${rs.closed}
+代理處理：${rs.proxy_count} 筆
+平均回覆速度：${rs.avg_response_hours > 0 ? rs.avg_response_hours + ' 小時' : '無資料'}${rs.slow_responses > 0 ? `（含 ${rs.slow_responses} 筆超過 24 小時未回）` : ''}${rs.fast_responses > 0 ? `（${rs.fast_responses} 筆在 2 小時內回覆）` : ''}
 
-【評價分析提示】
-- 如果有未處理的負評/客訴，應提高風險等級
-- 回覆速度反映員工的責任心和工作態度
-- 代理處理數量反映主管的管理責任
-- 正面評價是正向訊號
 `;
+            const importantReviews = data.reviews
+                .filter((r) => r.review_type === 'negative' || r.urgency !== 'normal')
+                .slice(0, 5);
+            if (importantReviews.length > 0) {
+                input += `【近期重要評價內容（負評/緊急）】\n`;
+                for (const r of importantReviews) {
+                    const urgTag = r.urgency === 'urgent_plus' ? '[特急]' : r.urgency === 'urgent' ? '[緊急]' : '';
+                    const srcTag = sourceMap[r.source] || r.source;
+                    const spdTag = r.response_speed_hours != null
+                        ? `回覆速度：${r.response_speed_hours}小時`
+                        : r.status === 'pending' ? '⚠️ 尚未回覆'
+                            : '';
+                    input += `・${urgTag}[${srcTag}] ${new Date(r.created_at).toLocaleDateString('zh-TW')} ${r.content?.substring(0, 100) || '（無內容）'} ${spdTag}\n`;
+                    const convEntry = data.reviewConversations?.find((rc) => rc.review.id === r.id);
+                    if (convEntry && convEntry.responses.length > 0) {
+                        for (const resp of convEntry.responses.slice(0, 3)) {
+                            const who = resp.responder_type === 'employee' ? '員工回覆' : '客戶';
+                            input += `  └ [${who}] ${resp.content?.substring(0, 80) || '（無內容）'}\n`;
+                        }
+                    }
+                }
+                input += `\n`;
+            }
         }
+        input += `【資料摘要】
+LINE 訊息：${data.officialMessages.length} 筆 | 面談：${data.conversations.length} 筆 | 工單：${data.tickets.length} 筆 | 評價：${data.reviews.length} 筆（含 ${data.reviewConversations?.length || 0} 筆對話紀錄）
+`;
         return input;
     }
     getDefaultAnalysis() {
@@ -545,6 +771,7 @@ exports.EmployeeInsightService = EmployeeInsightService = EmployeeInsightService
         supabase_service_1.SupabaseService,
         employees_service_1.EmployeesService,
         official_channel_service_1.OfficialChannelService,
-        reviews_service_1.ReviewsService])
+        reviews_service_1.ReviewsService,
+        ticket_history_service_1.TicketHistoryService])
 ], EmployeeInsightService);
 //# sourceMappingURL=employee-insight.service.js.map

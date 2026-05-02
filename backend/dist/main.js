@@ -11,6 +11,7 @@ async function bootstrap() {
         origin: [
             'http://localhost:3001',
             'http://localhost:5173',
+            'http://localhost:5174',
             'https://psych.ruki-ai.com',
         ],
         credentials: true,
@@ -34,18 +35,18 @@ async function bootstrap() {
         .addTag('analysis', 'AI 分析')
         .addTag('risk-flags', '風險標記')
         .addTag('sync', '資料同步')
-        .addTag('query', '問答查詢')
+        .addTag('query', '智能問答')
         .build();
     const document = swagger_1.SwaggerModule.createDocument(app, config);
     swagger_1.SwaggerModule.setup('api/docs', app, document);
-    const port = process.env.PORT || 3000;
+    const port = process.env.PORT || 3001;
     await app.listen(port);
     console.log(`
-╔═══════════════════════════════════════════════════╗
-║       心理輔導系統 Backend v2.0                    ║
-║       Server running on http://localhost:${port}      ║
-║       API Docs: http://localhost:${port}/api/docs     ║
-╚═══════════════════════════════════════════════════╝
+======================================================
+      心理輔導系統 Backend v2.0
+      Server running on http://localhost:${port}
+      API Docs: http://localhost:${port}/api/docs
+======================================================
   `);
 }
 bootstrap();

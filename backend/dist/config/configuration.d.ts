@@ -32,6 +32,10 @@ export declare const configuration: () => {
             url: string | undefined;
             apiKey: string | undefined;
         };
+        reviewSystem: {
+            url: string | undefined;
+            apiKey: string | undefined;
+        };
     };
     upload: {
         maxFileSize: number;

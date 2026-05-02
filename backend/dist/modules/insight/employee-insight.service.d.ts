@@ -3,9 +3,10 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeesService } from '../employees/employees.service';
 import { OfficialChannelService } from '../official-channel/official-channel.service';
 import { ReviewsService } from '../reviews/reviews.service';
+import { TicketHistoryService } from '../ticket-history/ticket-history.service';
 export interface TimelineEvent {
     date: string;
-    type: 'line_message' | 'ticket_comment' | 'conversation' | 'attendance' | 'score' | 'review';
+    type: 'line_message' | 'ticket_comment' | 'conversation' | 'attendance' | 'score' | 'review' | 'ticket_created' | 'ticket_event';
     category: string;
     content: string;
     sentiment?: 'positive' | 'neutral' | 'negative';
@@ -28,8 +29,10 @@ export interface EmployeeInsight {
         has_attendance: boolean;
         has_scores: boolean;
         has_reviews: boolean;
+        has_ticket_history: boolean;
         conversation_count: number;
         official_message_count: number;
+        ticket_count: number;
         date_range: {
             from: string;
             to: string;
@@ -99,9 +102,10 @@ export declare class EmployeeInsightService {
     private readonly employeesService;
     private readonly officialChannelService;
     private readonly reviewsService;
+    private readonly ticketHistoryService;
     private readonly logger;
     private readonly anthropic;
-    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, officialChannelService: OfficialChannelService, reviewsService: ReviewsService);
+    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, officialChannelService: OfficialChannelService, reviewsService: ReviewsService, ticketHistoryService: TicketHistoryService);
     getInsight(employeeAppNumber: string, options?: {
         days?: number;
         forceRefresh?: boolean;
@@ -110,6 +114,7 @@ export declare class EmployeeInsightService {
     private saveInsight;
     clearInsightCache(employeeId: string): Promise<void>;
     private collectEmployeeData;
+    private calculateTicketStats;
     private calculateAvgResponseHours;
     private buildTimeline;
     private detectSentiment;

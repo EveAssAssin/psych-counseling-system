@@ -55,6 +55,10 @@ export const configuration = () => ({
     dailySyncCron: process.env.DAILY_SYNC_CRON || '0 5 * * *',
   },
 
+  line: {
+    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
+  },
+
   logging: {
     level: process.env.LOG_LEVEL || 'debug',
   },

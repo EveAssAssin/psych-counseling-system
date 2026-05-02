@@ -27,6 +27,8 @@ const employee_insight_module_1 = require("./modules/insight/employee-insight.mo
 const reviews_module_1 = require("./modules/reviews/reviews.module");
 const upload_module_1 = require("./modules/upload/upload.module");
 const employee_sync_module_1 = require("./modules/employee-sync/employee-sync.module");
+const ticket_history_module_1 = require("./modules/ticket-history/ticket-history.module");
+const period_analysis_module_1 = require("./modules/period-analysis/period-analysis.module");
 const health_controller_1 = require("./health.controller");
 let AppModule = class AppModule {
 };
@@ -55,6 +57,8 @@ exports.AppModule = AppModule = __decorate([
             reviews_module_1.ReviewsModule,
             upload_module_1.UploadModule,
             employee_sync_module_1.EmployeeSyncModule,
+            ticket_history_module_1.TicketHistoryModule,
+            period_analysis_module_1.PeriodAnalysisModule,
         ],
         controllers: [health_controller_1.HealthController],
     })

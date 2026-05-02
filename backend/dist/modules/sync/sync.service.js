@@ -37,6 +37,8 @@ let SyncService = SyncService_1 = class SyncService {
         ];
         this.OCM_TABLE = 'official_channel_messages';
         this.SYNC_CURSORS_TABLE = 'sync_cursors';
+        this.ETH_TABLE = 'employee_ticket_history';
+        this.TC_TABLE = 'ticket_conversations';
     }
     async syncEmployees(triggeredBy) {
         const syncLog = await this.createSyncLog('employee_full', 'lefthand_api', triggeredBy);
@@ -297,6 +299,16 @@ let SyncService = SyncService_1 = class SyncService {
         }
         return log;
     }
+    async getSyncStatus() {
+        const cursors = {};
+        const cursorTypes = ['official-channel-line', 'official-channel-comments', 'ticket-history'];
+        for (const type of cursorTypes) {
+            const cursor = await this.getSyncCursor(type);
+            cursors[type] = cursor || { last_synced_at: null, last_record_time: null, total_synced: 0 };
+        }
+        const recentLogs = await this.getRecentSyncLogs(5);
+        return { cursors, recentLogs };
+    }
     async getRecentSyncLogs(limit = 20) {
         return this.supabase.findMany(this.SYNC_LOGS_TABLE, {
             orderBy: { column: 'started_at', ascending: false },
@@ -316,13 +328,10 @@ let SyncService = SyncService_1 = class SyncService {
             const lineLastSync = await this.getSyncCursor('official-channel-line');
             const commentsLastSync = await this.getSyncCursor('official-channel-comments');
             const now = new Date();
-            const yesterday = new Date(now);
-            yesterday.setDate(yesterday.getDate() - 1);
-            yesterday.setHours(0, 0, 0, 0);
-            const today = new Date(now);
-            today.setHours(0, 0, 0, 0);
-            const defaultAfter = yesterday.toISOString();
-            const defaultBefore = today.toISOString();
+            const firstSyncStart = new Date(now);
+            firstSyncStart.setDate(firstSyncStart.getDate() - 90);
+            firstSyncStart.setHours(0, 0, 0, 0);
+            const defaultAfter = firstSyncStart.toISOString();
             this.logger.log('Step 1: Syncing LINE official channel messages...');
             const lineUpdatedAfter = lineLastSync?.last_record_time || defaultAfter;
             try {
@@ -439,8 +448,314 @@ let SyncService = SyncService_1 = class SyncService {
         }
         return { created, updated, skipped, failed };
     }
+    async syncTicketHistory(triggeredBy) {
+        const syncLog = await this.createSyncLog('ticket_history', 'ticket-system', triggeredBy);
+        try {
+            await this.updateSyncLog(syncLog.id, { status: 'running' });
+            const lastSync = await this.getSyncCursor('ticket-history');
+            const now = new Date();
+            const firstSyncStart = new Date(now);
+            firstSyncStart.setDate(firstSyncStart.getDate() - 90);
+            firstSyncStart.setHours(0, 0, 0, 0);
+            const updatedAfter = lastSync?.last_record_time || firstSyncStart.toISOString();
+            const employees = await this.supabase.findMany('employees', {
+                filters: { is_active: true },
+                useAdmin: true,
+                limit: 9999,
+            });
+            const validEmployees = employees.filter((e) => e.employeeappnumber);
+            this.logger.log(`Found ${validEmployees.length} valid employees for ticket history sync`);
+            let totalFetched = 0;
+            let totalCreated = 0;
+            let totalUpdated = 0;
+            let totalSkipped = 0;
+            let totalFailed = 0;
+            let latestUpdateTime = updatedAfter;
+            for (const emp of validEmployees) {
+                try {
+                    const records = await this.ticketApi.getAllEmployeeTicketHistory({
+                        app_number: emp.employeeappnumber,
+                        updated_after: updatedAfter,
+                    });
+                    if (records.length === 0)
+                        continue;
+                    totalFetched += records.length;
+                    for (const ticket of records) {
+                        try {
+                            const result = await this.upsertTicketHistory(ticket, emp);
+                            if (result === 'created')
+                                totalCreated++;
+                            else if (result === 'updated')
+                                totalUpdated++;
+                            if (ticket.updated_at > latestUpdateTime) {
+                                latestUpdateTime = ticket.updated_at;
+                            }
+                        }
+                        catch (error) {
+                            this.logger.error(`Failed to upsert ticket ${ticket.ticket_no}:`, error.message);
+                            totalFailed++;
+                        }
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                catch (error) {
+                    this.logger.error(`Failed to fetch tickets for ${emp.employeeappnumber} (${emp.name}):`, error.message);
+                    totalSkipped++;
+                }
+            }
+            if (totalCreated + totalUpdated > 0) {
+                await this.updateSyncCursor('ticket-history', latestUpdateTime, totalCreated + totalUpdated);
+            }
+            await this.updateSyncLog(syncLog.id, {
+                status: totalFailed > 0 ? 'partial' : 'completed',
+                finished_at: new Date().toISOString(),
+                total_fetched: totalFetched,
+                total_created: totalCreated,
+                total_updated: totalUpdated,
+                total_skipped: totalSkipped,
+                total_failed: totalFailed,
+                error_details: {
+                    total_employees: validEmployees.length,
+                },
+            });
+            this.logger.log(`Ticket history sync completed: ${totalCreated} created, ${totalUpdated} updated, ${totalSkipped} skipped, ${totalFailed} failed`);
+            return this.getSyncLog(syncLog.id);
+        }
+        catch (error) {
+            this.logger.error('Ticket history sync failed:', error);
+            await this.updateSyncLog(syncLog.id, {
+                status: 'failed',
+                finished_at: new Date().toISOString(),
+                error_message: error.message,
+            });
+            throw error;
+        }
+    }
+    async upsertTicketHistory(ticket, employee) {
+        const existing = await this.supabase.findOne(this.ETH_TABLE, { ticket_id: ticket.ticket_id }, { useAdmin: true });
+        const record = {
+            ticket_id: ticket.ticket_id,
+            ticket_no: ticket.ticket_no,
+            employee_id: employee.id,
+            employee_app_number: employee.employeeappnumber,
+            employee_erp_id: employee.employeeerpid || null,
+            employee_name: ticket.staff_name || employee.name,
+            store_name: ticket.store_name,
+            issue_title: ticket.issue_title,
+            issue_desc: ticket.issue_desc,
+            category: ticket.category,
+            parent_category: ticket.parent_category,
+            sub_category: ticket.sub_category,
+            status: ticket.status,
+            review_status: ticket.review_status,
+            priority: ticket.priority,
+            customer_name: ticket.customer_name || null,
+            customer_code: ticket.customer_code || null,
+            assigned_engineer: ticket.assigned_engineer,
+            attachment_count: ticket.attachment_count || 0,
+            conversation_count: ticket.conversation_count || 0,
+            ticket_created_at: ticket.created_at,
+            ticket_updated_at: ticket.updated_at,
+            ticket_closed_at: ticket.closed_at || null,
+            synced_at: new Date().toISOString(),
+        };
+        let ticketHistoryId;
+        let result;
+        if (existing) {
+            await this.supabase.update(this.ETH_TABLE, { ticket_id: ticket.ticket_id }, record, { useAdmin: true });
+            ticketHistoryId = existing.id;
+            result = 'updated';
+        }
+        else {
+            const created = await this.supabase.create(this.ETH_TABLE, record, { useAdmin: true });
+            ticketHistoryId = created.id;
+            result = 'created';
+        }
+        if (ticket.conversation && ticket.conversation.length > 0) {
+            try {
+                await this.supabase.delete(this.TC_TABLE, { ticket_id: ticket.ticket_id }, { useAdmin: true });
+            }
+            catch (e) {
+            }
+            for (const conv of ticket.conversation) {
+                try {
+                    await this.supabase.create(this.TC_TABLE, {
+                        ticket_history_id: ticketHistoryId,
+                        ticket_id: ticket.ticket_id,
+                        event_type: conv.event_type,
+                        actor_name: conv.actor_name,
+                        actor_role: conv.actor_role,
+                        content: conv.content,
+                        event_created_at: conv.created_at,
+                    }, { useAdmin: true });
+                }
+                catch (e) {
+                    this.logger.warn(`Failed to insert conversation for ticket ${ticket.ticket_no}:`, e.message);
+                }
+            }
+        }
+        return result;
+    }
     async getSyncCursor(syncType) {
         return this.supabase.findOne(this.SYNC_CURSORS_TABLE, { sync_type: syncType }, { useAdmin: true });
+    }
+    async syncReviewData(triggeredBy) {
+        const syncLog = await this.createSyncLog('review_sync', 'review-system', triggeredBy);
+        try {
+            await this.updateSyncLog(syncLog.id, { status: 'running' });
+            const lastSync = await this.getSyncCursor('review-data');
+            const now = new Date();
+            const firstSyncStart = new Date(now);
+            firstSyncStart.setDate(firstSyncStart.getDate() - 90);
+            firstSyncStart.setHours(0, 0, 0, 0);
+            const updatedAfter = lastSync?.last_record_time || firstSyncStart.toISOString();
+            const externalReviews = await this.ticketApi.getReviewsSince(updatedAfter);
+            let totalFetched = externalReviews.length;
+            let totalCreated = 0;
+            let totalUpdated = 0;
+            let totalDeleted = 0;
+            let totalFailed = 0;
+            let latestUpdatedAt = updatedAfter;
+            const employees = await this.supabase.findMany('employees', {
+                filters: { is_active: true },
+                useAdmin: true,
+                limit: 9999,
+            });
+            const empByAppNumber = {};
+            for (const emp of employees) {
+                if (emp.employeeappnumber) {
+                    empByAppNumber[emp.employeeappnumber] = emp;
+                }
+            }
+            for (const ext of externalReviews) {
+                try {
+                    const result = await this.upsertExternalReview(ext, empByAppNumber);
+                    if (result === 'created')
+                        totalCreated++;
+                    else if (result === 'updated')
+                        totalUpdated++;
+                    else if (result === 'deleted')
+                        totalDeleted++;
+                    if (ext.updated_at > latestUpdatedAt) {
+                        latestUpdatedAt = ext.updated_at;
+                    }
+                }
+                catch (err) {
+                    this.logger.error(`Failed to upsert review ${ext.id}:`, err.message);
+                    totalFailed++;
+                }
+            }
+            if (totalFetched > 0) {
+                await this.updateSyncCursor('review-data', latestUpdatedAt, totalCreated + totalUpdated);
+            }
+            await this.updateSyncLog(syncLog.id, {
+                status: totalFailed > 0 ? 'partial' : 'completed',
+                finished_at: new Date().toISOString(),
+                total_fetched: totalFetched,
+                total_created: totalCreated,
+                total_updated: totalUpdated,
+                total_skipped: 0,
+                total_failed: totalFailed,
+                error_details: {
+                    deleted: totalDeleted,
+                    sync_window_from: updatedAfter,
+                },
+            });
+            this.logger.log(`Review sync completed: ${totalFetched} fetched, ${totalCreated} created, ${totalUpdated} updated, ${totalDeleted} soft-deleted`);
+            return this.getSyncLog(syncLog.id);
+        }
+        catch (error) {
+            this.logger.error('Review sync failed:', error);
+            await this.updateSyncLog(syncLog.id, {
+                status: 'failed',
+                finished_at: new Date().toISOString(),
+                error_message: error.message,
+            });
+            return this.getSyncLog(syncLog.id);
+        }
+    }
+    async upsertExternalReview(ext, empByAppNumber) {
+        const externalId = String(ext.id);
+        const emp = empByAppNumber[ext.employee_app_number];
+        if (!emp) {
+            this.logger.warn(`Employee not found for app_number: ${ext.employee_app_number}, skipping review ${externalId}`);
+            return 'skipped';
+        }
+        let actualEmployeeId = null;
+        if (ext.actual_employee_app_number && ext.actual_employee_app_number !== ext.employee_app_number) {
+            const actualEmp = empByAppNumber[ext.actual_employee_app_number];
+            actualEmployeeId = actualEmp?.id || null;
+        }
+        const client = this.supabase.getAdminClient();
+        const { data: existing } = await client
+            .from('reviews')
+            .select('id, deleted_at')
+            .eq('external_review_id', externalId)
+            .maybeSingle();
+        const reviewData = {
+            employee_id: emp.id,
+            actual_employee_id: actualEmployeeId,
+            is_proxy: ext.is_proxy || false,
+            source: ext.source,
+            review_type: ext.review_type,
+            urgency: ext.urgency || 'normal',
+            content: ext.content,
+            event_date: ext.event_date,
+            status: ext.status,
+            response_speed_hours: ext.response_speed_hours,
+            responded_at: ext.responded_at,
+            closed_at: ext.closed_at,
+            deleted_at: ext.deleted_at || null,
+            external_review_id: externalId,
+            synced_at: new Date().toISOString(),
+            requires_response: ext.review_type === 'negative' || ext.review_type === 'other',
+        };
+        if (!existing) {
+            const { error } = await client.from('reviews').insert(reviewData);
+            if (error)
+                throw error;
+            if (ext.responses && ext.responses.length > 0) {
+                const { data: newReview } = await client
+                    .from('reviews')
+                    .select('id')
+                    .eq('external_review_id', externalId)
+                    .single();
+                if (newReview) {
+                    await this.syncReviewResponses(newReview.id, emp.id, ext.responses);
+                }
+            }
+            return 'created';
+        }
+        else {
+            const { error } = await client
+                .from('reviews')
+                .update(reviewData)
+                .eq('external_review_id', externalId);
+            if (error)
+                throw error;
+            if (ext.responses && ext.responses.length > 0) {
+                await this.syncReviewResponses(existing.id, emp.id, ext.responses);
+            }
+            return ext.deleted_at ? 'deleted' : 'updated';
+        }
+    }
+    async syncReviewResponses(reviewId, employeeId, responses) {
+        if (!responses || responses.length === 0)
+            return;
+        const client = this.supabase.getAdminClient();
+        for (const resp of responses) {
+            const { error } = await client.from('review_responses').upsert({
+                review_id: reviewId,
+                employee_id: employeeId,
+                responder_type: resp.responder_type,
+                responder_name: resp.responder_name,
+                content: resp.content,
+                created_at: resp.created_at,
+            }, { onConflict: 'review_id,responder_type,created_at', ignoreDuplicates: true });
+            if (error) {
+                this.logger.warn(`Failed to upsert review response: ${error.message}`);
+            }
+        }
     }
     async updateSyncCursor(syncType, lastRecordTime, count) {
         const existing = await this.getSyncCursor(syncType);

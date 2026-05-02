@@ -10,7 +10,6 @@ export declare class AnalysisController {
         total: number;
     }>;
     getHighRisk(limit?: number): Promise<import("./analysis.dto").AnalysisResult[]>;
-    findOne(id: string): Promise<import("./analysis.dto").AnalysisResult>;
     findByConversation(conversationId: string): Promise<import("./analysis.dto").AnalysisResult | {
         found: boolean;
         message: string;
@@ -20,4 +19,5 @@ export declare class AnalysisController {
         found: boolean;
         message: string;
     }>;
+    findOne(id: string): Promise<import("./analysis.dto").AnalysisResult>;
 }

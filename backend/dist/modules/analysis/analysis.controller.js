@@ -33,9 +33,6 @@ let AnalysisController = class AnalysisController {
     async getHighRisk(limit) {
         return this.analysisService.getHighRiskAnalyses(limit);
     }
-    async findOne(id) {
-        return this.analysisService.findById(id);
-    }
     async findByConversation(conversationId) {
         const result = await this.analysisService.findByConversationId(conversationId);
         if (!result) {
@@ -52,6 +49,9 @@ let AnalysisController = class AnalysisController {
             return { found: false, message: 'No analysis found for this employee' };
         }
         return result;
+    }
+    async findOne(id) {
+        return this.analysisService.findById(id);
     }
 };
 exports.AnalysisController = AnalysisController;
@@ -93,15 +93,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AnalysisController.prototype, "getHighRisk", null);
 __decorate([
-    (0, common_1.Get)(':id'),
-    (0, swagger_1.ApiOperation)({ summary: '取得單一分析結果' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: '分析結果' }),
-    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", Promise)
-], AnalysisController.prototype, "findOne", null);
-__decorate([
     (0, common_1.Get)('conversation/:conversationId'),
     (0, swagger_1.ApiOperation)({ summary: '取得對話的分析結果' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: '分析結果' }),
@@ -114,7 +105,7 @@ __decorate([
     (0, common_1.Get)('employee/:employeeId'),
     (0, swagger_1.ApiOperation)({ summary: '取得員工的所有分析結果' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: '分析列表' }),
-    __param(0, (0, common_1.Param)('employeeId', common_1.ParseUUIDPipe)),
+    __param(0, (0, common_1.Param)('employeeId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
@@ -123,11 +114,20 @@ __decorate([
     (0, common_1.Get)('employee/:employeeId/latest'),
     (0, swagger_1.ApiOperation)({ summary: '取得員工最新分析結果' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: '最新分析結果' }),
-    __param(0, (0, common_1.Param)('employeeId', common_1.ParseUUIDPipe)),
+    __param(0, (0, common_1.Param)('employeeId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AnalysisController.prototype, "getLatestByEmployee", null);
+__decorate([
+    (0, common_1.Get)(':id'),
+    (0, swagger_1.ApiOperation)({ summary: '取得單一分析結果' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: '分析結果' }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AnalysisController.prototype, "findOne", null);
 exports.AnalysisController = AnalysisController = __decorate([
     (0, swagger_1.ApiTags)('analysis'),
     (0, common_1.Controller)('analysis'),

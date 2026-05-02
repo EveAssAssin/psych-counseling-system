@@ -29,6 +29,15 @@ let SyncController = class SyncController {
     async syncOfficialChannel(triggeredBy) {
         return this.syncService.syncOfficialChannelMessages(triggeredBy);
     }
+    async syncTicketHistory(triggeredBy) {
+        return this.syncService.syncTicketHistory(triggeredBy);
+    }
+    async syncReviewData(triggeredBy) {
+        return this.syncService.syncReviewData(triggeredBy);
+    }
+    async getSyncStatus() {
+        return this.syncService.getSyncStatus();
+    }
     async getSyncLogs(limit) {
         return this.syncService.getRecentSyncLogs(limit);
     }
@@ -64,6 +73,32 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], SyncController.prototype, "syncOfficialChannel", null);
+__decorate([
+    (0, common_1.Post)('ticket-history'),
+    (0, swagger_1.ApiOperation)({ summary: '同步員工工單歷史' }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: '同步結果' }),
+    __param(0, (0, common_1.Query)('triggered_by')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], SyncController.prototype, "syncTicketHistory", null);
+__decorate([
+    (0, common_1.Post)('review-data'),
+    (0, swagger_1.ApiOperation)({ summary: '同步評價資料（reviews + 回覆對話）' }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: '同步結果' }),
+    __param(0, (0, common_1.Query)('triggered_by')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], SyncController.prototype, "syncReviewData", null);
+__decorate([
+    (0, common_1.Get)('status'),
+    (0, swagger_1.ApiOperation)({ summary: '取得所有同步狀態（含最後同步時間）' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: '同步狀態' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], SyncController.prototype, "getSyncStatus", null);
 __decorate([
     (0, common_1.Get)('logs'),
     (0, swagger_1.ApiOperation)({ summary: '取得同步日誌' }),
