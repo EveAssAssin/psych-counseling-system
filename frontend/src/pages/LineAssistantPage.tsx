@@ -256,7 +256,8 @@ export default function LineAssistantPage() {
       setGlForm({ title: '', category: '一般', content: '', sort_order: 0, is_active: true });
       loadGuidelines();
     } catch (e: any) {
-      alert('儲存失敗：' + (e?.response?.data?.message || e.message));
+      const msg = e?.response?.data?.message || e?.response?.data?.error || e.message;
+      alert('儲存失敗：' + msg);
     }
   };
 

@@ -370,18 +370,22 @@ ${guidelineText || '（無特定規範，請依一般 HR 禮儀回覆）'}
   }
 
   async createGuideline(dto: CreateGuidelineDto) {
+    this.logger.log(`createGuideline: ${JSON.stringify(dto)}`);
     const { data, error } = await this.db
       .from('company_guidelines')
       .insert({
         title: dto.title,
         category: dto.category || '一般',
         content: dto.content,
-        sort_order: dto.sort_order || 0,
+        sort_order: dto.sort_order ?? 0,
         is_active: dto.is_active !== false,
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      this.logger.error(`createGuideline error: ${error.message} | code: ${error.code} | details: ${error.details}`);
+      throw new Error(error.message);
+    }
     return data;
   }
 
