@@ -838,7 +838,13 @@ function GuidelinesTab({ guidelines, loading, editingGl, glForm, setGlForm, onEd
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#111827' }}>公司規範管理</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>AI 在生成回覆建議時會參考這些規範</p>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
+            AI 在生成回覆建議時會參考這些規範・目前共
+            <span style={{ fontWeight: 700, color: '#0284c7', margin: '0 4px' }}>
+              {(guidelines as Guideline[]).filter(g => g.is_active).length}
+            </span>
+            筆啟用中
+          </p>
         </div>
         <button
           onClick={onNew}
@@ -936,8 +942,8 @@ function GuidelinesTab({ guidelines, loading, editingGl, glForm, setGlForm, onEd
         </div>
       )}
       {categories.map((cat: string) => (
-        <div key={cat} style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+        <div key={cat} style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
             {cat}
           </div>
           {(guidelines as Guideline[])
@@ -946,20 +952,21 @@ function GuidelinesTab({ guidelines, loading, editingGl, glForm, setGlForm, onEd
               <div key={g.id} style={{
                 background: '#fff',
                 border: `1px solid ${g.is_active ? '#e5e7eb' : '#f3f4f6'}`,
-                borderRadius: 10,
-                padding: '14px 16px',
-                marginBottom: 8,
-                opacity: g.is_active ? 1 : 0.5,
+                borderRadius: 8,
+                padding: '10px 14px',
+                marginBottom: 6,
+                opacity: g.is_active ? 1 : 0.55,
                 display: 'flex',
-                gap: 12,
-                alignItems: 'flex-start',
+                alignItems: 'center',
+                gap: 10,
               }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, color: '#111827' }}>
-                    {g.title}
-                    {!g.is_active && <span style={{ marginLeft: 8, fontSize: 11, color: '#9ca3af' }}>（已停用）</span>}
-                  </div>
-                  <div style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.6 }}>{g.content}</div>
+                <span style={{ fontSize: 15 }}>📄</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: '#111827' }}>{g.title}</span>
+                  {!g.is_active && <span style={{ marginLeft: 8, fontSize: 11, color: '#9ca3af', fontWeight: 400 }}>已停用</span>}
+                  <span style={{ marginLeft: 10, fontSize: 11, color: '#9ca3af' }}>
+                    {g.content.length} 字
+                  </span>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button
