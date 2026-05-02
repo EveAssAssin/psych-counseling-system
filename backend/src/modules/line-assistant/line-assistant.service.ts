@@ -44,11 +44,11 @@ export class LineAssistantService {
     const offset = params.offset || 0;
 
     // 取最近有訊息的 thread，依最後訊息時間排序
+    // channel = 'official-line'（員工透過 LINE 官方帳號發送的訊息）
     let query = this.db
       .from('official_channel_messages')
       .select('thread_id, employee_app_number, employee_name, message_time, message_text, direction', { count: 'exact' })
-      .eq('channel', 'line')
-      .eq('direction', 'inbound')
+      .eq('channel', 'official-line')
       .order('message_time', { ascending: false });
 
     if (params.search) {
