@@ -97,6 +97,10 @@ export default function LineAssistantPage() {
   const [editingGl, setEditingGl] = useState<Partial<Guideline> | null>(null);
   const [glForm, setGlForm] = useState({ title: '', category: '一般', content: '', sort_order: 0, is_active: true });
 
+  // ── 同步 ──
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+
   // ── 設定 ──
   const [_arSettings, setArSettings] = useState<AutoReplySettings | null>(null);
   const [arForm, setArForm] = useState<Partial<AutoReplySettings>>({});
@@ -209,6 +213,22 @@ export default function LineAssistantPage() {
     setSending(false);
   };
 
+  // ── 手動同步 LINE 訊息 ──
+  const syncMessages = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const { data } = await axios.post(`${API}/sync/official-channel`);
+      const created = data.total_created || 0;
+      const updated = data.total_updated || 0;
+      setSyncResult({ success: true, message: `同步完成！新增 ${created} 筆，更新 ${updated} 筆` });
+      await loadConversations();
+    } catch (e: any) {
+      setSyncResult({ success: false, message: '同步失敗：' + (e?.response?.data?.message || e.message) });
+    }
+    setSyncing(false);
+  };
+
   const copyToClipboard = () => {
     if (replyText) {
       navigator.clipboard.writeText(replyText).then(() => alert('已複製到剪貼板，請到 LINE 手動貼上發送'));
@@ -295,20 +315,56 @@ export default function LineAssistantPage() {
           <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: 1 }}>AI 訊息輔助回覆</div>
           <div style={{ fontSize: 12, opacity: 0.85 }}>LINE 官方帳號訊息管理中心</div>
         </div>
-        {isOffHours && tab === 'inbox' && (
-          <div style={{
-            marginLeft: 'auto',
-            background: 'rgba(255,255,255,0.2)',
-            padding: '4px 12px',
-            borderRadius: 20,
-            fontSize: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}>
-            <span>🌙</span> 非辦公時間・自動回覆中
-          </div>
-        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {isOffHours && tab === 'inbox' && (
+            <div style={{
+              background: 'rgba(255,255,255,0.2)',
+              padding: '4px 12px',
+              borderRadius: 20,
+              fontSize: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}>
+              <span>🌙</span> 非辦公時間・自動回覆中
+            </div>
+          )}
+          {tab === 'inbox' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+              <button
+                onClick={syncMessages}
+                disabled={syncing}
+                style={{
+                  padding: '6px 16px',
+                  borderRadius: 20,
+                  border: 'none',
+                  background: syncing ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.25)',
+                  color: '#fff',
+                  cursor: syncing ? 'not-allowed' : 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  whiteSpace: 'nowrap' as const,
+                }}
+              >
+                {syncing ? '⏳ 同步中...' : '🔄 同步訊息'}
+              </button>
+              {syncResult && (
+                <div style={{
+                  fontSize: 11,
+                  padding: '3px 10px',
+                  borderRadius: 12,
+                  background: syncResult.success ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)',
+                  color: '#fff',
+                }}>
+                  {syncResult.message}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tab Bar */}
