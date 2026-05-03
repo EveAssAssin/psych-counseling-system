@@ -644,12 +644,17 @@ function ChatView({
                   </div>
                 </div>
               ) : (
-                <div style={{ textAlign: 'center', marginBottom: 6 }}>
+                <div style={{ textAlign: 'center', marginBottom: 8, marginTop: 2 }}>
                   <button
                     onClick={() => openInsert(m.id, m.message_time)}
                     style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      fontSize: 10, color: '#cbd5e1', padding: '0 8px',
+                      background: 'none',
+                      border: '1px dashed #94a3b8',
+                      borderRadius: 12,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      color: '#64748b',
+                      padding: '3px 14px',
                     }}
                   >
                     ＋ 補入主管回覆
