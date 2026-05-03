@@ -23,6 +23,13 @@ interface Msg {
   is_system_message?: boolean;
   is_manual_insert?: boolean;
 }
+interface EmployeeSummary {
+  riskFlags: any[];
+  notes: any[];
+  orderTrend: any;
+  feedbackStats: any;
+  reviews: any[];
+}
 
 function fmtTime(iso: string) {
   if (!iso) return '';
@@ -324,6 +331,173 @@ function ConvList({
 }
 
 // ════════════════════════════════════════
+//  Mobile Employee Info Panel
+// ════════════════════════════════════════
+function MobileEmpInfoPanel({ summary, loading }: { summary: EmployeeSummary | null; loading: boolean }) {
+  const [section, setSection] = useState<'ai' | 'orders' | 'feedback'>('ai');
+
+  const secBtn = (key: 'ai' | 'orders' | 'feedback', label: string) => (
+    <button
+      onClick={() => setSection(key)}
+      style={{
+        flex: 1, padding: '6px 0', border: 'none',
+        background: section === key ? '#0284c7' : '#e2e8f0',
+        color: section === key ? '#fff' : '#475569',
+        fontSize: 11, fontWeight: 600, cursor: 'pointer',
+        borderRadius: 6, transition: 'all 0.15s',
+      }}
+    >{label}</button>
+  );
+
+  if (loading) {
+    return (
+      <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+        載入員工資訊中...
+      </div>
+    );
+  }
+  if (!summary) {
+    return (
+      <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+        無員工資料
+      </div>
+    );
+  }
+
+  const { riskFlags, notes, orderTrend, feedbackStats } = summary;
+
+  const renderAI = () => (
+    <div>
+      {/* Risk flags */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>⚠️ 風險標記 ({riskFlags?.length || 0})</div>
+        {!riskFlags?.length ? (
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>無風險標記</div>
+        ) : riskFlags.slice(0, 3).map((f: any, i: number) => {
+          const color = f.severity === 'critical' ? '#dc2626' : f.severity === 'high' ? '#f97316' : '#f59e0b';
+          return (
+            <div key={i} style={{ background: '#fff', border: `1px solid ${color}30`, borderLeft: `3px solid ${color}`, borderRadius: 6, padding: '5px 8px', marginBottom: 4, fontSize: 11 }}>
+              <span style={{ color, fontWeight: 700 }}>{f.severity?.toUpperCase()}</span>
+              <span style={{ marginLeft: 6, color: '#374151' }}>{f.title || f.risk_type}</span>
+            </div>
+          );
+        })}
+      </div>
+      {/* Notes */}
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>📝 備註 ({notes?.length || 0})</div>
+        {!notes?.length ? (
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>無備註</div>
+        ) : notes.slice(0, 2).map((n: any, i: number) => (
+          <div key={i} style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '5px 8px', marginBottom: 4, fontSize: 11 }}>
+            <span style={{ color: '#92400e' }}>{n.content}</span>
+            {n.supervisor_name && <span style={{ color: '#a78bfa', marginLeft: 6 }}>— {n.supervisor_name}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderOrders = () => {
+    const tt = orderTrend?.totalTrend;
+    const months = tt?.months?.slice(-4) || [];
+    return (
+      <div>
+        {!orderTrend?.hasData ? (
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>無業績資料</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              <div style={{ flex: 1, background: '#f0f9ff', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#0284c7' }}>{tt?.recentAvg?.toFixed(1) || 0}</div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>近期均單</div>
+              </div>
+              <div style={{ flex: 1, background: tt?.trend === 'up' ? '#f0fdf4' : tt?.trend === 'down' ? '#fef2f2' : '#f8fafc', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: tt?.trend === 'up' ? '#16a34a' : tt?.trend === 'down' ? '#dc2626' : '#64748b' }}>
+                  {tt?.trend === 'up' ? '↑' : tt?.trend === 'down' ? '↓' : '—'}
+                </div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>{tt?.changePercent != null ? `${tt.changePercent > 0 ? '+' : ''}${tt.changePercent.toFixed(0)}%` : '趨勢'}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 50 }}>
+              {months.map((m: any, i: number) => {
+                const maxVal = Math.max(...months.map((x: any) => x.count), 1);
+                const h = Math.max(8, (m.count / maxVal) * 44);
+                return (
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                    <div style={{ width: '100%', height: h, background: '#0284c7', borderRadius: '3px 3px 0 0', opacity: 0.7 + (i * 0.1) }} />
+                    <div style={{ fontSize: 9, color: '#94a3b8' }}>{m.month}月</div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderFeedback = () => {
+    const fs = feedbackStats;
+    if (!fs || fs.total_feedbacks === 0) {
+      return <div style={{ fontSize: 11, color: '#94a3b8' }}>無客訴評價資料</div>;
+    }
+    const byType = fs.by_type || {};
+    const byUrgency = fs.by_urgency || {};
+    return (
+      <div>
+        <div style={{ display: 'flex', gap: 5, marginBottom: 8, flexWrap: 'wrap' }}>
+          {[
+            { label: '總計', val: fs.total_feedbacks, color: '#6366f1' },
+            { label: '待處理', val: fs.pending_count, color: '#f59e0b' },
+            { label: '處理中', val: fs.processing_count, color: '#0284c7' },
+            { label: '已結案', val: fs.resolved_count, color: '#16a34a' },
+          ].map(({ label, val, color }) => (
+            <div key={label} style={{ flex: '1 0 40%', background: '#f8fafc', border: `1px solid ${color}30`, borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color }}>{val}</div>
+              <div style={{ fontSize: 10, color: '#64748b' }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+          {Object.entries(byType).filter(([, v]) => (v as number) > 0).map(([k, v]) => {
+            const labelMap: Record<string, string> = { complaint: '投訴', praise: '稱讚', suggestion: '建議', inquiry: '詢問', other: '其他' };
+            const colorMap: Record<string, string> = { complaint: '#fee2e2', praise: '#d1fae5', suggestion: '#dbeafe', inquiry: '#fef3c7', other: '#f3f4f6' };
+            return (
+              <span key={k} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: colorMap[k] || '#f3f4f6', color: '#374151' }}>
+                {labelMap[k] || k}: {v as number}
+              </span>
+            );
+          })}
+        </div>
+        {(byUrgency.urgent_plus || byUrgency.urgent) ? (
+          <div style={{ fontSize: 10, color: '#dc2626' }}>
+            🚨 緊急：{(byUrgency.urgent_plus || 0) + (byUrgency.urgent || 0)} 件
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 14px' }}>
+      {/* Section tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+        {secBtn('ai', '🤖 AI總結')}
+        {secBtn('orders', '📊 業績')}
+        {secBtn('feedback', '⭐ 評價')}
+      </div>
+      {/* Content */}
+      <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+        {section === 'ai' && renderAI()}
+        {section === 'orders' && renderOrders()}
+        {section === 'feedback' && renderFeedback()}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════
 //  Chat View
 // ════════════════════════════════════════
 function ChatView({
@@ -342,6 +516,11 @@ function ChatView({
   const [sendResult, setSendResult] = useState<{ success: boolean; message: string; line_send_status: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // 員工資訊面板
+  const [showEmpInfo, setShowEmpInfo] = useState(false);
+  const [empSummary, setEmpSummary] = useState<EmployeeSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+
   // 補入歷史回覆
   const [insertAfterId, setInsertAfterId] = useState<string | null>(null);
   const [insertText, setInsertText] = useState('');
@@ -354,6 +533,15 @@ function ChatView({
   useEffect(() => {
     loadMessages();
   }, [conv.thread_id]);
+
+  useEffect(() => {
+    if (!conv.employee_app_number) return;
+    setSummaryLoading(true);
+    axios.get(`${API}/supervisor-hub/ai/employee-summary/${conv.employee_app_number}`)
+      .then(r => setEmpSummary(r.data))
+      .catch(() => setEmpSummary(null))
+      .finally(() => setSummaryLoading(false));
+  }, [conv.employee_app_number]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -473,12 +661,13 @@ function ChatView({
         background: 'linear-gradient(135deg, #0284c7, #0369a1)',
         color: '#fff',
         padding: '12px 16px',
-        display: 'flex', alignItems: 'center', gap: 12,
+        display: 'flex', alignItems: 'center', gap: 10,
         position: 'sticky', top: 0, zIndex: 10,
+        flexShrink: 0,
       }}>
         <button
           onClick={onBack}
-          style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', padding: '0 4px' }}
+          style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}
         >
           ←
         </button>
@@ -486,15 +675,35 @@ function ChatView({
           width: 36, height: 36, borderRadius: '50%',
           background: 'rgba(255,255,255,0.25)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 700, fontSize: 15,
+          fontWeight: 700, fontSize: 15, flexShrink: 0,
         }}>
           {(conv.employee_name || '?').slice(-1)}
         </div>
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>{conv.employee_name}</div>
           <div style={{ fontSize: 11, opacity: 0.8 }}>{conv.employee_app_number}</div>
         </div>
+        {/* 員工資訊切換按鈕 */}
+        <button
+          onClick={() => setShowEmpInfo(v => !v)}
+          style={{
+            padding: '5px 10px', borderRadius: 14, border: 'none',
+            background: showEmpInfo ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.18)',
+            color: '#fff', fontSize: 11, fontWeight: 600,
+            cursor: 'pointer', flexShrink: 0,
+            outline: showEmpInfo ? '1.5px solid rgba(255,255,255,0.6)' : 'none',
+          }}
+        >
+          👤 {showEmpInfo ? '收合' : '資訊'}
+        </button>
       </div>
+
+      {/* Employee Info Panel */}
+      {showEmpInfo && (
+        <div style={{ flexShrink: 0 }}>
+          <MobileEmpInfoPanel summary={empSummary} loading={summaryLoading} />
+        </div>
+      )}
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
