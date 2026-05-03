@@ -102,6 +102,7 @@ export default function LineAssistantPage() {
   // ── 同步 ──
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [syncingReviews, setSyncingReviews] = useState(false);
 
   // ── 設定 ──
   const [_arSettings, setArSettings] = useState<AutoReplySettings | null>(null);
@@ -213,6 +214,18 @@ export default function LineAssistantPage() {
       setSendResult({ success: false, message: e?.response?.data?.message || e.message, line_send_status: 'failed' });
     }
     setSending(false);
+  };
+
+  // ── 手動同步評價統計 ──
+  const syncReviews = async () => {
+    setSyncingReviews(true);
+    try {
+      await axios.post(`${API}/sync/customer-feedback-stats`);
+      setSyncResult({ success: true, message: '評價資料同步完成！' });
+    } catch (e: any) {
+      setSyncResult({ success: false, message: '評價同步失敗：' + (e?.response?.data?.message || e.message) });
+    }
+    setSyncingReviews(false);
   };
 
   // ── 手動同步 LINE 訊息 ──
@@ -334,26 +347,48 @@ export default function LineAssistantPage() {
           )}
           {tab === 'inbox' && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-              <button
-                onClick={syncMessages}
-                disabled={syncing}
-                style={{
-                  padding: '6px 16px',
-                  borderRadius: 20,
-                  border: 'none',
-                  background: syncing ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.25)',
-                  color: '#fff',
-                  cursor: syncing ? 'not-allowed' : 'pointer',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  whiteSpace: 'nowrap' as const,
-                }}
-              >
-                {syncing ? '⏳ 同步中...' : '🔄 同步訊息'}
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={syncMessages}
+                  disabled={syncing}
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: 20,
+                    border: 'none',
+                    background: syncing ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.25)',
+                    color: '#fff',
+                    cursor: syncing ? 'not-allowed' : 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    whiteSpace: 'nowrap' as const,
+                  }}
+                >
+                  {syncing ? '⏳ 同步中...' : '🔄 同步訊息'}
+                </button>
+                <button
+                  onClick={syncReviews}
+                  disabled={syncingReviews}
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: 20,
+                    border: 'none',
+                    background: syncingReviews ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    cursor: syncingReviews ? 'not-allowed' : 'pointer',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    whiteSpace: 'nowrap' as const,
+                  }}
+                >
+                  {syncingReviews ? '⏳ 同步中...' : '⭐ 同步評價'}
+                </button>
+              </div>
               {syncResult && (
                 <div style={{
                   fontSize: 11,
@@ -1560,7 +1595,15 @@ function EmployeeInfoPanel({ summary, loading }: { summary: any; loading: boolea
 
               // 次選：用 reviews 表個別記錄（可能為空）
               const records: any[] = summary.reviews || [];
-              if (records.length === 0) return <div style={{ fontSize: 12, color: '#9ca3af' }}>無評價記錄</div>;
+              if (records.length === 0) return (
+                <div>
+                  <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8 }}>尚無評價資料</div>
+                  <div style={{ fontSize: 11, color: '#b0b8c1', background: '#f8fafc', borderRadius: 6, padding: '6px 8px', lineHeight: 1.5 }}>
+                    評價資料需先同步。請至後台觸發：<br/>
+                    <code style={{ fontSize: 10, color: '#0284c7' }}>POST /sync/customer-feedback-stats</code>
+                  </div>
+                </div>
+              );
               const bad = records.filter((r: any) => ['negative','complaint'].includes(r.review_type));
               const good = records.filter((r: any) => ['positive','praise'].includes(r.review_type));
               return (
