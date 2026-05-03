@@ -156,11 +156,12 @@ export class LineAssistantService {
       .eq('is_active', true)
       .order('sort_order');
 
-    // 取最近幾筆對話歷史
+    // 取最近幾筆對話歷史（排除系統訊息，減少 AI token 消耗）
     const { data: history } = await this.db
       .from('official_channel_messages')
-      .select('direction, message_text, message_time, author_name')
+      .select('direction, message_text, message_time, author_name, is_system_message')
       .eq('thread_id', dto.thread_id)
+      .eq('is_system_message', false)
       .order('message_time', { ascending: false })
       .limit(10);
 
@@ -551,5 +552,58 @@ ${guidelineText || '（無特定規範，請依一般 HR 禮儀回覆）'}
     } catch (err: any) {
       this.logger.error(`Auto-reply failed: ${err.message}`);
     }
+  }
+
+  // ═══════════════════════════════════════════
+  //  補入歷史主管回覆
+  // ═══════════════════════════════════════════
+
+  async insertHistoricalMessage(dto: {
+    thread_id: string;
+    message_text: string;
+    message_time: string;
+    employee_app_number?: string;
+    employee_name?: string;
+    sent_by?: string;
+    sent_by_name?: string;
+  }): Promise<{ id: string }> {
+    // 用 manual_ 前綴產生唯一 source_record_id，避免 unique constraint 衝突
+    const sourceId = `manual_${dto.thread_id}_${Date.now()}`;
+
+    const { data, error } = await this.db
+      .from('official_channel_messages')
+      .insert({
+        source_record_id: sourceId,
+        source_system: 'manual',
+        thread_id: dto.thread_id,
+        channel: 'official-line',
+        direction: 'store',          // 主管方向
+        message_text: dto.message_text,
+        message_time: dto.message_time,
+        employee_app_number: dto.employee_app_number || null,
+        employee_name: dto.employee_name || null,
+        author_name: dto.sent_by_name || null,
+        is_manual_insert: true,
+        is_system_message: false,
+      })
+      .select('id')
+      .single();
+
+    if (error) throw new Error(error.message);
+    return { id: data.id };
+  }
+
+  // ═══════════════════════════════════════════
+  //  切換系統訊息標記
+  // ═══════════════════════════════════════════
+
+  async toggleSystemMessage(id: string, isSystem: boolean): Promise<{ success: boolean }> {
+    const { error } = await this.db
+      .from('official_channel_messages')
+      .update({ is_system_message: isSystem })
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+    return { success: true };
   }
 }

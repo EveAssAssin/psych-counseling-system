@@ -46,6 +46,20 @@ export class UpdateGuidelineDto {
   @IsOptional() @IsBoolean() is_active?: boolean;
 }
 
+export class InsertHistoricalMessageDto {
+  @IsString() thread_id: string;
+  @IsString() message_text: string;
+  @IsString() message_time: string;          // ISO string，管理者填入的時間
+  @IsOptional() @IsString() employee_app_number?: string;
+  @IsOptional() @IsString() employee_name?: string;
+  @IsOptional() @IsString() sent_by?: string;
+  @IsOptional() @IsString() sent_by_name?: string;
+}
+
+export class ToggleSystemMessageDto {
+  @IsBoolean() is_system_message: boolean;
+}
+
 export class UpdateAutoReplySettingsDto {
   @IsOptional() @IsBoolean() is_enabled?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(23) start_hour?: number;

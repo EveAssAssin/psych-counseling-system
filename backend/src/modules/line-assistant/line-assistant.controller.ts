@@ -11,6 +11,8 @@ import {
   CreateGuidelineDto,
   UpdateGuidelineDto,
   UpdateAutoReplySettingsDto,
+  InsertHistoricalMessageDto,
+  ToggleSystemMessageDto,
 } from './line-assistant.dto';
 
 @ApiTags('line-assistant')
@@ -94,6 +96,23 @@ export class LineAssistantController {
   @Get('auto-reply/off-hours')
   @ApiOperation({ summary: '檢查目前是否為非辦公時間' })
   isOffHours() { return this.svc.isOffHours().then(v => ({ is_off_hours: v })); }
+
+  // ── 補入歷史主管回覆 ──
+  @Post('insert-historical')
+  @ApiOperation({ summary: '補入歷史主管回覆（帶自訂時間）' })
+  insertHistorical(@Body() dto: InsertHistoricalMessageDto) {
+    return this.svc.insertHistoricalMessage(dto);
+  }
+
+  // ── 切換系統訊息標記 ──
+  @Patch('messages/:id/system-flag')
+  @ApiOperation({ summary: '標記/取消標記為系統訊息（自動回覆、選單等）' })
+  toggleSystemMessage(
+    @Param('id') id: string,
+    @Body() dto: ToggleSystemMessageDto,
+  ) {
+    return this.svc.toggleSystemMessage(id, dto.is_system_message);
+  }
 
   // ── 回覆記錄 ──
   @Get('logs')

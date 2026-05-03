@@ -20,6 +20,8 @@ interface Msg {
   message_text: string;
   message_time: string;
   author_name?: string;
+  is_system_message?: boolean;
+  is_manual_insert?: boolean;
 }
 
 function fmtTime(iso: string) {
@@ -340,6 +342,15 @@ function ChatView({
   const [sendResult, setSendResult] = useState<{ success: boolean; message: string; line_send_status: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // 補入歷史回覆
+  const [insertAfterId, setInsertAfterId] = useState<string | null>(null);
+  const [insertText, setInsertText] = useState('');
+  const [insertTime, setInsertTime] = useState('');
+  const [inserting, setInserting] = useState(false);
+
+  // 顯示系統訊息切換
+  const [showSystemMsgs, setShowSystemMsgs] = useState(false);
+
   useEffect(() => {
     loadMessages();
   }, [conv.thread_id]);
@@ -415,6 +426,46 @@ function ChatView({
     if (replyText) navigator.clipboard.writeText(replyText).then(() => alert('已複製，請到 LINE 貼上發送'));
   };
 
+  // 補入歷史主管回覆
+  const openInsert = (afterMsgId: string, afterTime: string) => {
+    setInsertAfterId(afterMsgId);
+    setInsertText('');
+    // 預設時間：該訊息時間 + 1 分鐘
+    const t = new Date(new Date(afterTime).getTime() + 60000);
+    setInsertTime(t.toISOString().slice(0, 16)); // datetime-local format
+  };
+
+  const submitInsert = async () => {
+    if (!insertText.trim() || !insertTime) return;
+    setInserting(true);
+    try {
+      await axios.post(`${API}/line-assistant/insert-historical`, {
+        thread_id: conv.thread_id,
+        message_text: insertText,
+        message_time: new Date(insertTime).toISOString(),
+        employee_app_number: conv.employee_app_number,
+        employee_name: conv.employee_name,
+        sent_by: manager.id,
+        sent_by_name: manager.name,
+      });
+      setInsertAfterId(null);
+      setInsertText('');
+      await loadMessages();
+    } catch { alert('補入失敗'); }
+    setInserting(false);
+  };
+
+  // 切換系統訊息標記
+  const toggleSystemMsg = async (msg: Msg) => {
+    const next = !msg.is_system_message;
+    try {
+      await axios.patch(`${API}/line-assistant/messages/${msg.id}/system-flag`, {
+        is_system_message: next,
+      });
+      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, is_system_message: next } : m));
+    } catch { alert('標記失敗'); }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'system-ui, sans-serif', background: '#f8fafc' }}>
       {/* Header */}
@@ -448,27 +499,163 @@ function ChatView({
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
         {loading && <div style={{ textAlign: 'center', color: '#94a3b8', padding: 20 }}>載入中...</div>}
-        {messages.map(m => {
-          const isIn = m.direction === 'inbound';
+
+        {/* 系統訊息統計列 */}
+        {(() => {
+          const sysCount = messages.filter(m => m.is_system_message).length;
+          if (sysCount === 0) return null;
           return (
-            <div key={m.id} style={{ display: 'flex', justifyContent: isIn ? 'flex-start' : 'flex-end', marginBottom: 10 }}>
-              <div style={{
-                maxWidth: '78%',
-                background: isIn ? '#fff' : 'linear-gradient(135deg, #0284c7, #0369a1)',
-                color: isIn ? '#0f172a' : '#fff',
-                borderRadius: isIn ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
-                padding: '10px 13px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                fontSize: 14, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-              }}>
-                {!isIn && m.author_name && (
-                  <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 3 }}>{m.author_name}</div>
+            <div
+              onClick={() => setShowSystemMsgs(v => !v)}
+              style={{
+                textAlign: 'center', fontSize: 11, color: '#94a3b8',
+                padding: '4px 0 8px', cursor: 'pointer', userSelect: 'none',
+              }}
+            >
+              {showSystemMsgs ? '▲ 隱藏' : '▼ 顯示'} {sysCount} 則系統自動訊息
+            </div>
+          );
+        })()}
+
+        {messages.map((m, idx) => {
+          const isIn = m.direction === 'inbound';
+          const isSys = !!m.is_system_message;
+
+          // 系統訊息折疊
+          if (isSys && !showSystemMsgs) return null;
+
+          return (
+            <div key={m.id}>
+              {/* 訊息氣泡 */}
+              <div style={{ display: 'flex', justifyContent: isIn ? 'flex-start' : 'flex-end', marginBottom: 4, alignItems: 'flex-end', gap: 6 }}>
+                {/* 系統訊息標記按鈕（左側） */}
+                {isIn && (
+                  <button
+                    onClick={() => toggleSystemMsg(m)}
+                    title={isSys ? '取消系統訊息標記' : '標記為系統訊息（自動回覆）'}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: 14, opacity: isSys ? 1 : 0.25, padding: '0 2px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    🤖
+                  </button>
                 )}
-                <div>{m.message_text}</div>
-                <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, textAlign: isIn ? 'left' : 'right' }}>
-                  {fmtTime(m.message_time)}
+
+                <div style={{
+                  maxWidth: '78%',
+                  background: isSys
+                    ? '#f1f5f9'
+                    : isIn ? '#fff' : 'linear-gradient(135deg, #0284c7, #0369a1)',
+                  color: isSys ? '#94a3b8' : isIn ? '#0f172a' : '#fff',
+                  borderRadius: isIn ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+                  padding: '10px 13px',
+                  boxShadow: isSys ? 'none' : '0 1px 3px rgba(0,0,0,0.08)',
+                  fontSize: 14, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  border: isSys ? '1px dashed #cbd5e1' : 'none',
+                  position: 'relative',
+                }}>
+                  {isSys && (
+                    <div style={{ fontSize: 9, color: '#94a3b8', marginBottom: 3 }}>系統訊息</div>
+                  )}
+                  {m.is_manual_insert && !isIn && (
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', marginBottom: 3 }}>📝 補入</div>
+                  )}
+                  {!isIn && m.author_name && (
+                    <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 3 }}>{m.author_name}</div>
+                  )}
+                  <div>{m.message_text}</div>
+                  <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, textAlign: isIn ? 'left' : 'right' }}>
+                    {fmtTime(m.message_time)}
+                  </div>
                 </div>
+
+                {/* 系統訊息標記按鈕（右側） */}
+                {!isIn && (
+                  <button
+                    onClick={() => toggleSystemMsg(m)}
+                    title={isSys ? '取消系統訊息標記' : '標記為系統訊息'}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: 14, opacity: isSys ? 1 : 0.25, padding: '0 2px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    🤖
+                  </button>
+                )}
               </div>
+
+              {/* 補入主管回覆按鈕（每則訊息下方） */}
+              {insertAfterId === m.id ? (
+                <div style={{
+                  margin: '6px 0 10px',
+                  background: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  borderRadius: 12,
+                  padding: 12,
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', marginBottom: 8 }}>
+                    📝 補入主管回覆（歷史紀錄）
+                  </div>
+                  <textarea
+                    value={insertText}
+                    onChange={e => setInsertText(e.target.value)}
+                    placeholder="輸入歷史回覆內容..."
+                    rows={3}
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 8,
+                      border: '1px solid #bbf7d0', fontSize: 13, resize: 'none',
+                      outline: 'none', boxSizing: 'border-box', marginBottom: 8,
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      type="datetime-local"
+                      value={insertTime}
+                      onChange={e => setInsertTime(e.target.value)}
+                      style={{
+                        flex: 1, padding: '7px 10px', borderRadius: 8,
+                        border: '1px solid #bbf7d0', fontSize: 12, outline: 'none',
+                      }}
+                    />
+                    <button
+                      onClick={submitInsert}
+                      disabled={inserting || !insertText.trim()}
+                      style={{
+                        padding: '7px 14px', borderRadius: 8, border: 'none',
+                        background: inserting || !insertText.trim() ? '#86efac' : '#16a34a',
+                        color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {inserting ? '補入中...' : '確認補入'}
+                    </button>
+                    <button
+                      onClick={() => setInsertAfterId(null)}
+                      style={{
+                        padding: '7px 10px', borderRadius: 8, border: '1px solid #e5e7eb',
+                        background: '#fff', color: '#6b7280', fontSize: 12, cursor: 'pointer',
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', marginBottom: 6 }}>
+                  <button
+                    onClick={() => openInsert(m.id, m.message_time)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: 10, color: '#cbd5e1', padding: '0 8px',
+                    }}
+                  >
+                    ＋ 補入主管回覆
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
