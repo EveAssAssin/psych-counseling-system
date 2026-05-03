@@ -27,6 +27,8 @@ interface Message {
   message_time: string;
   author_name?: string;
   agent_type?: string;
+  is_system_message?: boolean;
+  is_manual_insert?: boolean;
 }
 
 interface Guideline {
@@ -468,6 +470,55 @@ function InboxTab({
 }: any) {
   const selectedConv = conversations.find((c: Conversation) => c.thread_id === selectedThread);
 
+  // ── 補入歷史回覆 ──
+  const [insertAfterId, setInsertAfterId] = useState<string | null>(null);
+  const [insertText, setInsertText] = useState('');
+  const [insertTime, setInsertTime] = useState('');
+  const [inserting, setInserting] = useState(false);
+
+  // ── 系統訊息 ──
+  const [showSystemMsgs, setShowSystemMsgs] = useState(false);
+  const [localMessages, setLocalMessages] = useState<Message[]>([]);
+
+  // 同步 messages prop → localMessages
+  useEffect(() => { setLocalMessages(messages); }, [messages]);
+
+  const openInsert = (afterMsgId: string, afterTime: string) => {
+    setInsertAfterId(afterMsgId);
+    setInsertText('');
+    const t = new Date(new Date(afterTime).getTime() + 60000);
+    setInsertTime(t.toISOString().slice(0, 16));
+  };
+
+  const submitInsert = async () => {
+    if (!insertText.trim() || !insertTime || !selectedThread) return;
+    setInserting(true);
+    try {
+      await axios.post(`${API}/line-assistant/insert-historical`, {
+        thread_id: selectedThread,
+        message_text: insertText,
+        message_time: new Date(insertTime).toISOString(),
+        employee_app_number: employee?.app_number,
+        employee_name: employee?.name,
+        sent_by_name: '主管（補入）',
+      });
+      setInsertAfterId(null);
+      setInsertText('');
+      // 重新載入此 thread 訊息
+      const { data } = await axios.get(`${API}/line-assistant/conversations/${encodeURIComponent(selectedThread)}/messages`);
+      setLocalMessages(data.messages || []);
+    } catch { alert('補入失敗'); }
+    setInserting(false);
+  };
+
+  const toggleSystemMsg = async (msg: Message) => {
+    const next = !msg.is_system_message;
+    try {
+      await axios.patch(`${API}/line-assistant/messages/${msg.id}/system-flag`, { is_system_message: next });
+      setLocalMessages(prev => prev.map(m => m.id === msg.id ? { ...m, is_system_message: next } : m));
+    } catch { alert('標記失敗'); }
+  };
+
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 110px)' }}>
       {/* Left Panel: Conversation List */}
@@ -569,9 +620,97 @@ function InboxTab({
             {/* Messages */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
               {msgLoading && <div style={{ textAlign: 'center', color: '#9ca3af', padding: 20 }}>載入訊息中...</div>}
-              {!msgLoading && messages.map((m: Message) => (
-                <MessageBubble key={m.id} message={m} />
-              ))}
+
+              {/* 系統訊息折疊列 */}
+              {(() => {
+                const sysCount = localMessages.filter(m => m.is_system_message).length;
+                if (!sysCount) return null;
+                return (
+                  <div
+                    onClick={() => setShowSystemMsgs(v => !v)}
+                    style={{ textAlign: 'center', fontSize: 12, color: '#94a3b8', padding: '4px 0 10px', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    {showSystemMsgs ? '▲ 隱藏' : '▼ 顯示'} {sysCount} 則系統自動訊息
+                  </div>
+                );
+              })()}
+
+              {!msgLoading && localMessages.map((m: Message) => {
+                const isSys = !!m.is_system_message;
+                if (isSys && !showSystemMsgs) return null;
+                const isIn = m.direction === 'inbound';
+
+                return (
+                  <div key={m.id}>
+                    {/* 訊息氣泡 + 🤖 標記按鈕 */}
+                    <div style={{ display: 'flex', justifyContent: isIn ? 'flex-start' : 'flex-end', marginBottom: 4, alignItems: 'flex-end', gap: 6 }}>
+                      {isIn && (
+                        <button onClick={() => toggleSystemMsg(m)} title={isSys ? '取消系統訊息' : '標記為系統訊息'}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, opacity: isSys ? 1 : 0.2, padding: 0, flexShrink: 0 }}>
+                          🤖
+                        </button>
+                      )}
+                      <div style={{
+                        maxWidth: '70%',
+                        background: isSys ? '#f1f5f9' : isIn ? '#fff' : 'linear-gradient(135deg, #0284c7, #0369a1)',
+                        color: isSys ? '#94a3b8' : isIn ? '#111827' : '#fff',
+                        borderRadius: isIn ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+                        padding: '10px 14px',
+                        boxShadow: isSys ? 'none' : '0 1px 4px rgba(0,0,0,0.08)',
+                        fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                        border: isSys ? '1px dashed #cbd5e1' : 'none',
+                      }}>
+                        {isSys && <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 3 }}>系統訊息</div>}
+                        {m.is_manual_insert && !isIn && <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 3 }}>📝 補入</div>}
+                        <div>{m.message_text}</div>
+                        <div style={{ fontSize: 11, marginTop: 4, opacity: 0.65, textAlign: isIn ? 'left' : 'right' }}>
+                          {!isIn && m.author_name && <span style={{ marginRight: 6 }}>{m.author_name}</span>}
+                          {fmtTime(m.message_time)}
+                        </div>
+                      </div>
+                      {!isIn && (
+                        <button onClick={() => toggleSystemMsg(m)} title={isSys ? '取消系統訊息' : '標記為系統訊息'}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, opacity: isSys ? 1 : 0.2, padding: 0, flexShrink: 0 }}>
+                          🤖
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 補入歷史回覆 */}
+                    {insertAfterId === m.id ? (
+                      <div style={{ margin: '6px 0 12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#16a34a', marginBottom: 8 }}>📝 補入主管回覆（歷史紀錄）</div>
+                        <textarea
+                          value={insertText}
+                          onChange={e => setInsertText(e.target.value)}
+                          placeholder="輸入歷史回覆內容..."
+                          rows={3}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
+                        />
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input type="datetime-local" value={insertTime} onChange={e => setInsertTime(e.target.value)}
+                            style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 12, outline: 'none' }} />
+                          <button onClick={submitInsert} disabled={inserting || !insertText.trim()}
+                            style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: inserting || !insertText.trim() ? '#86efac' : '#16a34a', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' as const }}>
+                            {inserting ? '補入中...' : '確認補入'}
+                          </button>
+                          <button onClick={() => setInsertAfterId(null)}
+                            style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 12, cursor: 'pointer' }}>
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                        <button onClick={() => openInsert(m.id, m.message_time)}
+                          style={{ background: 'none', border: '1px dashed #94a3b8', borderRadius: 12, cursor: 'pointer', fontSize: 11, color: '#64748b', padding: '3px 14px' }}>
+                          ＋ 補入主管回覆
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
