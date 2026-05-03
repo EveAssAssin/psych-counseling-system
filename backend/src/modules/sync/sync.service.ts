@@ -399,7 +399,7 @@ export class SyncService {
     // triggered_by 欄位是 UUID 型別，只有在傳入合法 UUID 時才寫入
     // 字串如 'scheduler' / 'manual' 只用於 trigger_type 判斷，不寫入 DB
     const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const triggeredByUuid = triggeredBy && UUID_REGEX.test(triggeredBy) ? triggeredBy : null;
+    const triggeredByUuid = triggeredBy && UUID_REGEX.test(triggeredBy) ? triggeredBy : undefined;
 
     const triggerType = triggeredBy === 'scheduler' ? 'scheduled'
       : triggeredBy ? 'manual'
