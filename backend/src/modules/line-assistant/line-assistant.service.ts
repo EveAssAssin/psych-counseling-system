@@ -121,6 +121,7 @@ export class LineAssistantService {
       .from('official_channel_messages')
       .select('*')
       .eq('thread_id', threadId)
+      .in('channel', ['official-line'])
       .order('message_time', { ascending: true });
 
     const { data: replyLog } = await this.db
