@@ -930,41 +930,6 @@ function ConvItem({ conv, selected, onClick }: { conv: Conversation; selected: b
   );
 }
 
-// ── MessageBubble ──
-function MessageBubble({ message }: { message: Message }) {
-  const isInbound = message.direction === 'inbound';
-  return (
-    <div style={{
-      display: 'flex',
-      justifyContent: isInbound ? 'flex-start' : 'flex-end',
-      marginBottom: 12,
-    }}>
-      <div style={{
-        maxWidth: '70%',
-        background: isInbound ? '#fff' : 'linear-gradient(135deg, #0284c7, #0369a1)',
-        color: isInbound ? '#111827' : '#fff',
-        borderRadius: isInbound ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
-        padding: '10px 14px',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-        fontSize: 14,
-        lineHeight: 1.6,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}>
-        <div>{message.message_text}</div>
-        <div style={{
-          fontSize: 11,
-          marginTop: 4,
-          opacity: 0.65,
-          textAlign: isInbound ? 'left' : 'right',
-        }}>
-          {!isInbound && message.author_name && <span style={{ marginRight: 6 }}>{message.author_name}</span>}
-          {fmtTime(message.message_time)}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ════════════════════════════════════════════
 //  GuidelinesTab
