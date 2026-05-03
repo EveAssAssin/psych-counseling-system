@@ -478,7 +478,7 @@ function InboxTab({
   useEffect(() => {
     if (employee?.app_number) {
       setSummaryLoading(true);
-      axios.get(`${API}/supervisor-ai/employee-summary/${employee.app_number}`)
+      axios.get(`${API}/supervisor-hub/ai/employee-summary/${employee.app_number}`)
         .then(r => setEmpSummary(r.data))
         .catch(() => setEmpSummary(null))
         .finally(() => setSummaryLoading(false));
