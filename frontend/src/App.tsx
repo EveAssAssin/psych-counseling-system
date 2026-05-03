@@ -20,6 +20,7 @@ import EntryPage from './pages/EntryPage';
 import PeriodAnalysisPage from './pages/PeriodAnalysisPage';
 import SupervisorHubPage from './pages/SupervisorHubPage';
 import LineAssistantPage from './pages/LineAssistantPage';
+import LineMobilePage from './pages/LineMobilePage';
 
 function App() {
   return (
@@ -35,6 +36,9 @@ function App() {
 
       {/* LINE AI 訊息輔助（獨立入口） */}
       <Route path="/line-assistant" element={<LineAssistantPage />} />
+
+      {/* LINE 行動版訊息助理（手機入口，獨立驗證） */}
+      <Route path="/line-mobile" element={<LineMobilePage />} />
       
       {/* 主要頁面（不需登入） */}
       <Route element={<MainLayout />}>

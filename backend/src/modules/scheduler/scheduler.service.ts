@@ -64,19 +64,19 @@ export class SchedulerService implements OnModuleInit {
   }
 
   /**
-   * 每日 05:30 執行官方頻道訊息同步（LINE + 工單留言）
+   * 每分鐘同步官方頻道訊息（LINE + 工單留言），增量抓取
    */
-  @Cron('30 5 * * *')
-  async dailyOfficialChannelSync() {
+  @Cron('* * * * *')
+  async minutelyOfficialChannelSync() {
     if (!this.isEnabled) return;
 
-    this.logger.log('Starting daily official channel sync');
-
     try {
-      const result = await this.syncService.syncOfficialChannelMessages();
-      this.logger.log(`Daily official channel sync completed: ${result.total_created} created, ${result.total_updated} updated`);
+      const result = await this.syncService.syncOfficialChannelMessages('scheduler');
+      if (result.total_created > 0 || result.total_updated > 0) {
+        this.logger.log(`Official channel sync: +${result.total_created} new, ~${result.total_updated} updated`);
+      }
     } catch (error) {
-      this.logger.error('Daily official channel sync failed:', error);
+      this.logger.error('Official channel sync failed:', error);
     }
   }
 
