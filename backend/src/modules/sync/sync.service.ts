@@ -396,6 +396,15 @@ export class SyncService {
     sourceName: string,
     triggeredBy?: string,
   ): Promise<SyncLog> {
+    // triggered_by 欄位是 UUID 型別，只有在傳入合法 UUID 時才寫入
+    // 字串如 'scheduler' / 'manual' 只用於 trigger_type 判斷，不寫入 DB
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const triggeredByUuid = triggeredBy && UUID_REGEX.test(triggeredBy) ? triggeredBy : null;
+
+    const triggerType = triggeredBy === 'scheduler' ? 'scheduled'
+      : triggeredBy ? 'manual'
+      : 'scheduled';
+
     return this.supabase.create<SyncLog>(
       this.SYNC_LOGS_TABLE,
       {
@@ -408,8 +417,8 @@ export class SyncService {
         total_updated: 0,
         total_skipped: 0,
         total_failed: 0,
-        triggered_by: triggeredBy,
-        trigger_type: triggeredBy ? 'manual' : 'scheduled',
+        triggered_by: triggeredByUuid,
+        trigger_type: triggerType,
       },
       { useAdmin: true },
     );
