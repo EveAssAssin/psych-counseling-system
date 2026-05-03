@@ -318,6 +318,13 @@ export class SupervisorAiService {
     // 10. 人評會記錄（全主管共享）
     const reviewRecords = await this.notesService.getReviewRecordsByEmployee(appNumber);
 
+    // 11. 客戶回報統計（customer_feedback_stats，按 employee_app_number 直查）
+    const { data: feedbackStats } = await this.db
+      .from('customer_feedback_stats')
+      .select('total_feedbacks, pending_count, processing_count, resolved_count, closed_count, by_type, by_urgency, latest_feedback_at, raw_data')
+      .eq('employee_app_number', appNumber)
+      .maybeSingle();
+
     return {
       employee: emp,
       notes,
@@ -329,6 +336,7 @@ export class SupervisorAiService {
       orderTrend,
       storeTrend,
       reviewRecords,
+      feedbackStats: feedbackStats || null,
     };
   }
 

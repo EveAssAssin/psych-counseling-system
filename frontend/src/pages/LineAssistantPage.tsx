@@ -1490,10 +1490,79 @@ function EmployeeInfoPanel({ summary, loading }: { summary: any; loading: boolea
           {/* ── 評價/客訴 ── */}
           <SidebarSection emoji="⭐" title="評價 / 客訴" open={openReview} onToggle={() => setOpenReview(v => !v)}>
             {(() => {
+              const fs = summary.feedbackStats;
+              // 優先使用 customer_feedback_stats（直接用 app_number 查，最可靠）
+              if (fs && fs.total_feedbacks > 0) {
+                const byType: Record<string, number> = fs.by_type || {};
+                const byUrgency: Record<string, number> = fs.by_urgency || {};
+                const complaint = (byType.complaint || 0) + (byType.negative || 0);
+                const praise    = (byType.praise || 0) + (byType.positive || 0) + (byType.suggestion || 0);
+                const urgent    = (byUrgency.urgent_plus || 0) + (byUrgency.urgent || 0);
+                const TYPE_MAP: Record<string, { label: string; color: string; bg: string }> = {
+                  complaint:  { label: '⚠️ 客訴',   color: '#ef4444', bg: '#fef2f2' },
+                  negative:   { label: '❌ 負面',    color: '#ef4444', bg: '#fef2f2' },
+                  praise:     { label: '🌟 稱讚',   color: '#16a34a', bg: '#f0fdf4' },
+                  positive:   { label: '✅ 正面',   color: '#16a34a', bg: '#f0fdf4' },
+                  suggestion: { label: '💡 建議',   color: '#0284c7', bg: '#eff6ff' },
+                  inquiry:    { label: '❓ 諮詢',   color: '#6b7280', bg: '#f9fafb' },
+                  other:      { label: '📝 其他',   color: '#6b7280', bg: '#f9fafb' },
+                };
+                return (
+                  <div>
+                    {/* 總量摘要卡 */}
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                      <div style={{ flex: 1, background: '#f8fafc', borderRadius: 6, padding: '6px 0', textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#374151' }}>{fs.total_feedbacks}</div>
+                        <div style={{ fontSize: 10, color: '#6b7280' }}>總計</div>
+                      </div>
+                      <div style={{ flex: 1, background: '#fef2f2', borderRadius: 6, padding: '6px 0', textAlign: 'center', border: '1px solid #fecaca' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#ef4444' }}>{complaint}</div>
+                        <div style={{ fontSize: 10, color: '#ef4444' }}>客訴/負面</div>
+                      </div>
+                      <div style={{ flex: 1, background: '#f0fdf4', borderRadius: 6, padding: '6px 0', textAlign: 'center', border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#16a34a' }}>{praise}</div>
+                        <div style={{ fontSize: 10, color: '#16a34a' }}>稱讚/正面</div>
+                      </div>
+                    </div>
+
+                    {/* 各類型分佈 */}
+                    {Object.entries(byType).filter(([, v]) => v > 0).map(([type, count]) => {
+                      const meta = TYPE_MAP[type] || { label: type, color: '#6b7280', bg: '#f9fafb' };
+                      return (
+                        <div key={type} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, color: meta.color, fontWeight: 500 }}>{meta.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: meta.color, background: meta.bg, borderRadius: 10, padding: '1px 8px', border: `1px solid ${meta.color}33` }}>{count}</span>
+                        </div>
+                      );
+                    })}
+
+                    {/* 急迫度 + 狀態 */}
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f3f4f6' }}>
+                      {urgent > 0 && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 4 }}>
+                          ⚡ 緊急/緊急+ 共 {urgent} 筆
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                        {fs.pending_count > 0 && <span style={{ fontSize: 10, background: '#fffbeb', color: '#b45309', padding: '2px 6px', borderRadius: 8 }}>待處理 {fs.pending_count}</span>}
+                        {fs.processing_count > 0 && <span style={{ fontSize: 10, background: '#eff6ff', color: '#0284c7', padding: '2px 6px', borderRadius: 8 }}>處理中 {fs.processing_count}</span>}
+                        {fs.resolved_count > 0 && <span style={{ fontSize: 10, background: '#f0fdf4', color: '#16a34a', padding: '2px 6px', borderRadius: 8 }}>已解決 {fs.resolved_count}</span>}
+                      </div>
+                      {fs.latest_feedback_at && (
+                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>
+                          最新：{new Date(fs.latest_feedback_at).toLocaleDateString('zh-TW')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              // 次選：用 reviews 表個別記錄（可能為空）
               const records: any[] = summary.reviews || [];
               if (records.length === 0) return <div style={{ fontSize: 12, color: '#9ca3af' }}>無評價記錄</div>;
-              const bad = records.filter(r => ['negative','complaint'].includes(r.review_type));
-              const good = records.filter(r => ['positive','praise'].includes(r.review_type));
+              const bad = records.filter((r: any) => ['negative','complaint'].includes(r.review_type));
+              const good = records.filter((r: any) => ['positive','praise'].includes(r.review_type));
               return (
                 <div>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -1515,23 +1584,13 @@ function EmployeeInfoPanel({ summary, loading }: { summary: any; loading: boolea
                       <div key={i} style={{
                         background: meta.bad ? '#fef2f2' : '#f8fafc',
                         border: `1px solid ${meta.bad ? '#fecaca' : '#e5e7eb'}`,
-                        borderRadius: 6, padding: '6px 8px',
-                        marginBottom: 5, fontSize: 11,
+                        borderRadius: 6, padding: '6px 8px', marginBottom: 5, fontSize: 11,
                       }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                          <span style={{ fontWeight: 600, color: meta.bad ? '#ef4444' : '#16a34a' }}>
-                            {meta.label}
-                          </span>
+                          <span style={{ fontWeight: 600, color: meta.bad ? '#ef4444' : '#16a34a' }}>{meta.label}</span>
                           <span style={{ fontSize: 10, color: '#9ca3af' }}>{dateStr}</span>
                         </div>
-                        {r.content && (
-                          <div style={{ color: '#374151', lineHeight: 1.4 }}>
-                            {r.content.slice(0, 80)}{r.content.length > 80 ? '...' : ''}
-                          </div>
-                        )}
-                        {r.urgency && r.urgency !== 'normal' && (
-                          <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>急迫度：{r.urgency}</div>
-                        )}
+                        {r.content && <div style={{ color: '#374151', lineHeight: 1.4 }}>{r.content.slice(0, 80)}{r.content.length > 80 ? '...' : ''}</div>}
                       </div>
                     );
                   })}
