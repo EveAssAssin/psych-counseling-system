@@ -517,7 +517,7 @@ function ChatView({
           );
         })()}
 
-        {messages.map((m, idx) => {
+        {messages.map((m) => {
           const isIn = m.direction === 'inbound';
           const isSys = !!m.is_system_message;
 
