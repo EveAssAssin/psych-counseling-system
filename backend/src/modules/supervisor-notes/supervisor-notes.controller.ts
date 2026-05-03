@@ -39,6 +39,15 @@ export class SupervisorNotesController {
     return { authorized: true, role: info.role, name: info.name };
   }
 
+  @Post('auth/change-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '主管修改自己的密碼（需驗證舊密碼）' })
+  changeOwnPassword(
+    @Body() body: { identifier: string; currentPassword: string; newPassword: string },
+  ) {
+    return this.svc.changeOwnPassword(body.identifier, body.currentPassword, body.newPassword);
+  }
+
   // ── 分類 ──
   @Get('categories')
   @ApiOperation({ summary: '取得分類（全域+個人）' })

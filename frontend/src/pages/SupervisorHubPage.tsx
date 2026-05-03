@@ -54,6 +54,42 @@ export default function SupervisorHubPage() {
   const [loginError, setLoginError] = useState('');
   const [checking, setChecking] = useState(false);
 
+  // ── 修改密碼 ──
+  const [showChangePwd, setShowChangePwd] = useState(false);
+  const [changePwd, setChangePwd] = useState({ current: '', next: '', confirm: '' });
+  const [changePwdLoading, setChangePwdLoading] = useState(false);
+  const [changePwdMsg, setChangePwdMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleChangePwd = async () => {
+    if (!changePwd.current || !changePwd.next || !changePwd.confirm) {
+      setChangePwdMsg({ ok: false, text: '請填寫所有欄位' }); return;
+    }
+    if (changePwd.next.length < 6) {
+      setChangePwdMsg({ ok: false, text: '新密碼至少 6 個字元' }); return;
+    }
+    if (changePwd.next !== changePwd.confirm) {
+      setChangePwdMsg({ ok: false, text: '新密碼與確認密碼不一致' }); return;
+    }
+    setChangePwdLoading(true); setChangePwdMsg(null);
+    try {
+      const { data } = await axios.post(`${API}/supervisor-hub/auth/change-password`, {
+        identifier: supervisor!.identifier,
+        currentPassword: changePwd.current,
+        newPassword: changePwd.next,
+      });
+      if (data.success) {
+        setChangePwdMsg({ ok: true, text: '密碼已成功更新！' });
+        setChangePwd({ current: '', next: '', confirm: '' });
+        setTimeout(() => { setShowChangePwd(false); setChangePwdMsg(null); }, 1500);
+      } else {
+        setChangePwdMsg({ ok: false, text: data.message || '更新失敗' });
+      }
+    } catch {
+      setChangePwdMsg({ ok: false, text: '連線錯誤，請稍後再試' });
+    }
+    setChangePwdLoading(false);
+  };
+
   // ── 登入 ──
   const handleLogin = async () => {
     if (!loginInput.identifier.trim() || !loginInput.password.trim()) {
@@ -114,6 +150,73 @@ export default function SupervisorHubPage() {
 
   return (
     <div style={{ minHeight:'100vh', background:'#f1f5f9' }}>
+      {/* 修改密碼 Modal */}
+      {showChangePwd && (
+        <div style={{
+          position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:1000,
+          display:'flex', alignItems:'center', justifyContent:'center', padding:16,
+        }} onClick={e => { if (e.target === e.currentTarget) { setShowChangePwd(false); setChangePwdMsg(null); setChangePwd({ current:'', next:'', confirm:'' }); }}}>
+          <div style={{ background:'#fff', borderRadius:16, padding:28, width:'100%', maxWidth:360, boxShadow:'0 8px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontWeight:700, fontSize:16, color:'#1e293b', marginBottom:20 }}>🔑 修改密碼</div>
+
+            <label style={labelStyle}>目前密碼</label>
+            <input
+              type="password"
+              value={changePwd.current}
+              onChange={e => setChangePwd(p => ({ ...p, current: e.target.value }))}
+              placeholder="輸入目前密碼"
+              style={{ ...inputStyle, letterSpacing:2 }}
+            />
+
+            <label style={labelStyle}>新密碼</label>
+            <input
+              type="password"
+              value={changePwd.next}
+              onChange={e => setChangePwd(p => ({ ...p, next: e.target.value }))}
+              placeholder="至少 6 個字元"
+              style={{ ...inputStyle, letterSpacing:2 }}
+            />
+
+            <label style={labelStyle}>確認新密碼</label>
+            <input
+              type="password"
+              value={changePwd.confirm}
+              onChange={e => setChangePwd(p => ({ ...p, confirm: e.target.value }))}
+              placeholder="再次輸入新密碼"
+              onKeyDown={e => e.key === 'Enter' && handleChangePwd()}
+              style={{ ...inputStyle, letterSpacing:2 }}
+            />
+
+            {changePwdMsg && (
+              <div style={{
+                padding:'8px 12px', borderRadius:8, marginBottom:12, fontSize:13,
+                background: changePwdMsg.ok ? '#f0fdf4' : '#fef2f2',
+                color: changePwdMsg.ok ? '#16a34a' : '#dc2626',
+                border: `1px solid ${changePwdMsg.ok ? '#bbf7d0' : '#fecaca'}`,
+              }}>
+                {changePwdMsg.ok ? '✅ ' : '❌ '}{changePwdMsg.text}
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:8 }}>
+              <button
+                onClick={() => { setShowChangePwd(false); setChangePwdMsg(null); setChangePwd({ current:'', next:'', confirm:'' }); }}
+                style={{ ...btnStyle, flex:1, background:'#f1f5f9', color:'#64748b' }}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleChangePwd}
+                disabled={changePwdLoading}
+                style={{ ...btnStyle, flex:1, background: changePwdLoading ? '#a78bfa' : '#7c3aed', color:'#fff' }}
+              >
+                {changePwdLoading ? '更新中...' : '確認修改'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ background:'#7c3aed', padding:'12px 20px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -127,6 +230,12 @@ export default function SupervisorHubPage() {
               <span style={{ background:'#fbbf24', color:'#78350f', fontSize:10, fontWeight:700, borderRadius:99, padding:'1px 7px' }}>超管</span>
             )}
           </div>
+          <button
+            onClick={() => { setShowChangePwd(true); setChangePwdMsg(null); setChangePwd({ current:'', next:'', confirm:'' }); }}
+            style={{ background:'rgba(255,255,255,0.15)', border:'none', color:'#fff', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontSize:12 }}
+          >
+            🔑 改密碼
+          </button>
           <button onClick={() => { setSupervisor(null); sessionStorage.clear(); }}
             style={{ background:'rgba(255,255,255,0.15)', border:'none', color:'#fff', borderRadius:8, padding:'4px 12px', cursor:'pointer', fontSize:12 }}>
             登出

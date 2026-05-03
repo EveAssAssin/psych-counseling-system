@@ -32,6 +32,22 @@ export class SupervisorNotesService {
     return { success: true };
   }
 
+  async changeOwnPassword(identifier: string, currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    // 驗證舊密碼
+    const verify = await this.verifyLogin(identifier, currentPassword);
+    if (!verify.success) {
+      return { success: false, message: '目前密碼錯誤' };
+    }
+    // 更新新密碼
+    const hash = this.hashPassword(newPassword);
+    const { error } = await this.db
+      .from('authorized_supervisors')
+      .update({ password_hash: hash, updated_at: new Date().toISOString() })
+      .eq('identifier', identifier);
+    if (error) return { success: false, message: '密碼更新失敗' };
+    return { success: true, message: '密碼已更新' };
+  }
+
   // ═══════════════════════════════════════════
   //  主管驗證
   // ═══════════════════════════════════════════
