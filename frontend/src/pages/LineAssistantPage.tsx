@@ -1316,6 +1316,20 @@ function SettingsTab({ form, setForm, isOffHours, saving, onSave }: any) {
 // ════════════════════════════════════════════
 //  EmployeeInfoPanel
 // ════════════════════════════════════════════
+const SEVERITY_LABEL: Record<string, string> = {
+  critical: '🔴 嚴重',
+  high: '🟠 高',
+  medium: '🟡 中',
+  low: '🟢 低',
+};
+const REVIEW_TYPE_LABEL: Record<string, { label: string; bad: boolean }> = {
+  positive: { label: '✅ 正面', bad: false },
+  praise:   { label: '🌟 表揚', bad: false },
+  negative: { label: '❌ 負面', bad: true  },
+  complaint:{ label: '⚠️ 客訴', bad: true  },
+  other:    { label: '📝 其他', bad: false },
+};
+
 function EmployeeInfoPanel({ summary, loading }: { summary: any; loading: boolean }) {
   const [openAi, setOpenAi] = useState(true);
   const [openPerf, setOpenPerf] = useState(true);
@@ -1333,12 +1347,16 @@ function EmployeeInfoPanel({ summary, loading }: { summary: any; loading: boolea
     }}>
       <div style={{ padding: '12px 14px', borderBottom: '1px solid #f3f4f6', fontSize: 13, fontWeight: 700, color: '#374151' }}>
         👤 員工資訊
+        {summary?.employee?.store_name && (
+          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: '#9ca3af' }}>
+            {summary.employee.store_name}
+          </span>
+        )}
       </div>
 
       {loading && (
         <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>載入中...</div>
       )}
-
       {!loading && !summary && (
         <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>無員工資料</div>
       )}
@@ -1347,155 +1365,172 @@ function EmployeeInfoPanel({ summary, loading }: { summary: any; loading: boolea
         <div style={{ flex: 1 }}>
 
           {/* ── AI 總結 ── */}
-          <SidebarSection
-            emoji="🤖"
-            title="AI 總結"
-            open={openAi}
-            onToggle={() => setOpenAi(v => !v)}
-          >
+          <SidebarSection emoji="🤖" title="AI 總結" open={openAi} onToggle={() => setOpenAi(v => !v)}>
             {/* 風險標記 */}
-            {summary.riskFlags && summary.riskFlags.length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#ef4444', marginBottom: 4 }}>⚠️ 風險標記 ({summary.riskFlags.length})</div>
+            {summary.riskFlags && summary.riskFlags.length > 0 ? (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#ef4444', marginBottom: 4 }}>
+                  ⚠️ 風險標記（{summary.riskFlags.filter((f: any) => ['open','acknowledged','in_progress'].includes(f.status)).length} 筆進行中）
+                </div>
                 {summary.riskFlags.slice(0, 3).map((f: any, i: number) => (
                   <div key={i} style={{
-                    background: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    borderRadius: 6,
-                    padding: '5px 8px',
-                    fontSize: 11,
-                    color: '#dc2626',
-                    marginBottom: 4,
-                    lineHeight: 1.4,
+                    background: '#fef2f2', border: '1px solid #fecaca',
+                    borderRadius: 6, padding: '5px 8px', fontSize: 11,
+                    color: '#dc2626', marginBottom: 4, lineHeight: 1.4,
                   }}>
-                    {f.flag_type || f.type || '風險'}: {f.description || f.content || JSON.stringify(f)}
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* 備註 */}
-            {summary.notes && summary.notes.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>📝 備註 ({summary.notes.length})</div>
-                {summary.notes.slice(0, 3).map((n: any, i: number) => (
-                  <div key={i} style={{
-                    background: '#f8fafc',
-                    borderRadius: 6,
-                    padding: '5px 8px',
-                    fontSize: 11,
-                    color: '#374151',
-                    marginBottom: 4,
-                    lineHeight: 1.4,
-                  }}>
-                    {n.content || n.note || JSON.stringify(n)}
-                    {n.created_at && (
-                      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
-                        {new Date(n.created_at).toLocaleDateString('zh-TW')}
+                    <div style={{ fontWeight: 600 }}>
+                      {SEVERITY_LABEL[f.severity] || f.severity} {f.risk_type}
+                    </div>
+                    {f.title && <div>{f.title}</div>}
+                    {f.description && (
+                      <div style={{ color: '#b91c1c', marginTop: 2 }}>
+                        {f.description.slice(0, 60)}{f.description.length > 60 ? '...' : ''}
                       </div>
                     )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {(!summary.riskFlags || summary.riskFlags.length === 0) && (!summary.notes || summary.notes.length === 0) && (
-              <div style={{ fontSize: 12, color: '#9ca3af' }}>無風險標記或備註</div>
-            )}
-          </SidebarSection>
-
-          {/* ── 業績資訊 ── */}
-          <SidebarSection
-            emoji="📊"
-            title="業績資訊"
-            open={openPerf}
-            onToggle={() => setOpenPerf(v => !v)}
-          >
-            {summary.orderTrend && summary.orderTrend.length > 0 ? (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>近期訂單趨勢</div>
-                {summary.orderTrend.slice(-4).map((t: any, i: number) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <span style={{ fontSize: 11, color: '#6b7280' }}>
-                      {t.month || t.period || t.date || `第${i + 1}期`}
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 60, height: 6, background: '#f3f4f6', borderRadius: 3, overflow: 'hidden' }}>
-                        {(() => {
-                          const maxVal = Math.max(...summary.orderTrend.map((x: any) => x.count || x.total || x.value || 0));
-                          const val = t.count || t.total || t.value || 0;
-                          const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
-                          return (
-                            <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #0284c7, #06b6d4)', borderRadius: 3 }} />
-                          );
-                        })()}
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#111827', minWidth: 28, textAlign: 'right' }}>
-                        {t.count || t.total || t.value || 0}
-                      </span>
+                    <div style={{ fontSize: 10, color: '#f87171', marginTop: 2 }}>
+                      {new Date(f.created_at).toLocaleDateString('zh-TW')}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div style={{ fontSize: 12, color: '#9ca3af' }}>無業績資料</div>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6 }}>✅ 無風險標記</div>
             )}
-
-            {/* storeTrend 摘要 */}
-            {summary.storeTrend && summary.storeTrend.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>門市趨勢</div>
-                {summary.storeTrend.slice(-2).map((t: any, i: number) => (
-                  <div key={i} style={{ fontSize: 11, color: '#374151', marginBottom: 3, background: '#f8fafc', padding: '4px 8px', borderRadius: 6 }}>
-                    {t.month || t.period || t.date || `第${i + 1}期`}：{t.count || t.total || t.value || 0}
-                    {t.rank && <span style={{ color: '#9ca3af', marginLeft: 6 }}>排名 #{t.rank}</span>}
+            {/* 隨手記 */}
+            {summary.notes && summary.notes.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>
+                  📝 隨手記 ({summary.notes.length})
+                </div>
+                {summary.notes.slice(0, 3).map((n: any, i: number) => (
+                  <div key={i} style={{
+                    background: '#f8fafc', borderRadius: 6, padding: '5px 8px',
+                    fontSize: 11, color: '#374151', marginBottom: 4, lineHeight: 1.4,
+                  }}>
+                    {n.category_name && (
+                      <div style={{ fontSize: 10, color: '#0284c7', marginBottom: 2 }}>{n.category_name}</div>
+                    )}
+                    {(n.content || '').slice(0, 80)}{(n.content || '').length > 80 ? '...' : ''}
+                    <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+                      {n.supervisor_name && `${n.supervisor_name} ・ `}
+                      {n.created_at ? new Date(n.created_at).toLocaleDateString('zh-TW') : ''}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
+            {(!summary.riskFlags || summary.riskFlags.length === 0) && (!summary.notes || summary.notes.length === 0) && (
+              <div style={{ fontSize: 12, color: '#9ca3af' }}>無記錄</div>
+            )}
+          </SidebarSection>
+
+          {/* ── 業績資訊 ── */}
+          <SidebarSection emoji="📊" title="業績資訊" open={openPerf} onToggle={() => setOpenPerf(v => !v)}>
+            {(() => {
+              const ot = summary.orderTrend;
+              if (!ot?.hasData || !ot.totalTrend?.months) {
+                return <div style={{ fontSize: 12, color: '#9ca3af' }}>無業績資料</div>;
+              }
+              const months = ot.totalTrend.months as Array<{ year: number; month: number; count: number }>;
+              const maxCount = Math.max(...months.map(m => m.count), 1);
+              const trendIcon = ot.totalTrend.trend === 'up' ? '📈' : ot.totalTrend.trend === 'down' ? '📉' : '➡️';
+              return (
+                <div>
+                  {/* 摘要行 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: '#f8fafc', borderRadius: 6, padding: '6px 8px' }}>
+                    <span style={{ fontSize: 16 }}>{trendIcon}</span>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#374151' }}>
+                        近3月均 {ot.totalTrend.recentAvg} 件
+                      </div>
+                      {ot.totalTrend.changePercent !== null && (
+                        <div style={{ fontSize: 10, color: ot.totalTrend.changePercent >= 0 ? '#16a34a' : '#dc2626' }}>
+                          vs 前3月 {ot.totalTrend.changePercent > 0 ? '+' : ''}{ot.totalTrend.changePercent}%
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* 月份條形圖 */}
+                  {months.slice(-6).map((m, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <span style={{ fontSize: 10, color: '#9ca3af', width: 32, flexShrink: 0 }}>
+                        {m.month}月
+                      </span>
+                      <div style={{ flex: 1, height: 8, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${(m.count / maxCount) * 100}%`,
+                          height: '100%',
+                          background: i >= 3 ? 'linear-gradient(90deg, #0284c7, #06b6d4)' : '#cbd5e1',
+                          borderRadius: 4,
+                          transition: 'width 0.3s',
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', width: 24, textAlign: 'right', flexShrink: 0 }}>
+                        {m.count}
+                      </span>
+                    </div>
+                  ))}
+                  {/* 標籤分類 top 2 */}
+                  {ot.byLabel && ot.byLabel.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4 }}>標籤分類（近3月均）</div>
+                      {ot.byLabel.slice(0, 2).map((b: any, i: number) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2, color: '#374151' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{b.label}</span>
+                          <span style={{ fontWeight: 600, flexShrink: 0 }}>{b.recentAvg}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </SidebarSection>
 
           {/* ── 評價/客訴 ── */}
-          <SidebarSection
-            emoji="⭐"
-            title="評價 / 客訴"
-            open={openReview}
-            onToggle={() => setOpenReview(v => !v)}
-          >
+          <SidebarSection emoji="⭐" title="評價 / 客訴" open={openReview} onToggle={() => setOpenReview(v => !v)}>
             {(() => {
-              const records = summary.reviewRecords || summary.reviews || [];
+              const records: any[] = summary.reviews || [];
               if (records.length === 0) return <div style={{ fontSize: 12, color: '#9ca3af' }}>無評價記錄</div>;
+              const bad = records.filter(r => ['negative','complaint'].includes(r.review_type));
+              const good = records.filter(r => ['positive','praise'].includes(r.review_type));
               return (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>
-                    最近 {Math.min(records.length, 5)} 筆
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1, background: '#f0fdf4', borderRadius: 6, padding: '5px 0', textAlign: 'center' }}>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#16a34a' }}>{good.length}</div>
+                      <div style={{ fontSize: 10, color: '#16a34a' }}>正面</div>
+                    </div>
+                    <div style={{ flex: 1, background: '#fef2f2', borderRadius: 6, padding: '5px 0', textAlign: 'center' }}>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#ef4444' }}>{bad.length}</div>
+                      <div style={{ fontSize: 10, color: '#ef4444' }}>負面/客訴</div>
+                    </div>
                   </div>
                   {records.slice(0, 5).map((r: any, i: number) => {
-                    const score = r.score ?? r.rating ?? r.stars ?? null;
-                    const isComplaint = r.type === 'complaint' || r.is_complaint || (score !== null && score <= 2);
+                    const meta = REVIEW_TYPE_LABEL[r.review_type] || { label: r.review_type, bad: false };
+                    const dateStr = r.event_date
+                      ? new Date(r.event_date).toLocaleDateString('zh-TW')
+                      : r.created_at ? new Date(r.created_at).toLocaleDateString('zh-TW') : '';
                     return (
                       <div key={i} style={{
-                        background: isComplaint ? '#fef2f2' : '#f0fdf4',
-                        border: `1px solid ${isComplaint ? '#fecaca' : '#bbf7d0'}`,
-                        borderRadius: 6,
-                        padding: '6px 8px',
-                        marginBottom: 6,
-                        fontSize: 11,
+                        background: meta.bad ? '#fef2f2' : '#f8fafc',
+                        border: `1px solid ${meta.bad ? '#fecaca' : '#e5e7eb'}`,
+                        borderRadius: 6, padding: '6px 8px',
+                        marginBottom: 5, fontSize: 11,
                       }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                          <span style={{ fontWeight: 600, color: isComplaint ? '#ef4444' : '#16a34a' }}>
-                            {isComplaint ? '😤 客訴' : '⭐ 評價'}
-                            {score !== null && <span style={{ marginLeft: 4 }}>{score}分</span>}
+                          <span style={{ fontWeight: 600, color: meta.bad ? '#ef4444' : '#16a34a' }}>
+                            {meta.label}
                           </span>
-                          {(r.created_at || r.date) && (
-                            <span style={{ color: '#9ca3af', fontSize: 10 }}>
-                              {new Date(r.created_at || r.date).toLocaleDateString('zh-TW')}
-                            </span>
-                          )}
+                          <span style={{ fontSize: 10, color: '#9ca3af' }}>{dateStr}</span>
                         </div>
-                        {(r.content || r.comment || r.description) && (
-                          <div style={{ color: '#374151', lineHeight: 1.4, wordBreak: 'break-all' }}>
-                            {(r.content || r.comment || r.description || '').slice(0, 80)}
-                            {(r.content || r.comment || r.description || '').length > 80 ? '...' : ''}
+                        {r.content && (
+                          <div style={{ color: '#374151', lineHeight: 1.4 }}>
+                            {r.content.slice(0, 80)}{r.content.length > 80 ? '...' : ''}
                           </div>
+                        )}
+                        {r.urgency && r.urgency !== 'normal' && (
+                          <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>急迫度：{r.urgency}</div>
                         )}
                       </div>
                     );
