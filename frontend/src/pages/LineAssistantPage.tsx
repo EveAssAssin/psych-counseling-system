@@ -470,6 +470,23 @@ function InboxTab({
 }: any) {
   const selectedConv = conversations.find((c: Conversation) => c.thread_id === selectedThread);
 
+  // ── 員工摘要側邊欄 ──
+  const [empSummary, setEmpSummary] = useState<any>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    if (employee?.app_number) {
+      setSummaryLoading(true);
+      axios.get(`${API}/supervisor-ai/employee-summary/${employee.app_number}`)
+        .then(r => setEmpSummary(r.data))
+        .catch(() => setEmpSummary(null))
+        .finally(() => setSummaryLoading(false));
+    } else {
+      setEmpSummary(null);
+    }
+  }, [employee?.app_number]);
+
   // ── 補入歷史回覆 ──
   const [insertAfterId, setInsertAfterId] = useState<string | null>(null);
   const [insertText, setInsertText] = useState('');
@@ -602,20 +619,45 @@ function InboxTab({
                 <div style={{ fontWeight: 600, fontSize: 15 }}>{employee?.name || '未知員工'}</div>
                 <div style={{ fontSize: 12, color: '#9ca3af' }}>{employee?.app_number || selectedThread}</div>
               </div>
-              {selectedConv?.needs_reply && (
-                <div style={{
-                  marginLeft: 'auto',
-                  background: '#fef2f2',
-                  color: '#ef4444',
-                  fontSize: 11,
-                  padding: '3px 10px',
-                  borderRadius: 12,
-                  fontWeight: 600,
-                }}>
-                  待回覆
-                </div>
-              )}
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {selectedConv?.needs_reply && (
+                  <div style={{
+                    background: '#fef2f2',
+                    color: '#ef4444',
+                    fontSize: 11,
+                    padding: '3px 10px',
+                    borderRadius: 12,
+                    fontWeight: 600,
+                  }}>
+                    待回覆
+                  </div>
+                )}
+                <button
+                  onClick={() => setSidebarOpen(v => !v)}
+                  title={sidebarOpen ? '收合員工資訊' : '展開員工資訊'}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: 8,
+                    border: '1px solid #e5e7eb',
+                    background: sidebarOpen ? '#eff6ff' : '#f9fafb',
+                    color: sidebarOpen ? '#0284c7' : '#6b7280',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  👤 {sidebarOpen ? '收合' : '員工資訊'}
+                </button>
+              </div>
             </div>
+
+            {/* Chat + Sidebar Row */}
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+              {/* Chat Column */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
             {/* Messages */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
@@ -861,6 +903,17 @@ function InboxTab({
                 </button>
               </div>
             </div>
+
+              </div>{/* end Chat Column */}
+
+              {/* Employee Info Sidebar */}
+              {sidebarOpen && (
+                <EmployeeInfoPanel
+                  summary={empSummary}
+                  loading={summaryLoading}
+                />
+              )}
+            </div>{/* end Chat + Sidebar Row */}
           </>
         )}
       </div>
@@ -1256,6 +1309,239 @@ function SettingsTab({ form, setForm, isOffHours, saving, onSave }: any) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════
+//  EmployeeInfoPanel
+// ════════════════════════════════════════════
+function EmployeeInfoPanel({ summary, loading }: { summary: any; loading: boolean }) {
+  const [openAi, setOpenAi] = useState(true);
+  const [openPerf, setOpenPerf] = useState(true);
+  const [openReview, setOpenReview] = useState(true);
+
+  return (
+    <div style={{
+      width: 300,
+      borderLeft: '1px solid #e5e7eb',
+      background: '#fff',
+      overflowY: 'auto',
+      flexShrink: 0,
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid #f3f4f6', fontSize: 13, fontWeight: 700, color: '#374151' }}>
+        👤 員工資訊
+      </div>
+
+      {loading && (
+        <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>載入中...</div>
+      )}
+
+      {!loading && !summary && (
+        <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>無員工資料</div>
+      )}
+
+      {!loading && summary && (
+        <div style={{ flex: 1 }}>
+
+          {/* ── AI 總結 ── */}
+          <SidebarSection
+            emoji="🤖"
+            title="AI 總結"
+            open={openAi}
+            onToggle={() => setOpenAi(v => !v)}
+          >
+            {/* 風險標記 */}
+            {summary.riskFlags && summary.riskFlags.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#ef4444', marginBottom: 4 }}>⚠️ 風險標記 ({summary.riskFlags.length})</div>
+                {summary.riskFlags.slice(0, 3).map((f: any, i: number) => (
+                  <div key={i} style={{
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    fontSize: 11,
+                    color: '#dc2626',
+                    marginBottom: 4,
+                    lineHeight: 1.4,
+                  }}>
+                    {f.flag_type || f.type || '風險'}: {f.description || f.content || JSON.stringify(f)}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 備註 */}
+            {summary.notes && summary.notes.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>📝 備註 ({summary.notes.length})</div>
+                {summary.notes.slice(0, 3).map((n: any, i: number) => (
+                  <div key={i} style={{
+                    background: '#f8fafc',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    fontSize: 11,
+                    color: '#374151',
+                    marginBottom: 4,
+                    lineHeight: 1.4,
+                  }}>
+                    {n.content || n.note || JSON.stringify(n)}
+                    {n.created_at && (
+                      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+                        {new Date(n.created_at).toLocaleDateString('zh-TW')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {(!summary.riskFlags || summary.riskFlags.length === 0) && (!summary.notes || summary.notes.length === 0) && (
+              <div style={{ fontSize: 12, color: '#9ca3af' }}>無風險標記或備註</div>
+            )}
+          </SidebarSection>
+
+          {/* ── 業績資訊 ── */}
+          <SidebarSection
+            emoji="📊"
+            title="業績資訊"
+            open={openPerf}
+            onToggle={() => setOpenPerf(v => !v)}
+          >
+            {summary.orderTrend && summary.orderTrend.length > 0 ? (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>近期訂單趨勢</div>
+                {summary.orderTrend.slice(-4).map((t: any, i: number) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: '#6b7280' }}>
+                      {t.month || t.period || t.date || `第${i + 1}期`}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 60, height: 6, background: '#f3f4f6', borderRadius: 3, overflow: 'hidden' }}>
+                        {(() => {
+                          const maxVal = Math.max(...summary.orderTrend.map((x: any) => x.count || x.total || x.value || 0));
+                          const val = t.count || t.total || t.value || 0;
+                          const pct = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                          return (
+                            <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #0284c7, #06b6d4)', borderRadius: 3 }} />
+                          );
+                        })()}
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#111827', minWidth: 28, textAlign: 'right' }}>
+                        {t.count || t.total || t.value || 0}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: '#9ca3af' }}>無業績資料</div>
+            )}
+
+            {/* storeTrend 摘要 */}
+            {summary.storeTrend && summary.storeTrend.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>門市趨勢</div>
+                {summary.storeTrend.slice(-2).map((t: any, i: number) => (
+                  <div key={i} style={{ fontSize: 11, color: '#374151', marginBottom: 3, background: '#f8fafc', padding: '4px 8px', borderRadius: 6 }}>
+                    {t.month || t.period || t.date || `第${i + 1}期`}：{t.count || t.total || t.value || 0}
+                    {t.rank && <span style={{ color: '#9ca3af', marginLeft: 6 }}>排名 #{t.rank}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </SidebarSection>
+
+          {/* ── 評價/客訴 ── */}
+          <SidebarSection
+            emoji="⭐"
+            title="評價 / 客訴"
+            open={openReview}
+            onToggle={() => setOpenReview(v => !v)}
+          >
+            {(() => {
+              const records = summary.reviewRecords || summary.reviews || [];
+              if (records.length === 0) return <div style={{ fontSize: 12, color: '#9ca3af' }}>無評價記錄</div>;
+              return (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>
+                    最近 {Math.min(records.length, 5)} 筆
+                  </div>
+                  {records.slice(0, 5).map((r: any, i: number) => {
+                    const score = r.score ?? r.rating ?? r.stars ?? null;
+                    const isComplaint = r.type === 'complaint' || r.is_complaint || (score !== null && score <= 2);
+                    return (
+                      <div key={i} style={{
+                        background: isComplaint ? '#fef2f2' : '#f0fdf4',
+                        border: `1px solid ${isComplaint ? '#fecaca' : '#bbf7d0'}`,
+                        borderRadius: 6,
+                        padding: '6px 8px',
+                        marginBottom: 6,
+                        fontSize: 11,
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                          <span style={{ fontWeight: 600, color: isComplaint ? '#ef4444' : '#16a34a' }}>
+                            {isComplaint ? '😤 客訴' : '⭐ 評價'}
+                            {score !== null && <span style={{ marginLeft: 4 }}>{score}分</span>}
+                          </span>
+                          {(r.created_at || r.date) && (
+                            <span style={{ color: '#9ca3af', fontSize: 10 }}>
+                              {new Date(r.created_at || r.date).toLocaleDateString('zh-TW')}
+                            </span>
+                          )}
+                        </div>
+                        {(r.content || r.comment || r.description) && (
+                          <div style={{ color: '#374151', lineHeight: 1.4, wordBreak: 'break-all' }}>
+                            {(r.content || r.comment || r.description || '').slice(0, 80)}
+                            {(r.content || r.comment || r.description || '').length > 80 ? '...' : ''}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </SidebarSection>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SidebarSection ──
+function SidebarSection({
+  emoji, title, open, onToggle, children,
+}: { emoji: string; title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
+  return (
+    <div style={{ borderBottom: '1px solid #f3f4f6' }}>
+      <button
+        onClick={onToggle}
+        style={{
+          width: '100%',
+          padding: '10px 14px',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          fontSize: 12,
+          fontWeight: 600,
+          color: '#374151',
+          textAlign: 'left',
+        }}
+      >
+        <span>{emoji}</span>
+        <span style={{ flex: 1 }}>{title}</span>
+        <span style={{ fontSize: 10, color: '#9ca3af' }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 14px 12px' }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
