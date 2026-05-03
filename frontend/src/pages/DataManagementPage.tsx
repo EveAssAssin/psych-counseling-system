@@ -166,6 +166,7 @@ function DataSourceCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const sourceLogs = logs.filter((l) => l.sync_type === source.syncType);
   const latestLog = sourceLogs[0];
@@ -200,6 +201,32 @@ function DataSourceCard({
     }
   };
 
+  // 全量重新同步（清除 cursor 後強制拉取所有歷史資料）
+  const handleFullResync = async () => {
+    if (resetting || source.id !== 'official-channel') return;
+    if (!window.confirm('全量重新同步會重新從工單系統抓取所有歷史 LINE 訊息，可能需要幾分鐘。確定執行？')) return;
+    setResetting(true);
+    toast.loading('正在重置 cursor...', { id: 'full-resync' });
+    try {
+      // 先清除兩個 cursor
+      await syncApi.resetCursor('official-channel-line');
+      await syncApi.resetCursor('official-channel-comments');
+      toast.loading('正在全量同步訊息（這可能需要 1-3 分鐘）...', { id: 'full-resync' });
+      // 強制全量同步
+      const res = await syncApi.syncOfficialChannelForce();
+      const result = res.data;
+      toast.success(
+        `全量同步完成！新增 ${result.total_created || 0} 筆，更新 ${result.total_updated || 0} 筆`,
+        { id: 'full-resync', duration: 8000 },
+      );
+      onSync();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || '全量同步失敗', { id: 'full-resync' });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
       {/* Header */}
@@ -212,14 +239,27 @@ function DataSourceCard({
               <p className="text-sm text-gray-500 mt-0.5">{source.description}</p>
             </div>
           </div>
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ArrowPathIcon className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? '同步中...' : '立即同步'}
-          </button>
+          <div className="flex items-center gap-2">
+            {source.id === 'official-channel' && (
+              <button
+                onClick={handleFullResync}
+                disabled={resetting || syncing}
+                title="清除 cursor 後重新從工單系統抓取全部歷史訊息"
+                className="inline-flex items-center gap-1.5 rounded-md bg-orange-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ArrowPathIcon className={`h-4 w-4 ${resetting ? 'animate-spin' : ''}`} />
+                {resetting ? '全量同步中...' : '全量重新同步'}
+              </button>
+            )}
+            <button
+              onClick={handleSync}
+              disabled={syncing || resetting}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ArrowPathIcon className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? '同步中...' : '增量同步'}
+            </button>
+          </div>
         </div>
 
         {/* Stats row */}

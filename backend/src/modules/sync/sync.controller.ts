@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { SyncService } from './sync.service';
 import { OrderStatsService } from './order-stats.service';
@@ -26,10 +26,19 @@ export class SyncController {
   }
 
   @Post('official-channel')
-  @ApiOperation({ summary: '同步官方頻道訊息（LINE + 工單留言）' })
+  @ApiOperation({ summary: '同步官方頻道訊息（LINE + 工單留言）。force=true 忽略 cursor 做全量重新同步' })
   @ApiResponse({ status: 201, description: '同步結果' })
-  async syncOfficialChannel(@Query('triggered_by') triggeredBy?: string) {
-    return this.syncService.syncOfficialChannelMessages(triggeredBy);
+  async syncOfficialChannel(
+    @Query('triggered_by') triggeredBy?: string,
+    @Query('force') force?: string,
+  ) {
+    return this.syncService.syncOfficialChannelMessages(triggeredBy, force === 'true');
+  }
+
+  @Delete('cursors/:type')
+  @ApiOperation({ summary: '清除指定 sync cursor（重置後下次同步會做全量）。type: official-channel-line | official-channel-comments | ticket-history | review-data' })
+  async resetCursor(@Param('type') type: string) {
+    return this.syncService.resetSyncCursor(type);
   }
 
   @Post('ticket-history')

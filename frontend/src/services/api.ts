@@ -220,6 +220,10 @@ export const syncApi = {
 
   syncOfficialChannel: () => api.post('/sync/official-channel'),
 
+  syncOfficialChannelForce: () => api.post('/sync/official-channel?force=true'),
+
+  resetCursor: (type: string) => api.delete(`/sync/cursors/${type}`),
+
   syncTicketHistory: () => api.post('/sync/ticket-history'),
 
   syncReviewData: () => api.post('/sync/review-data'),

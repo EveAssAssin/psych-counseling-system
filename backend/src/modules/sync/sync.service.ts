@@ -492,7 +492,7 @@ export class SyncService {
    * 同步官方頻道訊息（LINE 訊息 + 工單留言）
    * 每日早上 5:00 執行，只抓取增量資料
    */
-  async syncOfficialChannelMessages(triggeredBy?: string): Promise<SyncLog> {
+  async syncOfficialChannelMessages(triggeredBy?: string, force = false): Promise<SyncLog> {
     const syncLog = await this.createSyncLog('official_channel', 'ticket-system', triggeredBy);
 
     try {
@@ -505,13 +505,14 @@ export class SyncService {
       let totalFailed = 0;
 
       // ========================================
-      // Step 1: 取得上次同步時間
+      // Step 1: 取得上次同步時間（force=true 則忽略 cursor，全量重新同步）
       // ========================================
-      const lineLastSync = await this.getSyncCursor('official-channel-line');
-      const commentsLastSync = await this.getSyncCursor('official-channel-comments');
+      const lineLastSync = force ? null : await this.getSyncCursor('official-channel-line');
+      const commentsLastSync = force ? null : await this.getSyncCursor('official-channel-comments');
 
-      // 第一次同步（無 cursor）不帶 updated_after，抓全部歷史資料
-      // 之後的增量同步只抓上次同步之後的新資料
+      if (force) {
+        this.logger.log('Force full resync: ignoring cursors, fetching ALL messages');
+      }
 
       // ========================================
       // Step 2: 同步 LINE 訊息
@@ -1321,6 +1322,26 @@ export class SyncService {
       );
     }
   }
+  /**
+   * 清除指定 sync cursor（重置後下次同步會做全量）
+   */
+  async resetSyncCursor(syncType: string): Promise<{ success: boolean; message: string }> {
+    const VALID_TYPES = ['official-channel-line', 'official-channel-comments', 'ticket-history', 'review-data'];
+    if (!VALID_TYPES.includes(syncType)) {
+      return { success: false, message: `Invalid cursor type. Valid: ${VALID_TYPES.join(', ')}` };
+    }
+    const { error } = await this.supabase.getAdminClient()
+      .from(this.SYNC_CURSORS_TABLE)
+      .delete()
+      .eq('sync_type', syncType);
+    if (error) {
+      this.logger.error(`Failed to reset cursor ${syncType}: ${error.message}`);
+      return { success: false, message: error.message };
+    }
+    this.logger.log(`Sync cursor reset: ${syncType}`);
+    return { success: true, message: `Cursor '${syncType}' cleared. Next sync will fetch ALL historical data.` };
+  }
+
   /**
    * 從 source_payload 補充 store_name（快速修復，不需要 API 呼叫）
    */
