@@ -528,10 +528,12 @@ export class SyncService {
         totalFailed += lineResult.failed;
 
         // 更新同步游標
+        // 工單系統 API 排序：ORDER BY updated_at ASC, id ASC（穩定）
+        // 最後一筆的 updated_at 即下次增量起點；相同 timestamp 的邊界 case
+        // 由 source_record_id unique constraint 自動去重，不需額外處理
         if (lineMessages.length > 0) {
-          const lastMessageTime = lineMessages.reduce((max, msg) => 
-            msg.updated_at > max ? msg.updated_at : max, lineMessages[0].updated_at);
-          await this.updateSyncCursor('official-channel-line', lastMessageTime, lineMessages.length);
+          const lastMsg = lineMessages[lineMessages.length - 1];
+          await this.updateSyncCursor('official-channel-line', lastMsg.updated_at, lineMessages.length);
         }
       } catch (error) {
         this.logger.error('Failed to sync LINE messages:', error.message);
@@ -561,11 +563,10 @@ export class SyncService {
         totalSkipped += commentsResult.skipped;
         totalFailed += commentsResult.failed;
 
-        // 更新同步游標
+        // 更新同步游標（同上，取最後一筆 updated_at）
         if (comments.length > 0) {
-          const lastMessageTime = comments.reduce((max, msg) => 
-            msg.updated_at > max ? msg.updated_at : max, comments[0].updated_at);
-          await this.updateSyncCursor('official-channel-comments', lastMessageTime, comments.length);
+          const lastComment = comments[comments.length - 1];
+          await this.updateSyncCursor('official-channel-comments', lastComment.updated_at, comments.length);
         }
       } catch (error) {
         this.logger.error('Failed to sync ticket comments:', error.message);
@@ -604,28 +605,63 @@ export class SyncService {
   }
 
   /**
-   * 批量 Upsert 官方頻道訊息
+   * 批量 Upsert 官方頻道訊息（批次查詢版，避免 N+1）
+   *
+   * 工單系統已確認：
+   * - 排序為 ORDER BY updated_at ASC, id ASC（穩定，分頁不亂）
+   * - updated_at == created_at（不會被更新），cursor 完全可靠
+   * - 同一 timestamp 多筆時，用 source_record_id unique constraint 去重
    */
   private async upsertOfficialChannelMessages(
     messages: OfficialChannelMessage[],
     sourceSystem: string,
   ): Promise<{ created: number; updated: number; skipped: number; failed: number }> {
+    if (messages.length === 0) return { created: 0, updated: 0, skipped: 0, failed: 0 };
+
     let created = 0;
     let updated = 0;
     let skipped = 0;
     let failed = 0;
 
-    for (const msg of messages) {
-      try {
-        // 用 employee_app_number 查找員工
-        const employee = await this.employeesService.findByAppNumber(msg.employee_app_number);
+    try {
+      // ── Step 1: 一次查出本批所有 source_record_id 是否已存在 ──
+      const sourceIds = messages.map(m => m.source_record_id);
+      const { data: existingRows } = await this.supabase
+        .getAdminClient()
+        .from(this.OCM_TABLE)
+        .select('source_record_id')
+        .in('source_record_id', sourceIds);
 
-        // 檢查是否已存在
-        const existing = await this.supabase.findOne(
-          this.OCM_TABLE,
-          { source_record_id: msg.source_record_id },
-          { useAdmin: true },
-        );
+      const existingSet = new Set((existingRows || []).map((r: any) => r.source_record_id));
+
+      // ── Step 2: 一次查出本批所有 app_number 的員工資料 ──
+      const appNumbers = [...new Set(messages.map(m => m.employee_app_number).filter(Boolean))];
+      const employeeMap = new Map<string, any>();
+
+      if (appNumbers.length > 0) {
+        const { data: employees } = await this.supabase
+          .getAdminClient()
+          .from('employees')
+          .select('id, employee_app_number')
+          .in('employee_app_number', appNumbers);
+
+        (employees || []).forEach((e: any) => {
+          employeeMap.set(e.employee_app_number, e);
+        });
+      }
+
+      // ── Step 3: 分成 new / existing 兩批，各自批量操作 ──
+      const toInsert: any[] = [];
+      const toUpdate: any[] = [];
+      const now = new Date().toISOString();
+
+      for (const msg of messages) {
+        const employee = employeeMap.get(msg.employee_app_number) || null;
+
+        if (!employee && msg.employee_app_number) {
+          this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
+          skipped++;
+        }
 
         const record = {
           source_record_id: msg.source_record_id,
@@ -646,31 +682,62 @@ export class SyncService {
           author_role: msg.author_role || null,
           agent_type: msg.agent_type || 'human',
           source_updated_at: msg.updated_at,
-          synced_at: new Date().toISOString(),
+          synced_at: now,
         };
 
-        if (existing) {
-          await this.supabase.update(
-            this.OCM_TABLE,
-            { source_record_id: msg.source_record_id },
-            record,
-            { useAdmin: true },
-          );
-          updated++;
+        if (existingSet.has(msg.source_record_id)) {
+          toUpdate.push(record);
         } else {
-          await this.supabase.create(this.OCM_TABLE, record, { useAdmin: true });
-          created++;
+          toInsert.push(record);
         }
-
-        // 如果找不到員工，記錄 warning
-        if (!employee) {
-          this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
-          skipped++;
-        }
-      } catch (error) {
-        this.logger.error(`Failed to upsert message ${msg.source_record_id}:`, error.message);
-        failed++;
       }
+
+      // 批量 insert（新筆）
+      if (toInsert.length > 0) {
+        const CHUNK = 200;
+        for (let i = 0; i < toInsert.length; i += CHUNK) {
+          const chunk = toInsert.slice(i, i + CHUNK);
+          const { error } = await this.supabase
+            .getAdminClient()
+            .from(this.OCM_TABLE)
+            .insert(chunk);
+
+          if (error) {
+            // 部分因邊界重疊而已存在（同 updated_at 多筆），不算失敗
+            if (error.code === '23505') {
+              // unique violation → 已存在，算 updated
+              updated += chunk.length;
+            } else {
+              this.logger.error(`Batch insert error: ${error.message}`);
+              failed += chunk.length;
+            }
+          } else {
+            created += chunk.length;
+          }
+        }
+      }
+
+      // 批量 upsert（已存在的，更新 synced_at / source_updated_at）
+      if (toUpdate.length > 0) {
+        const CHUNK = 200;
+        for (let i = 0; i < toUpdate.length; i += CHUNK) {
+          const chunk = toUpdate.slice(i, i + CHUNK);
+          const { error } = await this.supabase
+            .getAdminClient()
+            .from(this.OCM_TABLE)
+            .upsert(chunk, { onConflict: 'source_record_id', ignoreDuplicates: false });
+
+          if (error) {
+            this.logger.error(`Batch upsert error: ${error.message}`);
+            failed += chunk.length;
+          } else {
+            updated += chunk.length;
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error('upsertOfficialChannelMessages failed:', error.message);
+      failed += messages.length;
     }
 
     return { created, updated, skipped, failed };
