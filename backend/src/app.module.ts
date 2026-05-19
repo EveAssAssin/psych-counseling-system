@@ -29,6 +29,7 @@ import { PeriodAnalysisModule } from './modules/period-analysis/period-analysis.
 import { SupervisorNotesModule } from './modules/supervisor-notes/supervisor-notes.module';
 import { SupervisorAiModule } from './modules/supervisor-ai/supervisor-ai.module';
 import { LineAssistantModule } from './modules/line-assistant/line-assistant.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -68,6 +69,7 @@ import { HealthController } from './health.controller';
     SupervisorNotesModule,
     SupervisorAiModule,
     LineAssistantModule,
+    PermissionsModule,
   ],
   controllers: [HealthController],
 })

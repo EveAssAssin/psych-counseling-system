@@ -2,13 +2,14 @@ import {
   Controller,
   Get,
   Post,
+  Body,
   UseGuards,
   Req,
   Res,
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 
@@ -43,6 +44,39 @@ export class AuthController {
         error: error.message,
       });
     }
+  }
+
+  @Post('by-app-number')
+  @ApiOperation({
+    summary: '用員工編號登入（給樂活統一入口跳轉用）',
+    description:
+      '統一入口會帶 ?app_number=A1234 跳轉到本系統，前端呼叫此 API 取得 JWT。' +
+      '系統會驗證：1) 員工編號存在；2) 該員工已被授權；3) 帳號未停用；4) 有指派至少一個角色。' +
+      '任一不符均拒絕登入。',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        app_number: { type: 'string', example: 'A1234' },
+      },
+      required: ['app_number'],
+    },
+  })
+  @ApiResponse({ status: 200, description: '登入成功，回傳 JWT' })
+  @ApiResponse({ status: 403, description: '員工尚未被授權' })
+  @ApiResponse({ status: 404, description: '找不到員工編號' })
+  async loginByAppNumber(@Body() body: { app_number: string }) {
+    const { user, accessToken, roles } = await this.authService.loginByAppNumber(body.app_number);
+    return {
+      access_token: accessToken,
+      user,
+      roles: roles.map((r) => ({
+        role: r.role,
+        scope_type: r.scope_type,
+        scope_value: r.scope_value,
+      })),
+    };
   }
 
   @Get('me')

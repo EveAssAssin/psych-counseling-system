@@ -43,6 +43,11 @@ export declare class AuthService {
         user: User;
         accessToken: string;
     }>;
+    loginByAppNumber(appNumber: string): Promise<{
+        user: User;
+        accessToken: string;
+        roles: UserRole[];
+    }>;
     validateToken(payload: JwtPayload): Promise<User>;
     generateToken(user: User, roles: UserRole[]): string;
     findById(id: string): Promise<User | null>;

@@ -46,6 +46,38 @@ let AuthService = AuthService_1 = class AuthService {
         const accessToken = this.generateToken(user, roles);
         return { user, accessToken };
     }
+    async loginByAppNumber(appNumber) {
+        if (!appNumber || !appNumber.trim()) {
+            throw new common_1.UnauthorizedException('缺少員工編號');
+        }
+        const cleanAppNumber = appNumber.trim();
+        this.logger.log(`App-number login attempt: ${cleanAppNumber}`);
+        const employee = await this.supabase.findOne('employees', { employeeappnumber: cleanAppNumber }, { useAdmin: true });
+        if (!employee) {
+            this.logger.warn(`Login denied: employee not found for app_number ${cleanAppNumber}`);
+            throw new common_1.NotFoundException(`找不到員工編號「${cleanAppNumber}」，請聯絡系統管理員`);
+        }
+        const user = await this.supabase.findOne('users', { employee_id: employee.id }, { useAdmin: true });
+        if (!user) {
+            this.logger.warn(`Login denied: no user record for employee ${cleanAppNumber}`);
+            throw new common_1.ForbiddenException(`您（${employee.name}）尚未被授權使用此系統，請聯絡系統管理員開通權限`);
+        }
+        if (!user.is_active) {
+            this.logger.warn(`Login denied: user inactive for employee ${cleanAppNumber}`);
+            throw new common_1.ForbiddenException(`您的帳號已被停用，請聯絡系統管理員`);
+        }
+        const roles = await this.getUserRoles(user.id);
+        if (roles.length === 0) {
+            this.logger.warn(`Login denied: no active role for ${cleanAppNumber}`);
+            throw new common_1.ForbiddenException(`您尚未被指派任何角色，請聯絡系統管理員`);
+        }
+        const updatedUser = await this.updateUser(user.id, {
+            last_login_at: new Date().toISOString(),
+        });
+        const accessToken = this.generateToken(updatedUser, roles);
+        this.logger.log(`Login granted: ${employee.name} (${cleanAppNumber}), roles=[${roles.map((r) => r.role).join(',')}]`);
+        return { user: updatedUser, accessToken, roles };
+    }
     async validateToken(payload) {
         const user = await this.findById(payload.sub);
         if (!user || !user.is_active) {

@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { SupabaseService } from '../supabase/supabase.service';
 
@@ -84,6 +84,71 @@ export class AuthService {
     const accessToken = this.generateToken(user, roles);
 
     return { user, accessToken };
+  }
+
+  /**
+   * App-number-based 登入（用於樂活統一入口跳轉）
+   *
+   * 流程：
+   *   1. 用 app_number 找到 employees 表中的員工
+   *   2. 找到對應的 user（透過 user.employee_id）
+   *   3. 確認 user.is_active 且至少有一個 active role
+   *   4. 簽 JWT 回傳
+   *
+   * 不會自動建立 user — 必須先由 admin 在權限管理頁面「指派權限」才能登入。
+   */
+  async loginByAppNumber(appNumber: string): Promise<{ user: User; accessToken: string; roles: UserRole[] }> {
+    if (!appNumber || !appNumber.trim()) {
+      throw new UnauthorizedException('缺少員工編號');
+    }
+    const cleanAppNumber = appNumber.trim();
+    this.logger.log(`App-number login attempt: ${cleanAppNumber}`);
+
+    // 1. 找員工
+    const employee = await this.supabase.findOne<{ id: string; name: string; employeeappnumber: string }>(
+      'employees',
+      { employeeappnumber: cleanAppNumber },
+      { useAdmin: true },
+    );
+    if (!employee) {
+      this.logger.warn(`Login denied: employee not found for app_number ${cleanAppNumber}`);
+      throw new NotFoundException(`找不到員工編號「${cleanAppNumber}」，請聯絡系統管理員`);
+    }
+
+    // 2. 找對應的 user
+    const user = await this.supabase.findOne<User>(
+      'users',
+      { employee_id: employee.id },
+      { useAdmin: true },
+    );
+    if (!user) {
+      this.logger.warn(`Login denied: no user record for employee ${cleanAppNumber}`);
+      throw new ForbiddenException(`您（${employee.name}）尚未被授權使用此系統，請聯絡系統管理員開通權限`);
+    }
+    if (!user.is_active) {
+      this.logger.warn(`Login denied: user inactive for employee ${cleanAppNumber}`);
+      throw new ForbiddenException(`您的帳號已被停用，請聯絡系統管理員`);
+    }
+
+    // 3. 確認至少有一個 active role
+    const roles = await this.getUserRoles(user.id);
+    if (roles.length === 0) {
+      this.logger.warn(`Login denied: no active role for ${cleanAppNumber}`);
+      throw new ForbiddenException(`您尚未被指派任何角色，請聯絡系統管理員`);
+    }
+
+    // 4. 更新 last_login_at
+    const updatedUser = await this.updateUser(user.id, {
+      last_login_at: new Date().toISOString(),
+    });
+
+    // 5. 簽 JWT
+    const accessToken = this.generateToken(updatedUser, roles);
+    this.logger.log(
+      `Login granted: ${employee.name} (${cleanAppNumber}), roles=[${roles.map((r) => r.role).join(',')}]`,
+    );
+
+    return { user: updatedUser, accessToken, roles };
   }
 
   /**

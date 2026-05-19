@@ -35,15 +35,56 @@ api.interceptors.response.use(
 // ============================================
 export const authApi = {
   getGoogleLoginUrl: () => `${API_BASE_URL}/auth/google`,
-  
+
   getMe: () => api.get('/auth/me'),
-  
+
   verify: () => api.get('/auth/verify'),
-  
+
+  /**
+   * 用員工編號自動登入（給樂活統一入口跳轉用）
+   * URL 帶 ?app_number=A1234 → 前端呼叫此 API → 取得 JWT
+   */
+  loginByAppNumber: (appNumber: string) =>
+    api.post('/auth/by-app-number', { app_number: appNumber }),
+
   logout: () => {
     localStorage.removeItem('token');
     return api.post('/auth/logout');
   },
+};
+
+// ============================================
+// Permissions API（權限管理，僅 super_admin 可用）
+// ============================================
+export const permissionsApi = {
+  /** 列出所有權限記錄 */
+  list: (params?: { only_active?: boolean; role?: 'admin' | 'counselor' }) =>
+    api.get('/permissions', { params }),
+
+  /** 取得可用角色清單（給下拉用） */
+  getRoles: () => api.get('/permissions/roles'),
+
+  /** 指派權限（給某 app_number 一個角色） */
+  grant: (data: {
+    app_number: string;
+    role: 'admin' | 'counselor';
+    scope_type?: string;
+    scope_value?: Record<string, any>;
+  }) => api.post('/permissions', data),
+
+  /** 更新權限 */
+  update: (
+    id: string,
+    data: {
+      role?: 'admin' | 'counselor';
+      scope_type?: string;
+      scope_value?: Record<string, any>;
+      is_active?: boolean;
+    },
+  ) => api.put(`/permissions/${id}`, data),
+
+  /** 撤銷權限（軟刪除） */
+  revoke: (id: string) => api.delete(`/permissions/${id}`),
 };
 
 // ============================================

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
 // Layouts
 import MainLayout from './layouts/MainLayout';
@@ -19,6 +19,20 @@ import SupervisorHubPage from './pages/SupervisorHubPage';
 import LineAssistantPage from './pages/LineAssistantPage';
 import LineMobilePage from './pages/LineMobilePage';
 
+/**
+ * 根路徑跳轉邏輯：
+ * - 若 URL 帶 ?app_number=... 視為「統一入口跳轉」，導到 /entry 走自動登入流程
+ * - 否則導到 /dashboard
+ */
+function RootRedirect() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  if (params.get('app_number')) {
+    return <Navigate to={`/entry${location.search}`} replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
+}
+
 function App() {
   return (
     <Routes>
@@ -34,9 +48,11 @@ function App() {
       {/* LINE 行動版訊息助理（手機入口，獨立驗證） */}
       <Route path="/line-mobile" element={<LineMobilePage />} />
       
+      {/* 根路徑：偵測 app_number → 走 entry 自動登入；否則 → dashboard */}
+      <Route path="/" element={<RootRedirect />} />
+
       {/* 主要頁面（不需登入） */}
       <Route element={<MainLayout />}>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/employees" element={<EmployeesPage />} />
         <Route path="/employees/:id" element={<EmployeeDetailPage />} />

@@ -32,6 +32,7 @@ const period_analysis_module_1 = require("./modules/period-analysis/period-analy
 const supervisor_notes_module_1 = require("./modules/supervisor-notes/supervisor-notes.module");
 const supervisor_ai_module_1 = require("./modules/supervisor-ai/supervisor-ai.module");
 const line_assistant_module_1 = require("./modules/line-assistant/line-assistant.module");
+const permissions_module_1 = require("./modules/permissions/permissions.module");
 const health_controller_1 = require("./health.controller");
 let AppModule = class AppModule {
 };
@@ -65,6 +66,7 @@ exports.AppModule = AppModule = __decorate([
             supervisor_notes_module_1.SupervisorNotesModule,
             supervisor_ai_module_1.SupervisorAiModule,
             line_assistant_module_1.LineAssistantModule,
+            permissions_module_1.PermissionsModule,
         ],
         controllers: [health_controller_1.HealthController],
     })

@@ -1,8 +1,10 @@
 import { useState, useEffect, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { Dialog, Transition } from '@headlessui/react';
-import { MagnifyingGlassIcon, XMarkIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, XMarkIcon, ChatBubbleLeftRightIcon, ShieldCheckIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { employeesApi, officialChannelApi } from '../services/api';
+import { useAuthStore } from '../stores';
+import PermissionsTab from '../components/PermissionsTab';
 import toast from 'react-hot-toast';
 
 interface Employee {
@@ -25,6 +27,12 @@ interface ChannelMessage {
 }
 
 export default function EmployeesPage() {
+  const currentUser = useAuthStore((state) => state.user);
+  const isAdmin = currentUser?.roles?.includes('admin') ?? false;
+
+  // tab：employees（員工列表） / permissions（權限管理，僅 admin 可見）
+  const [tab, setTab] = useState<'employees' | 'permissions'>('employees');
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -106,10 +114,50 @@ export default function EmployeesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">員工管理</h1>
-          <p className="mt-1 text-sm text-gray-500">共 {total} 位員工</p>
+          <p className="mt-1 text-sm text-gray-500">
+            {tab === 'employees' ? `共 ${total} 位員工` : '管理可登入本系統的人員與其角色'}
+          </p>
         </div>
       </div>
 
+      {/* Tab 切換（super_admin 才看得到「權限管理」） */}
+      {isAdmin && (
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex gap-6" aria-label="Tabs">
+            <button
+              type="button"
+              onClick={() => setTab('employees')}
+              className={`inline-flex items-center gap-2 py-3 px-1 border-b-2 text-sm font-medium ${
+                tab === 'employees'
+                  ? 'border-primary-600 text-primary-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <UsersIcon className="h-4 w-4" />
+              員工列表
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('permissions')}
+              className={`inline-flex items-center gap-2 py-3 px-1 border-b-2 text-sm font-medium ${
+                tab === 'permissions'
+                  ? 'border-primary-600 text-primary-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <ShieldCheckIcon className="h-4 w-4" />
+              權限管理
+            </button>
+          </nav>
+        </div>
+      )}
+
+      {/* 權限管理 tab 內容 */}
+      {tab === 'permissions' && isAdmin && <PermissionsTab />}
+
+      {/* 員工列表 tab 內容（預設） */}
+      {tab === 'employees' && (
+      <>
       <form onSubmit={handleSearch} className="flex gap-4">
         <div className="flex-1 relative">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -291,6 +339,8 @@ export default function EmployeesPage() {
           </div>
         </Dialog>
       </Transition.Root>
+      </>
+      )}
     </div>
   );
 }
