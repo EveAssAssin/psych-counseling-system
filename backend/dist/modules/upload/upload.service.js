@@ -22,11 +22,23 @@ let UploadService = UploadService_1 = class UploadService {
             image: 10 * 1024 * 1024,
             video: 100 * 1024 * 1024,
             audio: 50 * 1024 * 1024,
+            document: 30 * 1024 * 1024,
         };
         this.ALLOWED_TYPES = {
-            image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-            video: ['video/mp4', 'video/quicktime', 'video/webm'],
+            image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'],
+            video: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo', 'video/x-ms-wmv'],
             audio: ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/m4a', 'audio/x-m4a'],
+            document: [
+                'application/pdf',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.ms-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.ms-powerpoint',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'text/plain',
+                'text/csv',
+            ],
         };
     }
     async uploadFile(file, category, subFolder) {
@@ -90,6 +102,8 @@ let UploadService = UploadService_1 = class UploadService {
             return 'video';
         if (this.ALLOWED_TYPES.audio.includes(mimeType))
             return 'audio';
+        if (this.ALLOWED_TYPES.document.includes(mimeType))
+            return 'document';
         return null;
     }
     getExtension(filename) {

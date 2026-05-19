@@ -38,7 +38,18 @@ let EmployeesService = EmployeesService_1 = class EmployeesService {
         return employee;
     }
     async findByAppNumber(employeeappnumber) {
-        return this.supabase.findOne(this.TABLE, { employeeappnumber }, { useAdmin: true });
+        const client = this.supabase.getAdminClient();
+        const { data, error } = await client
+            .from(this.TABLE)
+            .select('*')
+            .eq('employeeappnumber', employeeappnumber)
+            .order('synced_at', { ascending: false })
+            .limit(1);
+        if (error) {
+            this.logger.error(`Error finding employee by app number ${employeeappnumber}:`, error);
+            throw error;
+        }
+        return data && data.length > 0 ? data[0] : null;
     }
     async findByErpId(employeeerpid) {
         return this.supabase.findOne(this.TABLE, { employeeerpid }, { useAdmin: true });

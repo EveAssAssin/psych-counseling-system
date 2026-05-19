@@ -114,7 +114,17 @@ export const conversationsApi = {
   upload: (formData: FormData) => api.post('/conversations/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
-  
+
+  /**
+   * 音檔 / 逐字稿轉錄與智慧預填
+   * 上傳音檔 → Whisper 轉文字 → Claude 清理 + 識別員工/主管/背景
+   * 不會建立對話記錄，回傳建議讓使用者預覽再確認
+   */
+  transcribe: (formData: FormData) => api.post('/conversations/transcribe', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000,   // 音檔轉錄可能需要 1-3 分鐘
+  }),
+
   update: (id: string, data: any) => api.put(`/conversations/${id}`, data),
   
   delete: (id: string) => api.delete(`/conversations/${id}`),

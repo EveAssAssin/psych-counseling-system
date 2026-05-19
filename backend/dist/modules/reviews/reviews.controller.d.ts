@@ -112,7 +112,7 @@ export declare class ReviewResponseController {
             created_at: string;
             attachments: {
                 id: string;
-                file_type: "image" | "video" | "audio";
+                file_type: "audio" | "image" | "video";
                 file_url: string;
                 file_name: string | undefined;
             }[];

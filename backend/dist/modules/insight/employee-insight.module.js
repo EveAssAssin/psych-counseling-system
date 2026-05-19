@@ -16,6 +16,7 @@ const employees_module_1 = require("../employees/employees.module");
 const official_channel_module_1 = require("../official-channel/official-channel.module");
 const reviews_module_1 = require("../reviews/reviews.module");
 const ticket_history_module_1 = require("../ticket-history/ticket-history.module");
+const conversations_module_1 = require("../conversations/conversations.module");
 let EmployeeInsightModule = class EmployeeInsightModule {
 };
 exports.EmployeeInsightModule = EmployeeInsightModule;
@@ -28,6 +29,7 @@ exports.EmployeeInsightModule = EmployeeInsightModule = __decorate([
             official_channel_module_1.OfficialChannelModule,
             reviews_module_1.ReviewsModule,
             ticket_history_module_1.TicketHistoryModule,
+            conversations_module_1.ConversationsModule,
         ],
         controllers: [employee_insight_controller_1.EmployeeInsightController],
         providers: [employee_insight_service_1.EmployeeInsightService],

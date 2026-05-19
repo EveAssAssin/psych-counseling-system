@@ -4,9 +4,10 @@ import { QueryService } from './query.service';
 import { EmployeesModule } from '../employees/employees.module';
 import { AnalysisModule } from '../analysis/analysis.module';
 import { EmployeeInsightModule } from '../insight/employee-insight.module';
+import { ConversationsModule } from '../conversations/conversations.module';
 
 @Module({
-  imports: [EmployeesModule, AnalysisModule, EmployeeInsightModule],
+  imports: [EmployeesModule, AnalysisModule, EmployeeInsightModule, ConversationsModule],
   controllers: [QueryController],
   providers: [QueryService],
   exports: [QueryService],

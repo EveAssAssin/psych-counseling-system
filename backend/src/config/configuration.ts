@@ -18,6 +18,11 @@ export const configuration = () => ({
     maxTokens: parseInt(process.env.ANTHROPIC_MAX_TOKENS || '4096', 10),
   },
 
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY,
+    whisperModel: process.env.OPENAI_WHISPER_MODEL || 'whisper-1',
+  },
+
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,

@@ -8,7 +8,7 @@ export interface UploadResult {
     mimeType?: string;
     error?: string;
 }
-export type UploadCategory = 'reviews' | 'responses' | 'conversations';
+export type UploadCategory = 'reviews' | 'responses' | 'conversations' | 'supervisor-notes';
 export declare class UploadService {
     private readonly supabase;
     private readonly logger;

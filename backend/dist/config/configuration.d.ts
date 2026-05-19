@@ -14,6 +14,10 @@ export declare const configuration: () => {
         model: string;
         maxTokens: number;
     };
+    openai: {
+        apiKey: string | undefined;
+        whisperModel: string;
+    };
     google: {
         clientId: string | undefined;
         clientSecret: string | undefined;
@@ -45,6 +49,9 @@ export declare const configuration: () => {
         enabled: boolean;
         monthlySyncCron: string;
         dailySyncCron: string;
+    };
+    line: {
+        channelAccessToken: string;
     };
     logging: {
         level: string;

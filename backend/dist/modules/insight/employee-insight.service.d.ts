@@ -4,6 +4,7 @@ import { EmployeesService } from '../employees/employees.service';
 import { OfficialChannelService } from '../official-channel/official-channel.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { TicketHistoryService } from '../ticket-history/ticket-history.service';
+import { EmployeeContextService } from '../conversations/employee-context.service';
 export interface TimelineEvent {
     date: string;
     type: 'line_message' | 'ticket_comment' | 'conversation' | 'attendance' | 'score' | 'review' | 'ticket_created' | 'ticket_event';
@@ -103,9 +104,10 @@ export declare class EmployeeInsightService {
     private readonly officialChannelService;
     private readonly reviewsService;
     private readonly ticketHistoryService;
+    private readonly employeeContext;
     private readonly logger;
     private readonly anthropic;
-    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, officialChannelService: OfficialChannelService, reviewsService: ReviewsService, ticketHistoryService: TicketHistoryService);
+    constructor(configService: ConfigService, supabase: SupabaseService, employeesService: EmployeesService, officialChannelService: OfficialChannelService, reviewsService: ReviewsService, ticketHistoryService: TicketHistoryService, employeeContext: EmployeeContextService);
     getInsight(employeeAppNumber: string, options?: {
         days?: number;
         forceRefresh?: boolean;

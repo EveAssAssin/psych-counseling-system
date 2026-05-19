@@ -6,6 +6,7 @@ import { EmployeesService } from '../employees/employees.service';
 import { OfficialChannelService } from '../official-channel/official-channel.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { TicketHistoryService } from '../ticket-history/ticket-history.service';
+import { EmployeeContextService } from '../conversations/employee-context.service';
 
 // ============================================
 // 時間軸事件
@@ -175,6 +176,7 @@ export class EmployeeInsightService {
     private readonly officialChannelService: OfficialChannelService,
     private readonly reviewsService: ReviewsService,
     private readonly ticketHistoryService: TicketHistoryService,
+    private readonly employeeContext: EmployeeContextService,
   ) {
     const apiKey = this.configService.get<string>('anthropic.apiKey');
     if (apiKey) {
@@ -725,7 +727,18 @@ export class EmployeeInsightService {
       return this.getDefaultAnalysis();
     }
 
-    const analysisInput = this.prepareAnalysisInput(employee, data, timeline);
+    // 取得該員工的完整對話記錄上下文（近 5 筆完整 + 更早 5 筆摘要 + AI 分析結果）
+    const conversationContext = await this.employeeContext.buildConversationContext(
+      employee.id,
+      {
+        recentFullCount: 5,
+        olderSummaryCount: 5,
+        includeAnalysis: true,
+        maxRawTextLength: 1500,
+      },
+    );
+
+    const analysisInput = this.prepareAnalysisInput(employee, data, timeline, conversationContext);
 
     const userPrompt = `請分析以下員工資料，並依照指定格式輸出 JSON：
 
@@ -813,7 +826,7 @@ ${analysisInput}
   /**
    * 準備分析輸入素材
    */
-  private prepareAnalysisInput(employee: any, data: any, timeline: TimelineEvent[]): string {
+  private prepareAnalysisInput(employee: any, data: any, timeline: TimelineEvent[], conversationContext?: string): string {
     let input = `【員工基本資料】
 姓名：${employee.name}
 部門：${employee.department || '未知'}
@@ -894,6 +907,11 @@ ${analysisInput}
 摘要：${latest.summary || '無'}
 
 `;
+    }
+
+    // ── 主管面談對話記錄（完整內容 + 心理分析） ──
+    if (conversationContext && conversationContext.trim().length > 0) {
+      input += `${conversationContext}\n\n`;
     }
 
     // ── 評價統計（詳細版） ──

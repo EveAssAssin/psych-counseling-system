@@ -7,6 +7,7 @@ import { Employee } from '../employees/employees.dto';
 import { AnalysisService } from '../analysis/analysis.service';
 import { AnalysisResult } from '../analysis/analysis.dto';
 import { EmployeeInsightService } from '../insight/employee-insight.service';
+import { EmployeeContextService } from '../conversations/employee-context.service';
 
 export interface QueryRequest {
   question: string;
@@ -63,6 +64,7 @@ export class QueryService {
     private readonly employeesService: EmployeesService,
     private readonly analysisService: AnalysisService,
     private readonly insightService: EmployeeInsightService,
+    private readonly employeeContext: EmployeeContextService,
   ) {
     const apiKey = this.configService.get<string>('anthropic.apiKey');
     if (apiKey) {
@@ -138,10 +140,28 @@ export class QueryService {
       // 加入時間軸摘要（最近 5 筆）
       if (insight.timeline && insight.timeline.length > 0) {
         const recentEvents = insight.timeline.slice(0, 5);
-        const timelineText = recentEvents.map((e: any) => 
+        const timelineText = recentEvents.map((e: any) =>
           `  - ${new Date(e.date).toLocaleDateString('zh-TW')} [${e.category}] ${e.content.substring(0, 50)}`
         ).join('\n');
         contextParts.push(`【近期事件】\n${timelineText}`);
+      }
+
+      // 加入完整對話記錄上下文（近 3 筆完整 + 更早 3 筆摘要 + AI 分析）
+      // employee 在這個 if (insight) 區塊內一定存在（insight 只在 employee 存在時才會 fetch）
+      if (employee) {
+        try {
+          const conversationContext = await this.employeeContext.buildConversationContext(employee.id, {
+            recentFullCount: 3,
+            olderSummaryCount: 3,
+            includeAnalysis: true,
+            maxRawTextLength: 800,
+          });
+          if (conversationContext) {
+            contextParts.push(conversationContext);
+          }
+        } catch (e: any) {
+          this.logger.warn(`Failed to load conversation context: ${e?.message || e}`);
+        }
       }
 
       // 加入調動評估

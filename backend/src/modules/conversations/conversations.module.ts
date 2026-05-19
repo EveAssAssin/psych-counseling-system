@@ -4,9 +4,14 @@ import { ConfigService } from '@nestjs/config';
 import { ConversationsController } from './conversations.controller';
 import { ConversationsService } from './conversations.service';
 import { ExtractionService } from './extraction.service';
+import { EmployeeContextService } from './employee-context.service';
+import { AudioTranscriptionService } from './audio-transcription.service';
+import { SmartFillService } from './smart-fill.service';
+import { EmployeesModule } from '../employees/employees.module';
 
 @Module({
   imports: [
+    EmployeesModule,
     MulterModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -17,7 +22,19 @@ import { ExtractionService } from './extraction.service';
     }),
   ],
   controllers: [ConversationsController],
-  providers: [ConversationsService, ExtractionService],
-  exports: [ConversationsService, ExtractionService],
+  providers: [
+    ConversationsService,
+    ExtractionService,
+    EmployeeContextService,
+    AudioTranscriptionService,
+    SmartFillService,
+  ],
+  exports: [
+    ConversationsService,
+    ExtractionService,
+    EmployeeContextService,
+    AudioTranscriptionService,
+    SmartFillService,
+  ],
 })
 export class ConversationsModule {}

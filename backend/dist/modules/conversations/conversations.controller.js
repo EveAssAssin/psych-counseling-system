@@ -17,10 +17,14 @@ const common_1 = require("@nestjs/common");
 const platform_express_1 = require("@nestjs/platform-express");
 const swagger_1 = require("@nestjs/swagger");
 const conversations_service_1 = require("./conversations.service");
+const audio_transcription_service_1 = require("./audio-transcription.service");
+const smart_fill_service_1 = require("./smart-fill.service");
 const conversations_dto_1 = require("./conversations.dto");
 let ConversationsController = class ConversationsController {
-    constructor(conversationsService) {
+    constructor(conversationsService, audioTranscription, smartFill) {
         this.conversationsService = conversationsService;
+        this.audioTranscription = audioTranscription;
+        this.smartFill = smartFill;
     }
     async create(dto) {
         return this.conversationsService.create(dto);
@@ -32,6 +36,55 @@ let ConversationsController = class ConversationsController {
             mimetype: file.mimetype,
             size: file.size,
         });
+    }
+    async transcribeAndSmartFill(file, body) {
+        if (!file) {
+            throw new common_1.BadRequestException('請上傳檔案');
+        }
+        let rawTranscript = '';
+        let transcriptionMeta = null;
+        const isAudio = this.audioTranscription.isAudioFile(file.mimetype, file.originalname);
+        if (isAudio) {
+            if (!this.audioTranscription.isEnabled()) {
+                throw new common_1.BadRequestException('音檔轉錄功能未啟用。請在後端 .env 設定 OPENAI_API_KEY，或改為上傳逐字稿（txt）。');
+            }
+            const transcription = await this.audioTranscription.transcribe(file.buffer, file.originalname, body.language || 'zh');
+            rawTranscript = transcription.textWithTimestamps;
+            transcriptionMeta = {
+                source_type: 'audio',
+                duration_seconds: transcription.durationSeconds,
+                language: transcription.language,
+                whisper_model: transcription.whisperModel,
+                segment_count: transcription.segments.length,
+            };
+        }
+        else if (file.mimetype.startsWith('text/') ||
+            file.originalname.toLowerCase().endsWith('.txt')) {
+            rawTranscript = file.buffer.toString('utf-8');
+            transcriptionMeta = {
+                source_type: 'text_transcript',
+                char_count: rawTranscript.length,
+            };
+        }
+        else {
+            throw new common_1.BadRequestException(`不支援的檔案類型：${file.mimetype}。請上傳音檔（mp3/m4a/wav/...）或文字稿（.txt）。`);
+        }
+        let hintEmployeeName;
+        if (body.hint_employee_id) {
+            try {
+                const emp = await this.conversationsService.findByEmployee(body.hint_employee_id);
+            }
+            catch { }
+        }
+        const suggestions = await this.smartFill.processTranscript(rawTranscript, {
+            hintInterviewerName: body.hint_interviewer_name,
+            hintEmployeeName,
+        });
+        return {
+            raw_transcript: rawTranscript,
+            transcription_meta: transcriptionMeta,
+            suggestions,
+        };
     }
     async search(dto) {
         return this.conversationsService.search(dto);
@@ -94,6 +147,36 @@ __decorate([
     __metadata("design:paramtypes", [Object, conversations_dto_1.CreateConversationWithFileDto]),
     __metadata("design:returntype", Promise)
 ], ConversationsController.prototype, "createWithFile", null);
+__decorate([
+    (0, common_1.Post)('transcribe'),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file')),
+    (0, swagger_1.ApiOperation)({
+        summary: '音檔/逐字稿轉錄與智慧預填',
+        description: '上傳音檔（mp3/m4a/wav/...）或逐字稿（txt），系統會：' +
+            '1. 音檔 → Whisper 轉錄；2. AI 清理、識別發言者、修錯字；' +
+            '3. 嘗試辨識員工/訪談者姓名；4. 萃取背景說明與初判風險訊號。' +
+            '不建立對話記錄，前端拿到結果後可預覽 / 編輯 / 確認再送 create。',
+    }),
+    (0, swagger_1.ApiConsumes)('multipart/form-data'),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            properties: {
+                file: { type: 'string', format: 'binary', description: '音檔或文字稿' },
+                hint_interviewer_name: { type: 'string', description: '提示主管姓名（通常是登入者）' },
+                hint_employee_id: { type: 'string', format: 'uuid', description: '若使用者已選員工，傳 employee_id 幫助比對' },
+                language: { type: 'string', description: 'Whisper 語言碼，預設 zh', default: 'zh' },
+            },
+            required: ['file'],
+        },
+    }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: '轉錄與建議結果' }),
+    __param(0, (0, common_1.UploadedFile)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], ConversationsController.prototype, "transcribeAndSmartFill", null);
 __decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: '搜尋對話' }),
@@ -162,6 +245,8 @@ __decorate([
 exports.ConversationsController = ConversationsController = __decorate([
     (0, swagger_1.ApiTags)('conversations'),
     (0, common_1.Controller)('conversations'),
-    __metadata("design:paramtypes", [conversations_service_1.ConversationsService])
+    __metadata("design:paramtypes", [conversations_service_1.ConversationsService,
+        audio_transcription_service_1.AudioTranscriptionService,
+        smart_fill_service_1.SmartFillService])
 ], ConversationsController);
 //# sourceMappingURL=conversations.controller.js.map

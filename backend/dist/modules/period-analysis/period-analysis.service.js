@@ -48,19 +48,20 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
         const endISO = endDate.toISOString();
         const days = Math.ceil((endDate.getTime() - new Date(req.start_date).getTime()) / 86400000);
         this.logger.log(`Period analysis: ${startISO} ~ ${endISO}, employee: ${req.employee_id || 'all'}`);
-        const [messages, tickets, ticketConvs, reviews, conversations, employees] = await Promise.all([
+        const [messages, tickets, ticketConvs, reviews, conversations, employees, feedbackStats] = await Promise.all([
             this.fetchMessages(startISO, endISO, req.employee_id),
             this.fetchTickets(startISO, endISO, req.employee_id),
             this.fetchTicketConversations(startISO, endISO, req.employee_id),
             this.fetchReviews(startISO, endISO, req.employee_id),
             this.fetchConversations(startISO, endISO, req.employee_id),
             this.fetchEmployees(req.employee_id),
+            this.fetchCustomerFeedbackStats(req.employee_id),
         ]);
         const dataStats = this.calcDataStats(messages, tickets, reviews, conversations, employees, startISO, endISO, days);
-        const hotTopics = this.calcHotTopics(tickets, ticketConvs, reviews, conversations, messages);
-        const riskEmployees = req.employee_id ? [] : this.calcRiskEmployees(employees, tickets, reviews, messages);
+        const hotTopics = this.calcHotTopics(tickets, ticketConvs, reviews, conversations, messages, feedbackStats);
+        const riskEmployees = req.employee_id ? [] : this.calcRiskEmployees(employees, tickets, reviews, messages, feedbackStats);
         const timelineSummary = this.calcTimeline(tickets, reviews, conversations, messages, startISO, endISO);
-        const aiResult = await this.callAI(req, dataStats, hotTopics, riskEmployees, timelineSummary, employees, days, { messages, tickets, reviews });
+        const aiResult = await this.callAI(req, dataStats, hotTopics, riskEmployees, timelineSummary, employees, days, { messages, tickets, reviews, feedbackStats });
         let employeeInfo;
         if (req.employee_id) {
             const emp = employees.find((e) => e.id === req.employee_id);
@@ -190,6 +191,24 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
             return [];
         }
     }
+    async fetchCustomerFeedbackStats(employeeId) {
+        try {
+            const client = this.supabase.getAdminClient();
+            let q = client
+                .from('customer_feedback_stats')
+                .select('*')
+                .order('total_feedbacks', { ascending: false })
+                .limit(500);
+            if (employeeId) {
+                q = q.eq('employee_id', employeeId);
+            }
+            const { data } = await q;
+            return data || [];
+        }
+        catch {
+            return [];
+        }
+    }
     calcDataStats(messages, tickets, reviews, conversations, employees, startISO, endISO, days) {
         const empIds = new Set([
             ...messages.map((m) => m.employee_app_number).filter(Boolean),
@@ -233,7 +252,7 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
             by_day: Object.entries(byDayMap).map(([date, v]) => ({ date, ...v })),
         };
     }
-    calcHotTopics(tickets, ticketConvs, reviews, conversations, messages) {
+    calcHotTopics(tickets, ticketConvs, reviews, conversations, messages, feedbackStats = []) {
         const topicCount = {};
         const addTopic = (topic, example) => {
             if (!topic || topic.trim() === '')
@@ -271,6 +290,37 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
             if (cnt >= 3)
                 addTopic(`LINE 訊息：${kw}`, `出現 ${cnt} 次`);
         }
+        const feedbackTypeTotals = {};
+        const feedbackUrgencyTotals = {};
+        for (const stat of feedbackStats) {
+            if (stat.by_type) {
+                for (const [type, cnt] of Object.entries(stat.by_type)) {
+                    feedbackTypeTotals[type] = (feedbackTypeTotals[type] || 0) + (cnt || 0);
+                }
+            }
+            if (stat.by_urgency) {
+                for (const [urgency, cnt] of Object.entries(stat.by_urgency)) {
+                    feedbackUrgencyTotals[urgency] = (feedbackUrgencyTotals[urgency] || 0) + (cnt || 0);
+                }
+            }
+        }
+        const feedbackTypeLabel = {
+            complaint: '客訴/投訴',
+            suggestion: '客戶建議',
+            praise: '客戶稱讚',
+            inquiry: '客戶詢問',
+            other: '其他客服案件',
+        };
+        for (const [type, cnt] of Object.entries(feedbackTypeTotals)) {
+            if (cnt >= 1) {
+                const label = feedbackTypeLabel[type] || type;
+                addTopic(`客服：${label}`, `共 ${cnt} 筆`);
+            }
+        }
+        const urgentTotal = (feedbackUrgencyTotals['urgent_plus'] || 0) + (feedbackUrgencyTotals['urgent'] || 0);
+        if (urgentTotal >= 2) {
+            addTopic('客服：緊急/特急案件', `共 ${urgentTotal} 筆`);
+        }
         const total = Object.values(topicCount).reduce((s, v) => s + v.count, 0) || 1;
         return Object.entries(topicCount)
             .map(([topic, v]) => ({
@@ -305,7 +355,7 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
         }
         return kwCount;
     }
-    calcRiskEmployees(employees, tickets, reviews, messages) {
+    calcRiskEmployees(employees, tickets, reviews, messages, feedbackStats = []) {
         const empRisk = {};
         for (const emp of employees) {
             empRisk[emp.id] = {
@@ -315,6 +365,9 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
                 negReviews: 0,
                 urgentTickets: 0,
                 pendingReviews: 0,
+                feedbackComplaints: 0,
+                feedbackPending: 0,
+                feedbackUrgent: 0,
                 signals: [],
             };
         }
@@ -332,6 +385,18 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
             if (t.priority === 'urgent' || t.priority === 'urgent_plus')
                 empRisk[t.employee_id].urgentTickets++;
         }
+        for (const stat of feedbackStats) {
+            const empId = stat.employee_id;
+            if (!empId || !empRisk[empId])
+                continue;
+            const complaints = stat.by_type?.complaint || 0;
+            const pending = stat.pending_count || 0;
+            const urgentPlus = stat.by_urgency?.urgent_plus || 0;
+            const urgent = stat.by_urgency?.urgent || 0;
+            empRisk[empId].feedbackComplaints += complaints;
+            empRisk[empId].feedbackPending += pending;
+            empRisk[empId].feedbackUrgent += urgentPlus + urgent;
+        }
         const result = [];
         for (const [id, data] of Object.entries(empRisk)) {
             const signals = [];
@@ -347,6 +412,18 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
             if (data.pendingReviews >= 2) {
                 signals.push(`${data.pendingReviews} 筆待處理評價`);
                 score += data.pendingReviews * 2;
+            }
+            if (data.feedbackComplaints >= 3) {
+                signals.push(`${data.feedbackComplaints} 筆客訴`);
+                score += data.feedbackComplaints;
+            }
+            if (data.feedbackPending >= 3) {
+                signals.push(`${data.feedbackPending} 筆待處理客服案件`);
+                score += data.feedbackPending;
+            }
+            if (data.feedbackUrgent >= 2) {
+                signals.push(`${data.feedbackUrgent} 筆緊急客服案件`);
+                score += data.feedbackUrgent * 2;
             }
             if (score >= 8) {
                 result.push({
@@ -442,6 +519,25 @@ let PeriodAnalysisService = PeriodAnalysisService_1 = class PeriodAnalysisServic
             .map((m) => `・${m.message_text?.substring(0, 60) || ''}`)
             .join('\n');
         const peakWeek = timeline.reduce((max, t) => t.count > max.count ? t : max, { count: 0, date: '', summary: '' });
+        const feedbackStats = rawData?.feedbackStats || [];
+        let feedbackSummaryText = '';
+        if (feedbackStats.length > 0) {
+            const totalFb = feedbackStats.reduce((s, stat) => s + (stat.total_feedbacks || 0), 0);
+            const totalComplaints = feedbackStats.reduce((s, stat) => s + (stat.by_type?.complaint || 0), 0);
+            const totalPraise = feedbackStats.reduce((s, stat) => s + (stat.by_type?.praise || 0), 0);
+            const totalPending = feedbackStats.reduce((s, stat) => s + (stat.pending_count || 0), 0);
+            const totalUrgent = feedbackStats.reduce((s, stat) => s + (stat.by_urgency?.urgent_plus || 0) + (stat.by_urgency?.urgent || 0), 0);
+            const topComplainers = feedbackStats
+                .filter((s) => (s.by_type?.complaint || 0) >= 2)
+                .sort((a, b) => (b.by_type?.complaint || 0) - (a.by_type?.complaint || 0))
+                .slice(0, 3)
+                .map((s) => `${s.employee_name || s.employee_app_number}（${s.by_type?.complaint} 筆客訴）`)
+                .join('、');
+            feedbackSummaryText = `【客訴/客服回報統計（來自客服系統同步）】
+總案件數：${totalFb} 筆（涵蓋 ${feedbackStats.length} 位員工）
+投訴：${totalComplaints} 筆　稱讚：${totalPraise} 筆　待處理：${totalPending} 筆　緊急/特急：${totalUrgent} 筆
+${topComplainers ? `客訴集中員工：${topComplainers}` : ''}`;
+        }
         const prompt = `請分析以下 ${days} 天（${req.start_date} ~ ${req.end_date}）的組織資料，從心理健康與工作壓力角度給出洞察：
 
 【資料量概覽】
@@ -452,6 +548,7 @@ LINE 訊息：${stats.official_messages} 則（員工主動發送）
 主管面談：${stats.conversations} 筆
 ${peakWeek.count > 0 ? `活動高峰：${peakWeek.date}（${peakWeek.summary}）` : ''}
 
+${feedbackSummaryText ? feedbackSummaryText + '\n' : ''}
 【熱門議題排行（含 LINE 關鍵詞）】
 ${topicsText || '本期資料不足，無法統計議題'}
 

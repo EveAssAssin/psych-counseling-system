@@ -53,15 +53,25 @@ export declare class SyncService {
     getRecentSyncLogs(limit?: number): Promise<SyncLog[]>;
     private readonly OCM_TABLE;
     private readonly SYNC_CURSORS_TABLE;
-    syncOfficialChannelMessages(triggeredBy?: string): Promise<SyncLog>;
+    syncOfficialChannelMessages(triggeredBy?: string, force?: boolean): Promise<SyncLog>;
     private upsertOfficialChannelMessages;
     private readonly ETH_TABLE;
     private readonly TC_TABLE;
     syncTicketHistory(triggeredBy?: string): Promise<SyncLog>;
     private upsertTicketHistory;
+    private readonly CFS_TABLE;
+    syncCustomerFeedbackStats(triggeredBy?: string): Promise<SyncLog>;
     private getSyncCursor;
     syncReviewData(triggeredBy?: string): Promise<SyncLog>;
     private upsertExternalReview;
     private syncReviewResponses;
     private updateSyncCursor;
+    resetSyncCursor(syncType: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    patchStoreNamesFromPayload(): Promise<{
+        updated: number;
+        skipped: number;
+    }>;
 }

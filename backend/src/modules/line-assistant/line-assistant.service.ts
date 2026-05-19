@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import axios from 'axios';
 import { SupabaseService } from '../supabase/supabase.service';
+import { EmployeesService } from '../employees/employees.service';
+import { EmployeeContextService } from '../conversations/employee-context.service';
 import {
   GenerateAiSuggestionDto,
   SendReplyDto,
@@ -20,6 +22,8 @@ export class LineAssistantService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly config: ConfigService,
+    private readonly employeesService: EmployeesService,
+    private readonly employeeContext: EmployeeContextService,
   ) {
     this.anthropic = new Anthropic({
       apiKey: this.config.get<string>('ANTHROPIC_API_KEY'),
@@ -173,6 +177,27 @@ export class LineAssistantService {
       .map(g => `【${g.category}】${g.title}：${g.content}`)
       .join('\n');
 
+    // 嘗試取得該員工最近的面談記錄上下文（讓 AI 知道員工心理狀態 + 主管應注意的議題）
+    let employeeContextSection = '';
+    if (dto.employee_app_number) {
+      try {
+        const emp = await this.employeesService.findByAppNumber(dto.employee_app_number);
+        if (emp?.id) {
+          const ctx = await this.employeeContext.buildConversationContext(emp.id, {
+            recentFullCount: 1,         // 只放最近 1 筆完整對話（節省 token）
+            olderSummaryCount: 3,       // 更早 3 筆只放分析摘要
+            includeAnalysis: true,
+            maxRawTextLength: 600,
+          });
+          if (ctx) {
+            employeeContextSection = `\n\n## 該員工近期心理狀態（來自主管面談 AI 分析）\n${ctx}\n\n回覆時請務必參考員工的壓力等級、避雷話題、近期關切點，避免觸發風險議題。`;
+          }
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to load employee context for LINE assistant: ${e.message}`);
+      }
+    }
+
     const systemPrompt = `你是樂活眼鏡公司的 HR 主管助理，專門協助主管回覆員工透過 LINE 官方帳號發送的訊息。
 
 ## 公司規範
@@ -183,7 +208,7 @@ ${guidelineText || '（無特定規範，請依一般 HR 禮儀回覆）'}
 - 長度：精簡有力，避免冗長
 - 若是請假、工作申請等事項，明確告知處理流程
 - 若是情緒性訊息，優先同理再回應
-- 直接輸出回覆內容，不要有任何前言或解釋`;
+- 直接輸出回覆內容，不要有任何前言或解釋${employeeContextSection}`;
 
     // 組 messages
     const messages: Anthropic.MessageParam[] = [];

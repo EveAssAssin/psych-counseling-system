@@ -39,6 +39,7 @@ let SyncService = SyncService_1 = class SyncService {
         this.SYNC_CURSORS_TABLE = 'sync_cursors';
         this.ETH_TABLE = 'employee_ticket_history';
         this.TC_TABLE = 'ticket_conversations';
+        this.CFS_TABLE = 'customer_feedback_stats';
     }
     async syncEmployees(triggeredBy) {
         const syncLog = await this.createSyncLog('employee_full', 'lefthand_api', triggeredBy);
@@ -275,6 +276,11 @@ let SyncService = SyncService_1 = class SyncService {
         return { fetched: 0, created: 0, failed: 0 };
     }
     async createSyncLog(syncType, sourceName, triggeredBy) {
+        const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const triggeredByUuid = triggeredBy && UUID_REGEX.test(triggeredBy) ? triggeredBy : undefined;
+        const triggerType = triggeredBy === 'scheduler' ? 'scheduled'
+            : triggeredBy ? 'manual'
+                : 'scheduled';
         return this.supabase.create(this.SYNC_LOGS_TABLE, {
             sync_type: syncType,
             source_name: sourceName,
@@ -285,8 +291,8 @@ let SyncService = SyncService_1 = class SyncService {
             total_updated: 0,
             total_skipped: 0,
             total_failed: 0,
-            triggered_by: triggeredBy,
-            trigger_type: triggeredBy ? 'manual' : 'scheduled',
+            triggered_by: triggeredByUuid,
+            trigger_type: triggerType,
         }, { useAdmin: true });
     }
     async updateSyncLog(id, data) {
@@ -316,7 +322,7 @@ let SyncService = SyncService_1 = class SyncService {
             useAdmin: true,
         });
     }
-    async syncOfficialChannelMessages(triggeredBy) {
+    async syncOfficialChannelMessages(triggeredBy, force = false) {
         const syncLog = await this.createSyncLog('official_channel', 'ticket-system', triggeredBy);
         try {
             await this.updateSyncLog(syncLog.id, { status: 'running' });
@@ -325,15 +331,16 @@ let SyncService = SyncService_1 = class SyncService {
             let totalUpdated = 0;
             let totalSkipped = 0;
             let totalFailed = 0;
-            const lineLastSync = await this.getSyncCursor('official-channel-line');
-            const commentsLastSync = await this.getSyncCursor('official-channel-comments');
-            const now = new Date();
-            const firstSyncStart = new Date(now);
-            firstSyncStart.setDate(firstSyncStart.getDate() - 90);
-            firstSyncStart.setHours(0, 0, 0, 0);
-            const defaultAfter = firstSyncStart.toISOString();
+            const lineLastSync = force ? null : await this.getSyncCursor('official-channel-line');
+            const commentsLastSync = force ? null : await this.getSyncCursor('official-channel-comments');
+            if (force) {
+                this.logger.log('Force full resync: ignoring cursors, fetching ALL messages');
+            }
             this.logger.log('Step 1: Syncing LINE official channel messages...');
-            const lineUpdatedAfter = lineLastSync?.last_record_time || defaultAfter;
+            const lineUpdatedAfter = lineLastSync?.last_record_time || undefined;
+            this.logger.log(lineUpdatedAfter
+                ? `Incremental sync from: ${lineUpdatedAfter}`
+                : 'First sync: fetching ALL historical LINE messages');
             try {
                 const lineMessages = await this.ticketApi.getAllOfficialChannelMessages({
                     updated_after: lineUpdatedAfter,
@@ -346,8 +353,8 @@ let SyncService = SyncService_1 = class SyncService {
                 totalSkipped += lineResult.skipped;
                 totalFailed += lineResult.failed;
                 if (lineMessages.length > 0) {
-                    const lastMessageTime = lineMessages.reduce((max, msg) => msg.updated_at > max ? msg.updated_at : max, lineMessages[0].updated_at);
-                    await this.updateSyncCursor('official-channel-line', lastMessageTime, lineMessages.length);
+                    const lastMsg = lineMessages[lineMessages.length - 1];
+                    await this.updateSyncCursor('official-channel-line', lastMsg.updated_at, lineMessages.length);
                 }
             }
             catch (error) {
@@ -355,7 +362,10 @@ let SyncService = SyncService_1 = class SyncService {
                 totalFailed++;
             }
             this.logger.log('Step 2: Syncing ticket comments...');
-            const commentsUpdatedAfter = commentsLastSync?.last_record_time || defaultAfter;
+            const commentsUpdatedAfter = commentsLastSync?.last_record_time || undefined;
+            this.logger.log(commentsUpdatedAfter
+                ? `Incremental sync from: ${commentsUpdatedAfter}`
+                : 'First sync: fetching ALL historical ticket comments');
             try {
                 const comments = await this.ticketApi.getAllTicketComments({
                     updated_after: commentsUpdatedAfter,
@@ -368,8 +378,8 @@ let SyncService = SyncService_1 = class SyncService {
                 totalSkipped += commentsResult.skipped;
                 totalFailed += commentsResult.failed;
                 if (comments.length > 0) {
-                    const lastMessageTime = comments.reduce((max, msg) => msg.updated_at > max ? msg.updated_at : max, comments[0].updated_at);
-                    await this.updateSyncCursor('official-channel-comments', lastMessageTime, comments.length);
+                    const lastComment = comments[comments.length - 1];
+                    await this.updateSyncCursor('official-channel-comments', lastComment.updated_at, comments.length);
                 }
             }
             catch (error) {
@@ -399,14 +409,41 @@ let SyncService = SyncService_1 = class SyncService {
         }
     }
     async upsertOfficialChannelMessages(messages, sourceSystem) {
+        if (messages.length === 0)
+            return { created: 0, updated: 0, skipped: 0, failed: 0 };
         let created = 0;
         let updated = 0;
         let skipped = 0;
         let failed = 0;
-        for (const msg of messages) {
-            try {
-                const employee = await this.employeesService.findByAppNumber(msg.employee_app_number);
-                const existing = await this.supabase.findOne(this.OCM_TABLE, { source_record_id: msg.source_record_id }, { useAdmin: true });
+        try {
+            const sourceIds = messages.map(m => m.source_record_id);
+            const { data: existingRows } = await this.supabase
+                .getAdminClient()
+                .from(this.OCM_TABLE)
+                .select('source_record_id')
+                .in('source_record_id', sourceIds);
+            const existingSet = new Set((existingRows || []).map((r) => r.source_record_id));
+            const appNumbers = [...new Set(messages.map(m => m.employee_app_number).filter(Boolean))];
+            const employeeMap = new Map();
+            if (appNumbers.length > 0) {
+                const { data: employees } = await this.supabase
+                    .getAdminClient()
+                    .from('employees')
+                    .select('id, employee_app_number')
+                    .in('employee_app_number', appNumbers);
+                (employees || []).forEach((e) => {
+                    employeeMap.set(e.employee_app_number, e);
+                });
+            }
+            const toInsert = [];
+            const toUpdate = [];
+            const now = new Date().toISOString();
+            for (const msg of messages) {
+                const employee = employeeMap.get(msg.employee_app_number) || null;
+                if (!employee && msg.employee_app_number) {
+                    this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
+                    skipped++;
+                }
                 const record = {
                     source_record_id: msg.source_record_id,
                     source_system: sourceSystem,
@@ -426,25 +463,58 @@ let SyncService = SyncService_1 = class SyncService {
                     author_role: msg.author_role || null,
                     agent_type: msg.agent_type || 'human',
                     source_updated_at: msg.updated_at,
-                    synced_at: new Date().toISOString(),
+                    synced_at: now,
                 };
-                if (existing) {
-                    await this.supabase.update(this.OCM_TABLE, { source_record_id: msg.source_record_id }, record, { useAdmin: true });
-                    updated++;
+                if (existingSet.has(msg.source_record_id)) {
+                    toUpdate.push(record);
                 }
                 else {
-                    await this.supabase.create(this.OCM_TABLE, record, { useAdmin: true });
-                    created++;
-                }
-                if (!employee) {
-                    this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
-                    skipped++;
+                    toInsert.push(record);
                 }
             }
-            catch (error) {
-                this.logger.error(`Failed to upsert message ${msg.source_record_id}:`, error.message);
-                failed++;
+            if (toInsert.length > 0) {
+                const CHUNK = 200;
+                for (let i = 0; i < toInsert.length; i += CHUNK) {
+                    const chunk = toInsert.slice(i, i + CHUNK);
+                    const { error } = await this.supabase
+                        .getAdminClient()
+                        .from(this.OCM_TABLE)
+                        .insert(chunk);
+                    if (error) {
+                        if (error.code === '23505') {
+                            updated += chunk.length;
+                        }
+                        else {
+                            this.logger.error(`Batch insert error: ${error.message}`);
+                            failed += chunk.length;
+                        }
+                    }
+                    else {
+                        created += chunk.length;
+                    }
+                }
             }
+            if (toUpdate.length > 0) {
+                const CHUNK = 200;
+                for (let i = 0; i < toUpdate.length; i += CHUNK) {
+                    const chunk = toUpdate.slice(i, i + CHUNK);
+                    const { error } = await this.supabase
+                        .getAdminClient()
+                        .from(this.OCM_TABLE)
+                        .upsert(chunk, { onConflict: 'source_record_id', ignoreDuplicates: false });
+                    if (error) {
+                        this.logger.error(`Batch upsert error: ${error.message}`);
+                        failed += chunk.length;
+                    }
+                    else {
+                        updated += chunk.length;
+                    }
+                }
+            }
+        }
+        catch (error) {
+            this.logger.error('upsertOfficialChannelMessages failed:', error.message);
+            failed += messages.length;
         }
         return { created, updated, skipped, failed };
     }
@@ -595,6 +665,95 @@ let SyncService = SyncService_1 = class SyncService {
             }
         }
         return result;
+    }
+    async syncCustomerFeedbackStats(triggeredBy) {
+        const syncLog = await this.createSyncLog('customer_feedback_stats', 'review-system', triggeredBy);
+        try {
+            await this.updateSyncLog(syncLog.id, { status: 'running' });
+            const statsArray = await this.ticketApi.getPsychSyncReviews();
+            let totalFetched = statsArray.length;
+            let totalCreated = 0;
+            let totalUpdated = 0;
+            let totalFailed = 0;
+            const employees = await this.supabase.findMany('employees', {
+                filters: { is_active: true },
+                useAdmin: true,
+                limit: 9999,
+            });
+            const empByAppNumber = {};
+            for (const emp of employees) {
+                if (emp.employeeappnumber) {
+                    empByAppNumber[emp.employeeappnumber] = emp;
+                }
+            }
+            const client = this.supabase.getAdminClient();
+            for (const stat of statsArray) {
+                try {
+                    const emp = empByAppNumber[stat.app_number];
+                    const employeeId = emp?.id || null;
+                    const record = {
+                        employee_id: employeeId,
+                        employee_app_number: stat.app_number,
+                        employee_name: stat.employee_name || emp?.name || null,
+                        store_name: stat.store_name || emp?.store_name || null,
+                        total_feedbacks: stat.total_feedbacks || 0,
+                        pending_count: stat.pending_count || 0,
+                        processing_count: stat.processing_count || 0,
+                        resolved_count: stat.resolved_count || 0,
+                        closed_count: stat.closed_count || 0,
+                        by_type: stat.by_type || {},
+                        by_urgency: stat.by_urgency || {},
+                        latest_feedback_at: stat.latest_feedback_at || null,
+                        raw_data: stat,
+                        synced_at: new Date().toISOString(),
+                    };
+                    const { data: existing } = await client
+                        .from(this.CFS_TABLE)
+                        .select('id')
+                        .eq('employee_app_number', stat.app_number)
+                        .maybeSingle();
+                    if (existing) {
+                        const { error } = await client
+                            .from(this.CFS_TABLE)
+                            .update(record)
+                            .eq('employee_app_number', stat.app_number);
+                        if (error)
+                            throw error;
+                        totalUpdated++;
+                    }
+                    else {
+                        const { error } = await client.from(this.CFS_TABLE).insert(record);
+                        if (error)
+                            throw error;
+                        totalCreated++;
+                    }
+                }
+                catch (err) {
+                    this.logger.error(`Failed to upsert feedback stats for ${stat.app_number}:`, err.message);
+                    totalFailed++;
+                }
+            }
+            await this.updateSyncLog(syncLog.id, {
+                status: totalFailed > 0 ? 'partial' : 'completed',
+                finished_at: new Date().toISOString(),
+                total_fetched: totalFetched,
+                total_created: totalCreated,
+                total_updated: totalUpdated,
+                total_skipped: 0,
+                total_failed: totalFailed,
+            });
+            this.logger.log(`Customer feedback stats sync completed: ${totalFetched} fetched, ${totalCreated} created, ${totalUpdated} updated, ${totalFailed} failed`);
+            return this.getSyncLog(syncLog.id);
+        }
+        catch (error) {
+            this.logger.error('Customer feedback stats sync failed:', error);
+            await this.updateSyncLog(syncLog.id, {
+                status: 'failed',
+                finished_at: new Date().toISOString(),
+                error_message: error.message,
+            });
+            return this.getSyncLog(syncLog.id);
+        }
     }
     async getSyncCursor(syncType) {
         return this.supabase.findOne(this.SYNC_CURSORS_TABLE, { sync_type: syncType }, { useAdmin: true });
@@ -774,6 +933,53 @@ let SyncService = SyncService_1 = class SyncService {
                 total_synced: count,
             }, { useAdmin: true });
         }
+    }
+    async resetSyncCursor(syncType) {
+        const VALID_TYPES = ['official-channel-line', 'official-channel-comments', 'ticket-history', 'review-data'];
+        if (!VALID_TYPES.includes(syncType)) {
+            return { success: false, message: `Invalid cursor type. Valid: ${VALID_TYPES.join(', ')}` };
+        }
+        const { error } = await this.supabase.getAdminClient()
+            .from(this.SYNC_CURSORS_TABLE)
+            .delete()
+            .eq('sync_type', syncType);
+        if (error) {
+            this.logger.error(`Failed to reset cursor ${syncType}: ${error.message}`);
+            return { success: false, message: error.message };
+        }
+        this.logger.log(`Sync cursor reset: ${syncType}`);
+        return { success: true, message: `Cursor '${syncType}' cleared. Next sync will fetch ALL historical data.` };
+    }
+    async patchStoreNamesFromPayload() {
+        this.logger.log('Patching store_name from source_payload...');
+        const client = this.supabase.getAdminClient();
+        const { data: employees, error } = await client
+            .from('employees')
+            .select('id, store_name, source_payload')
+            .is('store_name', null)
+            .not('source_payload', 'is', null);
+        if (error) {
+            this.logger.error('Error fetching employees for patch:', error);
+            throw error;
+        }
+        this.logger.log(`Found ${employees?.length || 0} employees with null store_name`);
+        let updated = 0;
+        let skipped = 0;
+        for (const emp of employees || []) {
+            const groupname = emp.source_payload?.groupname;
+            if (groupname) {
+                await client
+                    .from('employees')
+                    .update({ store_name: groupname })
+                    .eq('id', emp.id);
+                updated++;
+            }
+            else {
+                skipped++;
+            }
+        }
+        this.logger.log(`Patch complete: ${updated} updated, ${skipped} skipped (no groupname in payload)`);
+        return { updated, skipped };
     }
 };
 exports.SyncService = SyncService;

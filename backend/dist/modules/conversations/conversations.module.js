@@ -13,12 +13,17 @@ const config_1 = require("@nestjs/config");
 const conversations_controller_1 = require("./conversations.controller");
 const conversations_service_1 = require("./conversations.service");
 const extraction_service_1 = require("./extraction.service");
+const employee_context_service_1 = require("./employee-context.service");
+const audio_transcription_service_1 = require("./audio-transcription.service");
+const smart_fill_service_1 = require("./smart-fill.service");
+const employees_module_1 = require("../employees/employees.module");
 let ConversationsModule = class ConversationsModule {
 };
 exports.ConversationsModule = ConversationsModule;
 exports.ConversationsModule = ConversationsModule = __decorate([
     (0, common_1.Module)({
         imports: [
+            employees_module_1.EmployeesModule,
             platform_express_1.MulterModule.registerAsync({
                 inject: [config_1.ConfigService],
                 useFactory: (config) => ({
@@ -29,8 +34,20 @@ exports.ConversationsModule = ConversationsModule = __decorate([
             }),
         ],
         controllers: [conversations_controller_1.ConversationsController],
-        providers: [conversations_service_1.ConversationsService, extraction_service_1.ExtractionService],
-        exports: [conversations_service_1.ConversationsService, extraction_service_1.ExtractionService],
+        providers: [
+            conversations_service_1.ConversationsService,
+            extraction_service_1.ExtractionService,
+            employee_context_service_1.EmployeeContextService,
+            audio_transcription_service_1.AudioTranscriptionService,
+            smart_fill_service_1.SmartFillService,
+        ],
+        exports: [
+            conversations_service_1.ConversationsService,
+            extraction_service_1.ExtractionService,
+            employee_context_service_1.EmployeeContextService,
+            audio_transcription_service_1.AudioTranscriptionService,
+            smart_fill_service_1.SmartFillService,
+        ],
     })
 ], ConversationsModule);
 //# sourceMappingURL=conversations.module.js.map

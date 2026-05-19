@@ -7,6 +7,7 @@ import { EmployeesModule } from '../employees/employees.module';
 import { OfficialChannelModule } from '../official-channel/official-channel.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { TicketHistoryModule } from '../ticket-history/ticket-history.module';
+import { ConversationsModule } from '../conversations/conversations.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { TicketHistoryModule } from '../ticket-history/ticket-history.module';
     OfficialChannelModule,
     ReviewsModule,
     TicketHistoryModule,
+    ConversationsModule,
   ],
   controllers: [EmployeeInsightController],
   providers: [EmployeeInsightService],

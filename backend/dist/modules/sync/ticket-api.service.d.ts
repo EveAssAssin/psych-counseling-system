@@ -61,6 +61,39 @@ export interface ExternalReviewApiResponse {
     total: number;
     records: ExternalReview[];
 }
+export interface PsychSyncFeedbackStats {
+    app_number: string;
+    employee_name?: string;
+    store_name?: string;
+    total_feedbacks: number;
+    pending_count: number;
+    processing_count: number;
+    resolved_count: number;
+    closed_count: number;
+    by_type?: {
+        complaint?: number;
+        suggestion?: number;
+        praise?: number;
+        inquiry?: number;
+        other?: number;
+    };
+    by_urgency?: {
+        urgent_plus?: number;
+        urgent?: number;
+        normal?: number;
+    };
+    latest_feedback_at?: string | null;
+    [key: string]: any;
+}
+export interface PsychSyncReviewsResponse {
+    success: boolean;
+    total_employees?: number;
+    generated_at?: string;
+    employees?: PsychSyncFeedbackStats[];
+    data?: PsychSyncFeedbackStats[];
+    records?: PsychSyncFeedbackStats[];
+    [key: string]: any;
+}
 export declare class TicketApiService {
     private readonly configService;
     private readonly logger;
@@ -103,6 +136,7 @@ export declare class TicketApiService {
         updated_before?: string;
     }): Promise<TicketHistoryRecord[]>;
     getReviewsSince(updatedAfter: string): Promise<ExternalReview[]>;
+    getPsychSyncReviews(): Promise<PsychSyncFeedbackStats[]>;
 }
 export interface TicketHistoryApiResponse {
     success: boolean;

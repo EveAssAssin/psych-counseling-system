@@ -130,12 +130,13 @@ let TicketApiService = TicketApiService_1 = class TicketApiService {
             this.logger.warn('REVIEW_SYSTEM_API_URL not configured, skipping review sync');
             return [];
         }
+        const authHeaders = apiKey ? { 'x-api-key': apiKey } : {};
         try {
             const url = `${baseUrl}/api/reviews/since/placeholder`;
             this.logger.log(`Fetching reviews since ${updatedAfter} from ${baseUrl}`);
             const response = await axios_1.default.get(url, {
                 params: { updated_after: updatedAfter },
-                headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+                headers: authHeaders,
                 timeout: 30000,
             });
             const data = response.data;
@@ -144,11 +145,10 @@ let TicketApiService = TicketApiService_1 = class TicketApiService {
         }
         catch (err) {
             try {
-                const baseUrl2 = this.configService.get('externalApis.reviewSystem.url');
                 const encodedTs = encodeURIComponent(updatedAfter);
-                const url2 = `${baseUrl2}/api/reviews/since/${encodedTs}`;
+                const url2 = `${baseUrl}/api/reviews/since/${encodedTs}`;
                 const response2 = await axios_1.default.get(url2, {
-                    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+                    headers: authHeaders,
                     timeout: 30000,
                 });
                 const data2 = response2.data;
@@ -159,6 +159,33 @@ let TicketApiService = TicketApiService_1 = class TicketApiService {
                 this.logger.error('Failed to fetch reviews from review-system:', err2.message);
                 throw err2;
             }
+        }
+    }
+    async getPsychSyncReviews() {
+        const baseUrl = this.configService.get('externalApis.reviewSystem.url');
+        const apiKey = this.configService.get('externalApis.reviewSystem.apiKey');
+        if (!baseUrl) {
+            this.logger.warn('REVIEW_SYSTEM_API_URL not configured, skipping psych-sync');
+            return [];
+        }
+        try {
+            const url = `${baseUrl}/psych-sync/reviews`;
+            this.logger.log(`Fetching psych-sync reviews from ${url}`);
+            const response = await axios_1.default.get(url, {
+                headers: apiKey ? { 'x-api-key': apiKey } : {},
+                timeout: 45000,
+            });
+            const data = response.data;
+            const employees = data.employees ||
+                data.data ||
+                data.records ||
+                (Array.isArray(data) ? data : []);
+            this.logger.log(`Fetched psych-sync stats for ${employees.length} employees`);
+            return employees;
+        }
+        catch (err) {
+            this.logger.error('Failed to fetch psych-sync reviews:', err.message);
+            throw err;
         }
     }
 };

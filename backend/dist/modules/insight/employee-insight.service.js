@@ -19,6 +19,7 @@ const employees_service_1 = require("../employees/employees.service");
 const official_channel_service_1 = require("../official-channel/official-channel.service");
 const reviews_service_1 = require("../reviews/reviews.service");
 const ticket_history_service_1 = require("../ticket-history/ticket-history.service");
+const employee_context_service_1 = require("../conversations/employee-context.service");
 const INSIGHT_SYSTEM_PROMPT = `你是一位專業的職場心理分析師與人力資源顧問，協助主管理解員工狀況並提供溝通策略。
 
 你會收到一位員工的多種資料（可能包含部分或全部）：
@@ -73,13 +74,14 @@ LINE 訊息是員工日常溝通的真實紀錄：
 
 請以 JSON 格式輸出，嚴格遵循指定的 schema。`;
 let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightService {
-    constructor(configService, supabase, employeesService, officialChannelService, reviewsService, ticketHistoryService) {
+    constructor(configService, supabase, employeesService, officialChannelService, reviewsService, ticketHistoryService, employeeContext) {
         this.configService = configService;
         this.supabase = supabase;
         this.employeesService = employeesService;
         this.officialChannelService = officialChannelService;
         this.reviewsService = reviewsService;
         this.ticketHistoryService = ticketHistoryService;
+        this.employeeContext = employeeContext;
         this.logger = new common_1.Logger(EmployeeInsightService_1.name);
         const apiKey = this.configService.get('anthropic.apiKey');
         if (apiKey) {
@@ -512,7 +514,13 @@ let EmployeeInsightService = EmployeeInsightService_1 = class EmployeeInsightSer
         if (!this.anthropic) {
             return this.getDefaultAnalysis();
         }
-        const analysisInput = this.prepareAnalysisInput(employee, data, timeline);
+        const conversationContext = await this.employeeContext.buildConversationContext(employee.id, {
+            recentFullCount: 5,
+            olderSummaryCount: 5,
+            includeAnalysis: true,
+            maxRawTextLength: 1500,
+        });
+        const analysisInput = this.prepareAnalysisInput(employee, data, timeline, conversationContext);
         const userPrompt = `請分析以下員工資料，並依照指定格式輸出 JSON：
 
 ${analysisInput}
@@ -594,7 +602,7 @@ ${analysisInput}
             return this.getDefaultAnalysis();
         }
     }
-    prepareAnalysisInput(employee, data, timeline) {
+    prepareAnalysisInput(employee, data, timeline, conversationContext) {
         let input = `【員工基本資料】
 姓名：${employee.name}
 部門：${employee.department || '未知'}
@@ -667,6 +675,9 @@ ${analysisInput}
 摘要：${latest.summary || '無'}
 
 `;
+        }
+        if (conversationContext && conversationContext.trim().length > 0) {
+            input += `${conversationContext}\n\n`;
         }
         if (data.allReviews.length > 0 || data.reviews.length > 0) {
             const rs = data.reviewStats;
@@ -772,6 +783,7 @@ exports.EmployeeInsightService = EmployeeInsightService = EmployeeInsightService
         employees_service_1.EmployeesService,
         official_channel_service_1.OfficialChannelService,
         reviews_service_1.ReviewsService,
-        ticket_history_service_1.TicketHistoryService])
+        ticket_history_service_1.TicketHistoryService,
+        employee_context_service_1.EmployeeContextService])
 ], EmployeeInsightService);
 //# sourceMappingURL=employee-insight.service.js.map

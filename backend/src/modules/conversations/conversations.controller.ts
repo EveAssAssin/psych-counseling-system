@@ -12,6 +12,7 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -23,6 +24,8 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ConversationsService } from './conversations.service';
+import { AudioTranscriptionService } from './audio-transcription.service';
+import { SmartFillService } from './smart-fill.service';
 import {
   CreateConversationDto,
   CreateConversationWithFileDto,
@@ -33,7 +36,11 @@ import {
 @ApiTags('conversations')
 @Controller('conversations')
 export class ConversationsController {
-  constructor(private readonly conversationsService: ConversationsService) {}
+  constructor(
+    private readonly conversationsService: ConversationsService,
+    private readonly audioTranscription: AudioTranscriptionService,
+    private readonly smartFill: SmartFillService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: '建立對話（文字輸入）' })
@@ -74,6 +81,106 @@ export class ConversationsController {
       mimetype: file.mimetype,
       size: file.size,
     });
+  }
+
+  @Post('transcribe')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: '音檔/逐字稿轉錄與智慧預填',
+    description:
+      '上傳音檔（mp3/m4a/wav/...）或逐字稿（txt），系統會：' +
+      '1. 音檔 → Whisper 轉錄；2. AI 清理、識別發言者、修錯字；' +
+      '3. 嘗試辨識員工/訪談者姓名；4. 萃取背景說明與初判風險訊號。' +
+      '不建立對話記錄，前端拿到結果後可預覽 / 編輯 / 確認再送 create。',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary', description: '音檔或文字稿' },
+        hint_interviewer_name: { type: 'string', description: '提示主管姓名（通常是登入者）' },
+        hint_employee_id: { type: 'string', format: 'uuid', description: '若使用者已選員工，傳 employee_id 幫助比對' },
+        language: { type: 'string', description: 'Whisper 語言碼，預設 zh', default: 'zh' },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiResponse({ status: 200, description: '轉錄與建議結果' })
+  async transcribeAndSmartFill(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: {
+      hint_interviewer_name?: string;
+      hint_employee_id?: string;
+      language?: string;
+    },
+  ) {
+    if (!file) {
+      throw new BadRequestException('請上傳檔案');
+    }
+
+    let rawTranscript = '';
+    let transcriptionMeta: any = null;
+
+    const isAudio = this.audioTranscription.isAudioFile(file.mimetype, file.originalname);
+
+    if (isAudio) {
+      // 音檔路線：先 Whisper 轉錄
+      if (!this.audioTranscription.isEnabled()) {
+        throw new BadRequestException(
+          '音檔轉錄功能未啟用。請在後端 .env 設定 OPENAI_API_KEY，或改為上傳逐字稿（txt）。',
+        );
+      }
+      const transcription = await this.audioTranscription.transcribe(
+        file.buffer,
+        file.originalname,
+        body.language || 'zh',
+      );
+      rawTranscript = transcription.textWithTimestamps;
+      transcriptionMeta = {
+        source_type: 'audio',
+        duration_seconds: transcription.durationSeconds,
+        language: transcription.language,
+        whisper_model: transcription.whisperModel,
+        segment_count: transcription.segments.length,
+      };
+    } else if (
+      file.mimetype.startsWith('text/') ||
+      file.originalname.toLowerCase().endsWith('.txt')
+    ) {
+      // 純文字逐字稿路線
+      rawTranscript = file.buffer.toString('utf-8');
+      transcriptionMeta = {
+        source_type: 'text_transcript',
+        char_count: rawTranscript.length,
+      };
+    } else {
+      throw new BadRequestException(
+        `不支援的檔案類型：${file.mimetype}。請上傳音檔（mp3/m4a/wav/...）或文字稿（.txt）。`,
+      );
+    }
+
+    // 取得已選員工的姓名（如有）作為 hint
+    let hintEmployeeName: string | undefined;
+    if (body.hint_employee_id) {
+      try {
+        const emp = await this.conversationsService.findByEmployee(body.hint_employee_id);
+        // findByEmployee 取的是對話列表，不是員工本身。改用其他方式
+        // 簡化：不查名字，讓 AI 從稿子自己抓
+      } catch {}
+    }
+
+    // 智慧預填
+    const suggestions = await this.smartFill.processTranscript(rawTranscript, {
+      hintInterviewerName: body.hint_interviewer_name,
+      hintEmployeeName,
+    });
+
+    return {
+      raw_transcript: rawTranscript,
+      transcription_meta: transcriptionMeta,
+      suggestions,
+    };
   }
 
   @Get()

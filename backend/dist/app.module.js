@@ -29,6 +29,9 @@ const upload_module_1 = require("./modules/upload/upload.module");
 const employee_sync_module_1 = require("./modules/employee-sync/employee-sync.module");
 const ticket_history_module_1 = require("./modules/ticket-history/ticket-history.module");
 const period_analysis_module_1 = require("./modules/period-analysis/period-analysis.module");
+const supervisor_notes_module_1 = require("./modules/supervisor-notes/supervisor-notes.module");
+const supervisor_ai_module_1 = require("./modules/supervisor-ai/supervisor-ai.module");
+const line_assistant_module_1 = require("./modules/line-assistant/line-assistant.module");
 const health_controller_1 = require("./health.controller");
 let AppModule = class AppModule {
 };
@@ -59,6 +62,9 @@ exports.AppModule = AppModule = __decorate([
             employee_sync_module_1.EmployeeSyncModule,
             ticket_history_module_1.TicketHistoryModule,
             period_analysis_module_1.PeriodAnalysisModule,
+            supervisor_notes_module_1.SupervisorNotesModule,
+            supervisor_ai_module_1.SupervisorAiModule,
+            line_assistant_module_1.LineAssistantModule,
         ],
         controllers: [health_controller_1.HealthController],
     })

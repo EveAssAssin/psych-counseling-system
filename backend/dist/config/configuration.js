@@ -17,6 +17,10 @@ const configuration = () => ({
         model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
         maxTokens: parseInt(process.env.ANTHROPIC_MAX_TOKENS || '4096', 10),
     },
+    openai: {
+        apiKey: process.env.OPENAI_API_KEY,
+        whisperModel: process.env.OPENAI_WHISPER_MODEL || 'whisper-1',
+    },
     google: {
         clientId: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -48,6 +52,9 @@ const configuration = () => ({
         enabled: process.env.ENABLE_SCHEDULER === 'true',
         monthlySyncCron: process.env.MONTHLY_SYNC_CRON || '0 4 5 * *',
         dailySyncCron: process.env.DAILY_SYNC_CRON || '0 5 * * *',
+    },
+    line: {
+        channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
     },
     logging: {
         level: process.env.LOG_LEVEL || 'debug',

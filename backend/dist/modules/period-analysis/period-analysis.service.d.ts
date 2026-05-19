@@ -81,6 +81,7 @@ export declare class PeriodAnalysisService {
     private fetchReviews;
     private fetchConversations;
     private fetchEmployees;
+    private fetchCustomerFeedbackStats;
     private calcDataStats;
     private calcHotTopics;
     private extractMessageKeywords;

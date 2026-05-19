@@ -70,7 +70,7 @@ export declare class EmployeeInsightController {
         success: boolean;
         data: {
             employee_name: string;
-            risk_level: "low" | "high" | "moderate" | "critical";
+            risk_level: "low" | "high" | "critical" | "moderate";
             communication: {
                 suggested_timing: string;
                 opening_approach: string;
@@ -103,9 +103,9 @@ export declare class EmployeeInsightController {
         data: {
             employee_name: string;
             current_status: {
-                risk_level: "low" | "high" | "moderate" | "critical";
-                stress_level: "low" | "high" | "moderate" | "critical";
-                trend: "improving" | "stable" | "worsening";
+                risk_level: "low" | "high" | "critical" | "moderate";
+                stress_level: "low" | "high" | "critical" | "moderate";
+                trend: "stable" | "improving" | "worsening";
             };
             transfer_assessment: {
                 current_fitness: "high" | "medium" | "low";

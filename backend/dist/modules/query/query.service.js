@@ -18,6 +18,7 @@ const supabase_service_1 = require("../supabase/supabase.service");
 const employees_service_1 = require("../employees/employees.service");
 const analysis_service_1 = require("../analysis/analysis.service");
 const employee_insight_service_1 = require("../insight/employee-insight.service");
+const employee_context_service_1 = require("../conversations/employee-context.service");
 const QUERY_SYSTEM_PROMPT = `你是一個企業心理輔導系統的查詢助手。你的任務是根據提供的員工資訊和分析結果，回答主管或 HR 的問題。
 
 回答原則：
@@ -33,12 +34,13 @@ const QUERY_SYSTEM_PROMPT = `你是一個企業心理輔導系統的查詢助手
 - 如有需要，提供建議行動
 - 如有風險提示，用【注意】標示`;
 let QueryService = QueryService_1 = class QueryService {
-    constructor(configService, supabase, employeesService, analysisService, insightService) {
+    constructor(configService, supabase, employeesService, analysisService, insightService, employeeContext) {
         this.configService = configService;
         this.supabase = supabase;
         this.employeesService = employeesService;
         this.analysisService = analysisService;
         this.insightService = insightService;
+        this.employeeContext = employeeContext;
         this.logger = new common_1.Logger(QueryService_1.name);
         const apiKey = this.configService.get('anthropic.apiKey');
         if (apiKey) {
@@ -95,6 +97,22 @@ let QueryService = QueryService_1 = class QueryService {
                 const recentEvents = insight.timeline.slice(0, 5);
                 const timelineText = recentEvents.map((e) => `  - ${new Date(e.date).toLocaleDateString('zh-TW')} [${e.category}] ${e.content.substring(0, 50)}`).join('\n');
                 contextParts.push(`【近期事件】\n${timelineText}`);
+            }
+            if (employee) {
+                try {
+                    const conversationContext = await this.employeeContext.buildConversationContext(employee.id, {
+                        recentFullCount: 3,
+                        olderSummaryCount: 3,
+                        includeAnalysis: true,
+                        maxRawTextLength: 800,
+                    });
+                    if (conversationContext) {
+                        contextParts.push(conversationContext);
+                    }
+                }
+                catch (e) {
+                    this.logger.warn(`Failed to load conversation context: ${e?.message || e}`);
+                }
             }
             contextParts.push(`【調動評估】
 - 現職適任度：${insight.transfer_assessment.current_fitness === 'high' ? '高' : insight.transfer_assessment.current_fitness === 'low' ? '低' : '中等'}
@@ -299,6 +317,7 @@ exports.QueryService = QueryService = QueryService_1 = __decorate([
         supabase_service_1.SupabaseService,
         employees_service_1.EmployeesService,
         analysis_service_1.AnalysisService,
-        employee_insight_service_1.EmployeeInsightService])
+        employee_insight_service_1.EmployeeInsightService,
+        employee_context_service_1.EmployeeContextService])
 ], QueryService);
 //# sourceMappingURL=query.service.js.map

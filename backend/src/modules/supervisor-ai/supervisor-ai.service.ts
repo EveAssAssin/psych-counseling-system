@@ -5,6 +5,7 @@ import axios from 'axios';
 import { SupabaseService } from '../supabase/supabase.service';
 import { SupervisorNotesService } from '../supervisor-notes/supervisor-notes.service';
 import { OrderStatsService } from '../sync/order-stats.service';
+import { EmployeeContextService } from '../conversations/employee-context.service';
 
 export type AiType = 'claude' | 'openai' | 'gemini';
 
@@ -18,6 +19,7 @@ export class SupervisorAiService {
     private readonly config: ConfigService,
     private readonly notesService: SupervisorNotesService,
     private readonly orderStatsService: OrderStatsService,
+    private readonly employeeContext: EmployeeContextService,
   ) {
     this.anthropic = new Anthropic({
       apiKey: this.config.get<string>('ANTHROPIC_API_KEY'),
@@ -388,8 +390,19 @@ export class SupervisorAiService {
         prompt += `\n\n【主管隨手記：尚無記錄】\n`;
       }
 
-      // ── 對話記錄 ──
-      if (conversations.length > 0) {
+      // ── 對話記錄（含完整對話 + AI 心理分析結果） ──
+      if (conversations.length > 0 && emp?.id) {
+        const conversationContext = await this.employeeContext.buildConversationContext(emp.id, {
+          recentFullCount: 5,
+          olderSummaryCount: 5,
+          includeAnalysis: true,
+          maxRawTextLength: 1500,
+        });
+        if (conversationContext) {
+          prompt += `\n\n${conversationContext}\n`;
+        }
+      } else if (conversations.length > 0) {
+        // 沒有 emp.id 時 fallback 到舊邏輯
         prompt += `\n\n【心理輔導對話記錄（共 ${conversations.length} 筆，最近 10 筆）】\n`;
         conversations.slice(0, 10).forEach((c: any, i: number) => {
           const date = c.conversation_date
