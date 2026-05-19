@@ -27,19 +27,63 @@ let PermissionsService = PermissionsService_1 = class PermissionsService {
     }
     async list(options) {
         const client = this.supabase.getAdminClient();
-        let query = client.from('v_active_permissions').select('*');
+        let rolesQuery = client
+            .from('user_roles')
+            .select('*')
+            .in('role', exports.APP_ROLES)
+            .order('created_at', { ascending: false });
         if (options?.onlyActive) {
-            query = query.eq('role_is_active', true);
+            rolesQuery = rolesQuery.eq('is_active', true);
         }
         if (options?.role) {
-            query = query.eq('role', options.role);
+            rolesQuery = rolesQuery.eq('role', options.role);
         }
-        const { data, error } = await query.order('granted_at', { ascending: false });
-        if (error) {
-            this.logger.error(`Failed to list permissions: ${error.message}`);
-            throw new common_1.BadRequestException(`查詢失敗：${error.message}`);
+        const { data: roles, error: rolesErr } = await rolesQuery;
+        if (rolesErr) {
+            this.logger.error(`Failed to list user_roles: ${rolesErr.message}`);
+            throw new common_1.BadRequestException(`查詢失敗：${rolesErr.message}`);
         }
-        return data || [];
+        if (!roles || roles.length === 0)
+            return [];
+        const userIds = [...new Set(roles.map((r) => r.user_id))];
+        const { data: users } = await client.from('users').select('*').in('id', userIds);
+        const userMap = new Map((users || []).map((u) => [u.id, u]));
+        const employeeIds = [...new Set((users || []).map((u) => u.employee_id).filter(Boolean))];
+        const employeeMap = new Map();
+        if (employeeIds.length > 0) {
+            const { data: employees } = await client.from('employees').select('*').in('id', employeeIds);
+            for (const e of employees || []) {
+                employeeMap.set(e.id, e);
+            }
+        }
+        const records = roles.map((r) => {
+            const u = userMap.get(r.user_id) || {};
+            const e = u.employee_id ? employeeMap.get(u.employee_id) : null;
+            return {
+                user_role_id: r.id,
+                user_id: r.user_id,
+                email: u.email ?? null,
+                user_name: u.name ?? null,
+                user_is_active: u.is_active ?? false,
+                last_login_at: u.last_login_at ?? null,
+                employee_id: e?.id ?? null,
+                app_number: e?.employeeappnumber ?? null,
+                erp_id: e?.employeeerpid ?? null,
+                employee_name: e?.name ?? null,
+                department: e?.department ?? null,
+                store_name: e?.store_name ?? null,
+                title: e?.title ?? null,
+                employee_is_active: e?.is_active ?? null,
+                role: r.role,
+                scope_type: r.scope_type ?? null,
+                scope_value: r.scope_value ?? null,
+                granted_by: r.granted_by ?? null,
+                role_is_active: r.is_active ?? false,
+                granted_at: r.created_at,
+                expires_at: r.expires_at ?? null,
+            };
+        });
+        return records;
     }
     async grant(params, grantedBy) {
         if (!exports.APP_ROLES.includes(params.role)) {
