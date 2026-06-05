@@ -22,6 +22,13 @@ export class CounselingCasesController {
     private readonly notifier: CaseNotifierService,
   ) {}
 
+  // ── 輔導員 picker（前端用） ──
+  @Get('supervisors')
+  @ApiOperation({ summary: '列出有效的輔導員（給前端 picker 用）' })
+  listSupervisors() {
+    return this.svc.listActiveSupervisors();
+  }
+
   // ── 狀態標籤字典 ──
   @Get('state-tags')
   @ApiOperation({ summary: '取得狀態標籤列表' })
@@ -132,7 +139,7 @@ export class CounselingCasesController {
     return this.svc.listExecutions(id);
   }
 
-  // ── 案件 AI 討論（Phase 4） ──
+  // ── 案件 AI 討論 ──
   @Get(':id/ai/sessions')
   @ApiOperation({ summary: '列出案件下所有 AI 討論 session' })
   listAiSessions(@Param('id') id: string) {
@@ -166,9 +173,9 @@ export class CounselingCasesController {
     return this.aiSvc.sendMessage(sessionId, body.supervisor_identifier, body.content);
   }
 
-  // ── LINE 推播（Phase 3.5） ──
+  // ── LINE 推播 ──
   @Post('supervisors/bind-line')
-  @ApiOperation({ summary: '綁定輔導員的 LINE userId（手動或 webhook 用）' })
+  @ApiOperation({ summary: '綁定輔導員的 LINE userId' })
   bindLine(@Body() body: { identifier: string; line_user_id: string }) {
     return this.notifier.bindLineUserId(body.identifier, body.line_user_id);
   }
@@ -181,7 +188,7 @@ export class CounselingCasesController {
 
   @Post('notify/today')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '手動觸發：對所有已綁定輔導員推送今日任務（測試 / 補推用）' })
+  @ApiOperation({ summary: '手動觸發：對所有已綁定輔導員推送今日任務' })
   notifyToday() {
     return this.notifier.pushTodayTasksToAll();
   }

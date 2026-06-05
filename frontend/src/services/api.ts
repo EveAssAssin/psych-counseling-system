@@ -367,3 +367,96 @@ export const insightApi = {
   getTransferAssessment: (appNumber: string) => 
     api.get(`/v1/employee-insight/${appNumber}/transfer-assessment`),
 };
+
+// ============================================
+// Counseling Cases API
+// ============================================
+export const counselingApi = {
+  // 輔導員 picker
+  listSupervisors: () => api.get('/counseling-cases/supervisors'),
+
+  // 狀態標籤
+  listStateTags: () => api.get('/counseling-cases/state-tags'),
+
+  // 假日表
+  listHolidays: (year?: number) => api.get('/counseling-cases/holidays', { params: { year } }),
+
+  // 今日 / 過期
+  getToday: (params?: { date?: string; supervisor_id?: string }) =>
+    api.get('/counseling-cases/today', { params }),
+  getOverdue: (supervisor_id?: string) =>
+    api.get('/counseling-cases/overdue', { params: { supervisor_id } }),
+
+  // 案件 CRUD
+  listCases: (params?: {
+    status?: string;
+    supervisor_id?: string;
+    employee_app_number?: string;
+    state_tag_code?: string;
+    limit?: number;
+    offset?: number;
+  }) => api.get('/counseling-cases', { params }),
+
+  getCase: (id: string) => api.get(`/counseling-cases/${id}`),
+
+  updateCase: (id: string, body: any) => api.patch(`/counseling-cases/${id}`, body),
+
+  closeCase: (id: string, closing_summary: string) =>
+    api.post(`/counseling-cases/${id}/close`, { closing_summary }),
+
+  // 建案
+  createDraft: (body: {
+    employee_app_number: string;
+    supervisor_id: string;
+    state_tag_codes: string[];
+    state_description?: string;
+    goal: string;
+    start_date: string;
+    target_end_date: string;
+    allowed_methods: string[];
+  }) => api.post('/counseling-cases/draft', body),
+
+  confirmCase: (body: {
+    draft_token: string;
+    adjusted_plan_items?: any[];
+    adjusted_summary?: string;
+  }) => api.post('/counseling-cases/confirm', body),
+
+  // 排程節點
+  updatePlanItem: (itemId: string, body: any) =>
+    api.patch(`/counseling-cases/plan-items/${itemId}`, body),
+
+  // 執行紀錄
+  listExecutions: (caseId: string) =>
+    api.get(`/counseling-cases/${caseId}/executions`),
+
+  createExecution: (caseId: string, body: any) =>
+    api.post(`/counseling-cases/${caseId}/executions`, body),
+
+  // 案件 AI 討論
+  listAiSessions: (caseId: string) =>
+    api.get(`/counseling-cases/${caseId}/ai/sessions`),
+
+  openAiSession: (caseId: string, supervisor_identifier: string) =>
+    api.post(`/counseling-cases/${caseId}/ai/session`, { supervisor_identifier }),
+
+  listAiMessages: (sessionId: string, supervisor_identifier: string) =>
+    api.get(`/counseling-cases/ai/sessions/${sessionId}/messages`, {
+      params: { supervisor_identifier },
+    }),
+
+  sendAiMessage: (sessionId: string, supervisor_identifier: string, content: string) =>
+    api.post(`/counseling-cases/ai/sessions/${sessionId}/messages`, {
+      supervisor_identifier,
+      content,
+    }),
+
+  // LINE 推播
+  bindLine: (identifier: string, line_user_id: string) =>
+    api.post('/counseling-cases/supervisors/bind-line', { identifier, line_user_id }),
+
+  notifyTodayAll: () => api.post('/counseling-cases/notify/today'),
+
+  notifyTodayOne: (supervisorId: string) =>
+    api.post(`/counseling-cases/notify/today/${supervisorId}`),
+};

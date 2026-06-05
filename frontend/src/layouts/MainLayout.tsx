@@ -13,6 +13,8 @@ import {
   Cog6ToothIcon,
   SparklesIcon,
   PencilSquareIcon,
+  CalendarDaysIcon,
+  FolderOpenIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore, useUIStore } from '../stores';
 import { syncApi } from '../services/api';
@@ -26,6 +28,8 @@ const navigation = [
   { name: '風險標記', href: '/risk-flags', icon: ExclamationTriangleIcon },
   { name: '智能問答', href: '/query', icon: QuestionMarkCircleIcon },
   { name: '時段分析', href: '/period-analysis', icon: SparklesIcon },
+  { name: '今日輔導', href: '/counseling-today', icon: CalendarDaysIcon },
+  { name: '輔導案', href: '/counseling-cases', icon: FolderOpenIcon },
   { name: '資料管理', href: '/data-management', icon: Cog6ToothIcon },
 ];
 

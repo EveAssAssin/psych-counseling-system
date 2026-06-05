@@ -28,6 +28,26 @@ export class CounselingCasesService {
   }
 
   // ═══════════════════════════════════════════
+  //  輔導員列表（前端 picker 用）
+  // ═══════════════════════════════════════════
+
+  async listActiveSupervisors() {
+    const { data, error } = await this.db
+      .from('authorized_supervisors')
+      .select('id, identifier, name, role, line_user_id')
+      .eq('is_active', true)
+      .order('name');
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({
+      id: r.id,
+      identifier: r.identifier,
+      name: r.name,
+      role: r.role,
+      has_line_binding: !!r.line_user_id,
+    }));
+  }
+
+  // ═══════════════════════════════════════════
   //  狀態標籤字典
   // ═══════════════════════════════════════════
 
@@ -276,7 +296,6 @@ export class CounselingCasesService {
       throw new BadRequestException('草稿已過期或不存在，請重新生成');
     }
 
-    // 1. 決定要寫入的 plan_items（用 adjusted 或 draft 原樣）
     let finalItems = draft.draft_items;
     if (dto.adjusted_plan_items && dto.adjusted_plan_items.length > 0) {
       const allowed = new Set(draft.form.allowed_methods);
@@ -302,7 +321,7 @@ export class CounselingCasesService {
       throw new BadRequestException('至少需要 1 個排程節點');
     }
 
-    // 2. 對齊到工作日（若輔導員調整了非工作日，自動推到下一個工作日）
+    // 對齊工作日
     for (const item of finalItems) {
       const isWork = await this.holidays.isWorkday(item.scheduled_date);
       if (!isWork) {
@@ -310,7 +329,7 @@ export class CounselingCasesService {
       }
     }
 
-    // 3. 寫 case
+    // 寫 case
     const summary = dto.adjusted_summary ?? draft.ai_summary;
     const { data: insertedCase, error: caseErr } = await this.db
       .from('counseling_cases')
@@ -335,7 +354,7 @@ export class CounselingCasesService {
       .single();
     if (caseErr) throw caseErr;
 
-    // 4. 寫 plan_items（批次）
+    // 寫 plan_items
     const itemRows = finalItems.map(it => ({
       case_id: insertedCase.id,
       scheduled_date: it.scheduled_date,
@@ -348,15 +367,11 @@ export class CounselingCasesService {
     }));
     const { error: itemsErr } = await this.db.from('counseling_plan_items').insert(itemRows);
     if (itemsErr) {
-      // 回滾：刪掉剛建的 case
       await this.db.from('counseling_cases').delete().eq('id', insertedCase.id);
       throw itemsErr;
     }
 
-    // 5. 清掉草稿
     this.draftStore.delete(dto.draft_token);
-
-    // 6. 回完整 case
     return this.getCase(insertedCase.id);
   }
 
@@ -374,7 +389,6 @@ export class CounselingCasesService {
       if (existing && !existing.original_scheduled_date) {
         (dto as any).original_scheduled_date = existing.scheduled_date;
       }
-      // 自動對齊工作日
       const isWork = await this.holidays.isWorkday(dto.scheduled_date);
       if (!isWork) {
         dto.scheduled_date = await this.holidays.nextWorkday(dto.scheduled_date);
@@ -424,7 +438,6 @@ export class CounselingCasesService {
         .eq('id', dto.plan_item_id)
         .eq('status', 'pending');
     }
-
     return data;
   }
 
