@@ -1,6 +1,9 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { EmployeeInsightService } from '../insight/employee-insight.service';
+import { HolidaysService } from './holidays.service';
+import { CaseDraftStoreService, CaseDraftPayload } from './case-draft-store.service';
+import { AiPlannerService } from './ai-planner.service';
 import {
   CreateCaseDraftDto, ConfirmCaseDto, UpdateCaseDto,
   UpdatePlanItemDto, CreateExecutionDto,
@@ -8,13 +11,6 @@ import {
   TodayTasksQueryDto, ListCasesQueryDto,
 } from './counseling-cases.dto';
 
-/**
- * Phase 1：CRUD 骨架 + 列表查詢。
- *
- * Phase 2 會接上 AI 排程生成（draftCase / confirmCase 的實作體）。
- * Phase 3 會強化今日任務 view 查詢與執行紀錄回填邏輯。
- * Phase 4 會把 supervisor_ai_sessions 加 case_id 後接 AI 討論。
- */
 @Injectable()
 export class CounselingCasesService {
   private readonly logger = new Logger(CounselingCasesService.name);
@@ -22,6 +18,9 @@ export class CounselingCasesService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly insight: EmployeeInsightService,
+    private readonly holidays: HolidaysService,
+    private readonly draftStore: CaseDraftStoreService,
+    private readonly planner: AiPlannerService,
   ) {}
 
   private get db() {
@@ -29,7 +28,7 @@ export class CounselingCasesService {
   }
 
   // ═══════════════════════════════════════════
-  //  狀態標籤 / 假日字典（Phase 1 已可用）
+  //  狀態標籤字典
   // ═══════════════════════════════════════════
 
   async listStateTags(includeInactive = false) {
@@ -59,6 +58,10 @@ export class CounselingCasesService {
     return { success: true };
   }
 
+  // ═══════════════════════════════════════════
+  //  假日表
+  // ═══════════════════════════════════════════
+
   async listHolidays(year?: number) {
     let q = this.db.from('counseling_holidays').select('*').order('date');
     if (year) {
@@ -76,15 +79,16 @@ export class CounselingCasesService {
       .select()
       .single();
     if (error) throw error;
+    this.holidays.invalidateCache();
     return data;
   }
 
   async deleteHoliday(date: string) {
     const { error } = await this.db.from('counseling_holidays').delete().eq('date', date);
     if (error) throw error;
+    this.holidays.invalidateCache();
     return { success: true };
   }
-
 
   // ═══════════════════════════════════════════
   //  輔導案 CRUD
@@ -143,40 +147,224 @@ export class CounselingCasesService {
   }
 
   // ═══════════════════════════════════════════
-  //  建案：草稿 / 確認（Phase 2 完整實作）
+  //  建案：草稿生成
   // ═══════════════════════════════════════════
 
-  /**
-   * Phase 1 stub：回傳 NotImplemented，避免前端先接到時誤以為已可用。
-   * Phase 2 會：
-   *   1. 用 employee_app_number 查 employees 拿 employee_id / name
-   *   2. 抓 EmployeeInsightService.getInsight(app_number) 拿快照
-   *   3. 算工作日陣列（扣假日 + 週末）
-   *   4. 組 Claude prompt，要求 JSON 輸出排程
-   *   5. 把 (snapshot + draft items) 暫存在 Redis 或記憶體 Map，回 draft_token
-   */
-  async createDraft(dto: CreateCaseDraftDto): Promise<{ draft_token: string; preview: any }> {
-    throw new BadRequestException('AI plan draft not implemented yet (Phase 2). Skeleton ready.');
+  async createDraft(dto: CreateCaseDraftDto): Promise<{
+    draft_token: string;
+    summary: string;
+    items: any[];
+    workday_dates: string[];
+    employee: { id: string; name: string; app_number: string };
+    supervisor: { id: string; name: string };
+    state_tags: any[];
+    meta: Record<string, any>;
+  }> {
+    // 1. 查員工
+    const { data: employee, error: empErr } = await this.db
+      .from('employees')
+      .select('id, name, employeeappnumber, employeeerpid, department, store_name, title, is_active')
+      .eq('employeeappnumber', dto.employee_app_number)
+      .single();
+    if (empErr || !employee) {
+      throw new NotFoundException(`找不到員工 ${dto.employee_app_number}`);
+    }
+
+    // 2. 查輔導員
+    const { data: supervisor, error: supErr } = await this.db
+      .from('authorized_supervisors')
+      .select('id, name, identifier, is_active')
+      .eq('id', dto.supervisor_id)
+      .single();
+    if (supErr || !supervisor) {
+      throw new NotFoundException(`找不到輔導員 ${dto.supervisor_id}`);
+    }
+    if (!supervisor.is_active) {
+      throw new BadRequestException('輔導員帳號已停用');
+    }
+
+    // 3. 查狀態標籤
+    const { data: tagRows, error: tagErr } = await this.db
+      .from('counseling_state_tags')
+      .select('code, label, description, ai_prompt_hint, severity, default_duration_days')
+      .in('code', dto.state_tag_codes);
+    if (tagErr) throw tagErr;
+    if (!tagRows || tagRows.length !== dto.state_tag_codes.length) {
+      throw new BadRequestException('部分狀態標籤無效');
+    }
+
+    // 4. 算工作日陣列
+    const workdayDates = await this.holidays.getWorkdayDates(dto.start_date, dto.target_end_date);
+    if (workdayDates.length === 0) {
+      throw new BadRequestException('期間內沒有任何工作日，請調整時間區間');
+    }
+
+    // 5. 拉 employee insight（容錯：失敗就 null，不阻擋建案）
+    let insightSnapshot: any = null;
+    let insightSummary: any = null;
+    try {
+      insightSnapshot = await this.insight.getInsight(dto.employee_app_number);
+      insightSummary = insightSnapshot?.summary ?? null;
+    } catch (err: any) {
+      this.logger.warn(`Insight fetch failed for ${dto.employee_app_number}: ${err?.message}`);
+    }
+
+    // 6. 呼叫 AI 排程
+    const aiOutput = await this.planner.generateDraft({
+      employee: {
+        name: employee.name,
+        app_number: employee.employeeappnumber,
+        department: employee.department,
+        store_name: employee.store_name,
+        title: employee.title,
+      },
+      state_tags: tagRows,
+      state_description: dto.state_description,
+      goal: dto.goal,
+      allowed_methods: dto.allowed_methods,
+      workday_count: workdayDates.length,
+      start_date: dto.start_date,
+      target_end_date: dto.target_end_date,
+      insight_summary: insightSummary,
+    });
+
+    // 7. 把 workday_offset 映射到實際 workday 日期
+    const draftItems = aiOutput.items.map((it, idx) => ({
+      sequence: idx + 1,
+      scheduled_date: workdayDates[Math.min(it.workday_offset, workdayDates.length - 1)],
+      method: it.method,
+      objective: it.objective,
+      recommended_actions: it.recommended_actions,
+      estimated_minutes: it.estimated_minutes,
+    }));
+
+    // 8. 暫存
+    const payload: CaseDraftPayload = {
+      form: dto,
+      resolved: {
+        employee_id: employee.id,
+        employee_name: employee.name,
+        supervisor_name: supervisor.name,
+      },
+      insight_snapshot: insightSnapshot,
+      ai_summary: aiOutput.summary,
+      draft_items: draftItems,
+      ai_meta: aiOutput.meta,
+      created_at: Date.now(),
+    };
+    const token = this.draftStore.put(payload);
+
+    return {
+      draft_token: token,
+      summary: aiOutput.summary,
+      items: draftItems,
+      workday_dates: workdayDates,
+      employee: { id: employee.id, name: employee.name, app_number: employee.employeeappnumber },
+      supervisor: { id: supervisor.id, name: supervisor.name },
+      state_tags: tagRows,
+      meta: aiOutput.meta,
+    };
   }
 
-  /**
-   * Phase 2 會：
-   *   1. 用 draft_token 取回暫存 (snapshot + draft_items + form data)
-   *   2. 把 adjusted_plan_items（若有）覆蓋 draft_items
-   *   3. 插入 counseling_cases，把 initial_insight_snapshot 存入
-   *   4. 插入 counseling_plan_items（已對齊工作日）
-   *   5. 回完整 case
-   */
+  // ═══════════════════════════════════════════
+  //  建案：確認寫入
+  // ═══════════════════════════════════════════
+
   async confirmCase(dto: ConfirmCaseDto): Promise<any> {
-    throw new BadRequestException('Case confirm not implemented yet (Phase 2). Skeleton ready.');
+    const draft = this.draftStore.get(dto.draft_token);
+    if (!draft) {
+      throw new BadRequestException('草稿已過期或不存在，請重新生成');
+    }
+
+    // 1. 決定要寫入的 plan_items（用 adjusted 或 draft 原樣）
+    let finalItems = draft.draft_items;
+    if (dto.adjusted_plan_items && dto.adjusted_plan_items.length > 0) {
+      const allowed = new Set(draft.form.allowed_methods);
+      finalItems = dto.adjusted_plan_items
+        .map((it, idx) => {
+          if (!allowed.has(it.method)) {
+            throw new BadRequestException(`第 ${idx + 1} 項使用了未授權的方法：${it.method}`);
+          }
+          return {
+            sequence: it.sequence ?? idx + 1,
+            scheduled_date: it.scheduled_date,
+            method: it.method,
+            objective: it.objective,
+            recommended_actions: it.recommended_actions ?? {},
+            estimated_minutes: it.estimated_minutes ?? 30,
+          };
+        })
+        .sort((a, b) => (a.scheduled_date > b.scheduled_date ? 1 : -1))
+        .map((x, i) => ({ ...x, sequence: i + 1 }));
+    }
+
+    if (finalItems.length === 0) {
+      throw new BadRequestException('至少需要 1 個排程節點');
+    }
+
+    // 2. 對齊到工作日（若輔導員調整了非工作日，自動推到下一個工作日）
+    for (const item of finalItems) {
+      const isWork = await this.holidays.isWorkday(item.scheduled_date);
+      if (!isWork) {
+        item.scheduled_date = await this.holidays.nextWorkday(item.scheduled_date);
+      }
+    }
+
+    // 3. 寫 case
+    const summary = dto.adjusted_summary ?? draft.ai_summary;
+    const { data: insertedCase, error: caseErr } = await this.db
+      .from('counseling_cases')
+      .insert({
+        employee_id: draft.resolved.employee_id,
+        employee_app_number: draft.form.employee_app_number,
+        employee_name: draft.resolved.employee_name,
+        supervisor_id: draft.form.supervisor_id,
+        supervisor_name: draft.resolved.supervisor_name,
+        state_tag_codes: draft.form.state_tag_codes,
+        state_description: draft.form.state_description ?? null,
+        goal: draft.form.goal,
+        start_date: draft.form.start_date,
+        target_end_date: draft.form.target_end_date,
+        allowed_methods: draft.form.allowed_methods,
+        status: 'active',
+        initial_insight_snapshot: draft.insight_snapshot,
+        ai_plan_summary: summary,
+        ai_plan_meta: draft.ai_meta,
+      })
+      .select()
+      .single();
+    if (caseErr) throw caseErr;
+
+    // 4. 寫 plan_items（批次）
+    const itemRows = finalItems.map(it => ({
+      case_id: insertedCase.id,
+      scheduled_date: it.scheduled_date,
+      sequence: it.sequence,
+      method: it.method,
+      objective: it.objective,
+      recommended_actions: it.recommended_actions,
+      estimated_minutes: it.estimated_minutes,
+      status: 'pending',
+    }));
+    const { error: itemsErr } = await this.db.from('counseling_plan_items').insert(itemRows);
+    if (itemsErr) {
+      // 回滾：刪掉剛建的 case
+      await this.db.from('counseling_cases').delete().eq('id', insertedCase.id);
+      throw itemsErr;
+    }
+
+    // 5. 清掉草稿
+    this.draftStore.delete(dto.draft_token);
+
+    // 6. 回完整 case
+    return this.getCase(insertedCase.id);
   }
 
   // ═══════════════════════════════════════════
-  //  排程節點 CRUD
+  //  排程節點
   // ═══════════════════════════════════════════
 
   async updatePlanItem(itemId: string, dto: UpdatePlanItemDto) {
-    // 若是改期，自動記錄 original_scheduled_date
     if (dto.scheduled_date) {
       const { data: existing } = await this.db
         .from('counseling_plan_items')
@@ -185,6 +373,11 @@ export class CounselingCasesService {
         .single();
       if (existing && !existing.original_scheduled_date) {
         (dto as any).original_scheduled_date = existing.scheduled_date;
+      }
+      // 自動對齊工作日
+      const isWork = await this.holidays.isWorkday(dto.scheduled_date);
+      if (!isWork) {
+        dto.scheduled_date = await this.holidays.nextWorkday(dto.scheduled_date);
       }
     }
     const { data, error } = await this.db
@@ -224,13 +417,12 @@ export class CounselingCasesService {
       .single();
     if (error) throw error;
 
-    // 若有對應排程節點，順便把它標 done
     if (dto.plan_item_id) {
       await this.db
         .from('counseling_plan_items')
         .update({ status: 'done', updated_at: new Date().toISOString() })
         .eq('id', dto.plan_item_id)
-        .eq('status', 'pending'); // 已 done 的不重複改
+        .eq('status', 'pending');
     }
 
     return data;
@@ -258,10 +450,6 @@ export class CounselingCasesService {
     return { date: today, tasks: data ?? [] };
   }
 
-  /**
-   * 也回過期未完成（pending 但 scheduled_date < today）的任務，
-   * 供前端 dashboard 警示「有遺漏」。
-   */
   async getOverdueTasks(supervisorId?: string) {
     const today = new Date().toISOString().slice(0, 10);
     let q = this.db.from('v_counseling_today').select('*').lt('scheduled_date', today);
