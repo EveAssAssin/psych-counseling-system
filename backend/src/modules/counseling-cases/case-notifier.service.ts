@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import axios from 'axios';
 import { SupabaseService } from '../supabase/supabase.service';
 
@@ -13,10 +13,6 @@ import { SupabaseService } from '../supabase/supabase.service';
  *   - 推播內容：當日 v_counseling_today 視該輔導員的待辦 + 過期警示
  *   - 沒有任務的輔導員不推（避免噪音）
  *   - 推送失敗單一輔導員不影響其他人
- *
- * 不重用 line-assistant.service 的原因：
- *   - 那邊 push 跟對話流程綁很緊（要寫回覆紀錄）
- *   - 這邊只是純發訊息，30 行就夠
  */
 @Injectable()
 export class CaseNotifierService {
@@ -50,21 +46,49 @@ export class CaseNotifierService {
   }
 
   // ═══════════════════════════════════════════
-  //  綁定 LINE userId
+  //  綁定 LINE userId（upsert：沒 supervisor 自動建）
   // ═══════════════════════════════════════════
 
   async bindLineUserId(identifier: string, lineUserId: string) {
     if (!lineUserId || !lineUserId.startsWith('U') || lineUserId.length < 30) {
       throw new BadRequestException('LINE userId 格式不正確（應為 U 開頭的長字串）');
     }
-    const { data, error } = await this.db
+
+    // 先試 UPDATE
+    const { data: updated, error: updErr } = await this.db
       .from('authorized_supervisors')
       .update({ line_user_id: lineUserId, updated_at: new Date().toISOString() })
       .eq('identifier', identifier)
-      .select('id, identifier, name, line_user_id')
+      .select('id, identifier, name, line_user_id, role, is_active')
+      .maybeSingle();
+
+    if (updErr) throw updErr;
+    if (updated) return updated;
+
+    // 沒有對應 supervisor → 從 employees 查姓名後自動建立
+    const { data: emp } = await this.db
+      .from('employees')
+      .select('name, employeeappnumber')
+      .eq('employeeappnumber', identifier)
+      .maybeSingle();
+    if (!emp) {
+      throw new NotFoundException(`員工 ${identifier} 不存在，無法綁定`);
+    }
+
+    const { data: inserted, error: insErr } = await this.db
+      .from('authorized_supervisors')
+      .insert({
+        identifier,
+        name: emp.name,
+        role: 'counselor',
+        is_active: true,
+        line_user_id: lineUserId,
+      })
+      .select('id, identifier, name, line_user_id, role, is_active')
       .single();
-    if (error || !data) throw new NotFoundException(`找不到輔導員 ${identifier}`);
-    return data;
+    if (insErr) throw insErr;
+    this.logger.log(`Auto-created authorized_supervisor for ${identifier} (${emp.name}) with LINE binding`);
+    return inserted;
   }
 
   async unbindLineUserId(identifier: string) {
@@ -134,14 +158,12 @@ export class CaseNotifierService {
 
     const today = this.todayInTaipei();
 
-    // 今日任務
     const { data: todayTasks } = await this.db
       .from('v_counseling_today').select('*')
       .eq('supervisor_id', supervisorId)
       .eq('scheduled_date', today)
       .order('case_id').order('sequence');
 
-    // 過期未完成
     const { data: overdueTasks } = await this.db
       .from('v_counseling_today').select('*')
       .eq('supervisor_id', supervisorId)
@@ -180,7 +202,6 @@ export class CaseNotifierService {
 
     if (todayTasks.length > 0) {
       lines.push(`【今日 ${todayTasks.length} 項】`);
-      // 同案聚合一起顯示
       const byCase = new Map<string, any[]>();
       for (const t of todayTasks) {
         const key = t.case_id;
@@ -205,7 +226,6 @@ export class CaseNotifierService {
     if (overdueTasks.length > 0) {
       lines.push('');
       lines.push(`⚠️ 過期未完成：${overdueTasks.length} 項`);
-      // 列出最舊的 3 筆
       for (const t of overdueTasks.slice(0, 3)) {
         const m = methodLabel[t.method] || t.method;
         lines.push(`  ${t.scheduled_date} ${t.employee_name} [${m}]`);
@@ -226,7 +246,6 @@ export class CaseNotifierService {
   }
 
   private todayInTaipei(): string {
-    // 用 Asia/Taipei 的當地日期
     const tw = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
     const y = tw.getFullYear();
     const m = String(tw.getMonth() + 1).padStart(2, '0');
@@ -242,7 +261,6 @@ export class CaseNotifierService {
     const token = this.lineToken;
     if (!token) throw new Error('LINE_CHANNEL_ACCESS_TOKEN not configured');
 
-    // LINE 單訊息 5000 字元上限；保險裁 4900
     const safeText = text.length > 4900 ? text.slice(0, 4900) + '\n…(訊息過長已截斷)' : text;
 
     await axios.post(
