@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CounselingCasesService } from './counseling-cases.service';
+import { CaseAiService } from './case-ai.service';
 import {
   CreateCaseDraftDto, ConfirmCaseDto, UpdateCaseDto,
   UpdatePlanItemDto, CreateExecutionDto,
@@ -14,7 +15,10 @@ import {
 @ApiTags('counseling-cases')
 @Controller('counseling-cases')
 export class CounselingCasesController {
-  constructor(private readonly svc: CounselingCasesService) {}
+  constructor(
+    private readonly svc: CounselingCasesService,
+    private readonly aiSvc: CaseAiService,
+  ) {}
 
   // ── 狀態標籤字典 ──
   @Get('state-tags')
@@ -67,6 +71,19 @@ export class CounselingCasesController {
     return this.svc.getOverdueTasks(supervisorId);
   }
 
+  // ── 建案：草稿 / 確認 ──
+  @Post('draft')
+  @ApiOperation({ summary: 'AI 排程草稿（不寫 DB，回 draft_token + 預覽）' })
+  createDraft(@Body() dto: CreateCaseDraftDto) {
+    return this.svc.createDraft(dto);
+  }
+
+  @Post('confirm')
+  @ApiOperation({ summary: '確認草稿並寫入正式案（含工作日自動對齊）' })
+  confirm(@Body() dto: ConfirmCaseDto) {
+    return this.svc.confirmCase(dto);
+  }
+
   // ── 輔導案列表 / 詳情 ──
   @Get()
   @ApiOperation({ summary: '輔導案列表（含篩選）' })
@@ -93,29 +110,16 @@ export class CounselingCasesController {
     return this.svc.closeCase(id, body.closing_summary);
   }
 
-  // ── 建案：草稿 / 確認（Phase 2 完整實作） ──
-  @Post('draft')
-  @ApiOperation({ summary: '建立 AI 排程草稿（Phase 2，目前 stub）' })
-  createDraft(@Body() dto: CreateCaseDraftDto) {
-    return this.svc.createDraft(dto);
-  }
-
-  @Post('confirm')
-  @ApiOperation({ summary: '確認草稿並寫入正式案（Phase 2，目前 stub）' })
-  confirm(@Body() dto: ConfirmCaseDto) {
-    return this.svc.confirmCase(dto);
-  }
-
   // ── 排程節點 ──
   @Patch('plan-items/:itemId')
-  @ApiOperation({ summary: '更新排程節點（改期 / 跳過 / 標記完成）' })
+  @ApiOperation({ summary: '更新排程節點（改期 / 跳過 / 標記完成；自動對齊工作日）' })
   updatePlanItem(@Param('itemId') itemId: string, @Body() dto: UpdatePlanItemDto) {
     return this.svc.updatePlanItem(itemId, dto);
   }
 
   // ── 執行紀錄 ──
   @Post(':id/executions')
-  @ApiOperation({ summary: '新增執行紀錄' })
+  @ApiOperation({ summary: '新增執行紀錄（自動標記對應 plan_item 為 done）' })
   createExecution(@Param('id') id: string, @Body() dto: CreateExecutionDto) {
     return this.svc.createExecution(id, dto);
   }
@@ -124,5 +128,39 @@ export class CounselingCasesController {
   @ApiOperation({ summary: '取得執行紀錄列表' })
   listExecutions(@Param('id') id: string) {
     return this.svc.listExecutions(id);
+  }
+
+  // ── 案件 AI 討論（Phase 4） ──
+  @Get(':id/ai/sessions')
+  @ApiOperation({ summary: '列出案件下所有 AI 討論 session' })
+  listAiSessions(@Param('id') id: string) {
+    return this.aiSvc.listSessions(id);
+  }
+
+  @Post(':id/ai/session')
+  @ApiOperation({ summary: '取得或建立此輔導員在此案的 session（同人同案共用一個 session）' })
+  openAiSession(
+    @Param('id') id: string,
+    @Body() body: { supervisor_identifier: string },
+  ) {
+    return this.aiSvc.getOrCreateSession(id, body.supervisor_identifier);
+  }
+
+  @Get('ai/sessions/:sessionId/messages')
+  @ApiOperation({ summary: '取得 session 訊息列表' })
+  listAiMessages(
+    @Param('sessionId') sessionId: string,
+    @Query('supervisor_identifier') supervisorIdentifier: string,
+  ) {
+    return this.aiSvc.getMessages(sessionId, supervisorIdentifier);
+  }
+
+  @Post('ai/sessions/:sessionId/messages')
+  @ApiOperation({ summary: '在 session 發送訊息，AI 自動回覆（含案件上下文）' })
+  sendAiMessage(
+    @Param('sessionId') sessionId: string,
+    @Body() body: { supervisor_identifier: string; content: string },
+  ) {
+    return this.aiSvc.sendMessage(sessionId, body.supervisor_identifier, body.content);
   }
 }
