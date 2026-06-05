@@ -30,6 +30,7 @@ import { SupervisorNotesModule } from './modules/supervisor-notes/supervisor-not
 import { SupervisorAiModule } from './modules/supervisor-ai/supervisor-ai.module';
 import { LineAssistantModule } from './modules/line-assistant/line-assistant.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { CounselingCasesModule } from './modules/counseling-cases/counseling-cases.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -70,6 +71,7 @@ import { HealthController } from './health.controller';
     SupervisorAiModule,
     LineAssistantModule,
     PermissionsModule,
+    CounselingCasesModule,
   ],
   controllers: [HealthController],
 })
