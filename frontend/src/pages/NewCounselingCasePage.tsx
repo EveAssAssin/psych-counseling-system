@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { SparklesIcon } from '@heroicons/react/24/outline';
 import { counselingApi } from '../services/api';
 import SupervisorPicker, { getActingSupervisor } from '../components/SupervisorPicker';
+import EmployeeSearchPicker from '../components/EmployeeSearchPicker';
 
 const METHOD_OPTIONS = [
   { v: 'phone', label: '電話訪談' },
@@ -158,14 +159,13 @@ export default function NewCounselingCasePage() {
       {step === 1 && (
         <div className="card p-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">員工工號（employeeappnumber）</label>
-            <input
-              type="text"
+            <label className="block text-sm font-medium text-gray-700 mb-1">員工</label>
+            <EmployeeSearchPicker
               value={empAppNum}
-              onChange={(e) => setEmpAppNum(e.target.value)}
-              placeholder="例如：A1234"
-              className="w-full border border-gray-300 rounded-md px-3 py-2"
+              onChange={(appNum) => setEmpAppNum(appNum)}
+              placeholder="輸入姓名搜尋員工..."
             />
+            <p className="text-xs text-gray-500 mt-1">輸入姓名（中文 / 英文 / 工號）會即時搜尋，點選後填入</p>
           </div>
 
           <div>
