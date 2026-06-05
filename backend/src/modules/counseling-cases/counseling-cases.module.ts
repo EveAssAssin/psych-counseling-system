@@ -5,6 +5,7 @@ import { HolidaysService } from './holidays.service';
 import { CaseDraftStoreService } from './case-draft-store.service';
 import { AiPlannerService } from './ai-planner.service';
 import { CaseAiService } from './case-ai.service';
+import { CaseNotifierService } from './case-notifier.service';
 import { SupabaseModule } from '../supabase/supabase.module';
 import { EmployeeInsightModule } from '../insight/employee-insight.module';
 
@@ -17,7 +18,8 @@ import { EmployeeInsightModule } from '../insight/employee-insight.module';
     CaseDraftStoreService,
     AiPlannerService,
     CaseAiService,
+    CaseNotifierService,
   ],
-  exports: [CounselingCasesService, HolidaysService, CaseAiService],
+  exports: [CounselingCasesService, HolidaysService, CaseAiService, CaseNotifierService],
 })
 export class CounselingCasesModule {}

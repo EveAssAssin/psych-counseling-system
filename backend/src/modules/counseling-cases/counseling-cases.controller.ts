@@ -5,6 +5,7 @@ import {
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CounselingCasesService } from './counseling-cases.service';
 import { CaseAiService } from './case-ai.service';
+import { CaseNotifierService } from './case-notifier.service';
 import {
   CreateCaseDraftDto, ConfirmCaseDto, UpdateCaseDto,
   UpdatePlanItemDto, CreateExecutionDto,
@@ -18,6 +19,7 @@ export class CounselingCasesController {
   constructor(
     private readonly svc: CounselingCasesService,
     private readonly aiSvc: CaseAiService,
+    private readonly notifier: CaseNotifierService,
   ) {}
 
   // ── 狀態標籤字典 ──
@@ -58,7 +60,7 @@ export class CounselingCasesController {
     return this.svc.deleteHoliday(date);
   }
 
-  // ── 今日任務（dashboard 用，先放上面方便前端常呼叫）──
+  // ── 今日任務 ──
   @Get('today')
   @ApiOperation({ summary: '今日輔導任務（可帶 date / supervisor_id）' })
   getToday(@Query() query: TodayTasksQueryDto) {
@@ -162,5 +164,32 @@ export class CounselingCasesController {
     @Body() body: { supervisor_identifier: string; content: string },
   ) {
     return this.aiSvc.sendMessage(sessionId, body.supervisor_identifier, body.content);
+  }
+
+  // ── LINE 推播（Phase 3.5） ──
+  @Post('supervisors/bind-line')
+  @ApiOperation({ summary: '綁定輔導員的 LINE userId（手動或 webhook 用）' })
+  bindLine(@Body() body: { identifier: string; line_user_id: string }) {
+    return this.notifier.bindLineUserId(body.identifier, body.line_user_id);
+  }
+
+  @Delete('supervisors/:identifier/line')
+  @ApiOperation({ summary: '解除輔導員的 LINE 綁定' })
+  unbindLine(@Param('identifier') identifier: string) {
+    return this.notifier.unbindLineUserId(identifier);
+  }
+
+  @Post('notify/today')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '手動觸發：對所有已綁定輔導員推送今日任務（測試 / 補推用）' })
+  notifyToday() {
+    return this.notifier.pushTodayTasksToAll();
+  }
+
+  @Post('notify/today/:supervisorId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '手動觸發：對單一輔導員推送今日任務' })
+  notifyTodayOne(@Param('supervisorId') supervisorId: string) {
+    return this.notifier.pushTodayTasksToSupervisor(supervisorId);
   }
 }
