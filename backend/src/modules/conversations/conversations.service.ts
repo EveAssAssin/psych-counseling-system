@@ -47,6 +47,30 @@ export class ConversationsService {
       { useAdmin: true },
     );
 
+    // 串連附件：前端已先呼叫 /api/upload 把檔案存到 Storage，
+    // 這裡只把回傳的檔案資訊寫進 conversation_attachments 建立關聯。
+    if (Array.isArray(dto.attachments) && dto.attachments.length > 0) {
+      for (const att of dto.attachments) {
+        if (!att || !att.path) continue;
+        await this.supabase.create<ConversationAttachment>(
+          this.ATTACHMENTS_TABLE,
+          {
+            conversation_intake_id: intake.id,
+            storage_path: att.path,
+            file_name: att.fileName || String(att.path).split('/').pop(),
+            mime_type: att.mimeType,
+            size_bytes: att.fileSize,
+            extraction_status: 'pending',
+            uploaded_at: new Date().toISOString(),
+          },
+          { useAdmin: true },
+        );
+      }
+      this.logger.log(
+        `Linked ${dto.attachments.length} attachment(s) to intake ${intake.id}`,
+      );
+    }
+
     this.logger.log(`Conversation created: ${intake.id}`);
     return intake;
   }

@@ -133,6 +133,14 @@ export class CreateConversationDto {
   @IsOptional()
   tags?: string[];
 
+  @ApiPropertyOptional({
+    description: '附件清單（前端已上傳至 Storage，這裡僅建立 DB 關聯）',
+    type: [Object],
+  })
+  @IsArray()
+  @IsOptional()
+  attachments?: any[];
+
   @ApiPropertyOptional({ description: '是否立即分析', default: true })
   @IsBoolean()
   @IsOptional()
