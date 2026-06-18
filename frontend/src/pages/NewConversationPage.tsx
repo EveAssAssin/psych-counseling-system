@@ -96,6 +96,15 @@ export default function NewConversationPage() {
 
   // ── 智慧匯入：上傳音檔或逐字稿 ──
   const handleTranscribeUpload = async (file: File) => {
+    // 客戶端防呆：超過上限直接擋下並提示，避免送出後才失敗讓使用者誤以為系統故障
+    const MAX_UPLOAD_MB = 25; // 對齊後端 MAX_FILE_SIZE 與 Whisper 25MB 上限
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      toast.error(
+        `檔案 ${(file.size / 1024 / 1024).toFixed(1)}MB 超過上限 ${MAX_UPLOAD_MB}MB，無法上傳。請壓縮或分段後再試。`
+      );
+      if (audioInputRef.current) audioInputRef.current.value = '';
+      return;
+    }
     setSuggestions(null);
     setRawTranscript('');
     setTranscribing(true);
