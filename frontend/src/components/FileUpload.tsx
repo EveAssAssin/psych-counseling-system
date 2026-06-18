@@ -23,7 +23,7 @@ export default function FileUpload({
   subFolder,
   onUploadComplete,
   maxFiles = 5,
-  accept = 'image/*,video/*,audio/*',
+  accept = 'image/*,video/*,audio/*,.zip',
   label = '上傳檔案',
 }: FileUploadProps) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -38,6 +38,33 @@ export default function FileUpload({
     if (files.length + selectedFiles.length > maxFiles) {
       setError(`最多只能上傳 ${maxFiles} 個檔案`);
       return;
+    }
+
+    // 客戶端預檢：上傳前先擋掉過大的檔案並給友善提示，避免久候後才失敗、讓使用者誤以為系統故障
+    const SIZE_LIMIT_MB: Record<string, number> = {
+      image: 10, video: 100, audio: 50, document: 30, archive: 50,
+    };
+    const classify = (file: File): keyof typeof SIZE_LIMIT_MB | null => {
+      const t = file.type;
+      if (t.startsWith('image/')) return 'image';
+      if (t.startsWith('video/')) return 'video';
+      if (t.startsWith('audio/')) return 'audio';
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (ext === 'zip') return 'archive';
+      if (ext && ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'aac', 'amr', '3gp'].includes(ext)) return 'audio';
+      if (ext && ['mp4', 'mov', 'avi', 'wmv'].includes(ext)) return 'video';
+      if (ext && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(ext)) return 'image';
+      if (ext && ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'].includes(ext)) return 'document';
+      return null;
+    };
+    for (const file of Array.from(selectedFiles)) {
+      const kind = classify(file);
+      const limitMB = kind ? SIZE_LIMIT_MB[kind] : 100;
+      if (file.size > limitMB * 1024 * 1024) {
+        setError(`「${file.name}」${(file.size / 1024 / 1024).toFixed(1)}MB 超過上限 ${limitMB}MB，請壓縮後再上傳。`);
+        if (inputRef.current) inputRef.current.value = '';
+        return;
+      }
     }
 
     setUploading(true);
