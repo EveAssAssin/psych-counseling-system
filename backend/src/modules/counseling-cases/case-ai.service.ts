@@ -34,7 +34,7 @@ export class CaseAiService {
     this.anthropic = new Anthropic({
       apiKey: this.config.get<string>('ANTHROPIC_API_KEY'),
     });
-    this.model = this.config.get<string>('anthropic.model') || 'claude-sonnet-4-20250514';
+    this.model = this.config.get<string>('anthropic.model') || 'claude-sonnet-4-6';
   }
 
   private get db() { return this.supabase.getAdminClient(); }

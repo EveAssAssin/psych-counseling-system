@@ -328,7 +328,7 @@ export class QueryService {
 
     try {
       const response = await this.anthropic.messages.create({
-        model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-20250514',
+        model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: QUERY_SYSTEM_PROMPT,
         messages: [

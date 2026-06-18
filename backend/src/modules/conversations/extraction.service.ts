@@ -89,7 +89,7 @@ export class ExtractionService {
       const mediaType = mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 
       const response = await this.anthropic.messages.create({
-        model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-20250514',
+        model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-6',
         max_tokens: 4096,
         messages: [
           {

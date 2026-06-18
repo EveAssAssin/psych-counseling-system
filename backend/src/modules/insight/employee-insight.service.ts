@@ -241,7 +241,7 @@ export class EmployeeInsightService {
       ...aiAnalysis,
       analysis_metadata: {
         analyzed_at: new Date().toISOString(),
-        model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-20250514',
+        model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-6',
         confidence_score: aiAnalysis.confidence_score || 0.7,
         data_completeness: this.calculateDataCompleteness(collectedData),
       },
@@ -295,7 +295,7 @@ export class EmployeeInsightService {
         recommended_actions: cached.recommended_actions || {},
         analysis_metadata: {
           analyzed_at: cached.analyzed_at,
-          model: cached.model_name || 'claude-sonnet-4-20250514',
+          model: cached.model_name || 'claude-sonnet-4-6',
           confidence_score: cached.confidence_score || 0.7,
           data_completeness: cached.data_completeness || 0.2,
         },
@@ -326,7 +326,7 @@ export class EmployeeInsightService {
         historical_patterns: insight.historical_patterns || {},
         recommended_actions: insight.recommended_actions || {},
         timeline_snapshot: (insight.timeline || []).slice(0, 30),
-        model_name: insight.analysis_metadata?.model || 'claude-sonnet-4-20250514',
+        model_name: insight.analysis_metadata?.model || 'claude-sonnet-4-6',
         confidence_score: insight.analysis_metadata?.confidence_score || 0.7,
         data_completeness: insight.analysis_metadata?.data_completeness || 0.2,
         analyzed_at: new Date().toISOString(),
@@ -800,7 +800,7 @@ ${analysisInput}
 
     try {
       const response = await this.anthropic.messages.create({
-        model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-20250514',
+        model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: INSIGHT_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userPrompt }],

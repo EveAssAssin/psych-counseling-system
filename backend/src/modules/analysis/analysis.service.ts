@@ -171,7 +171,7 @@ ${text}
     this.logger.debug('Calling Claude API for analysis');
 
     const response = await this.anthropic.messages.create({
-      model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-20250514',
+      model: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-6',
       max_tokens: this.configService.get<number>('anthropic.maxTokens') || 4096,
       system: ANALYSIS_SYSTEM_PROMPT,
       messages: [
@@ -243,7 +243,7 @@ ${text}
         followup_suggested_at: followupSuggestedAt,
         supervisor_involvement: output.supervisor_involvement,
         next_talk_focus: output.next_talk_focus,
-        model_name: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-20250514',
+        model_name: this.configService.get<string>('anthropic.model') || 'claude-sonnet-4-6',
         analysis_prompt_version: ANALYSIS_PROMPT_VERSION,
         raw_response: output as any,
         confidence_score: output.confidence_score,
