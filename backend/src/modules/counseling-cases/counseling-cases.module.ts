@@ -8,9 +8,10 @@ import { CaseAiService } from './case-ai.service';
 import { CaseNotifierService } from './case-notifier.service';
 import { SupabaseModule } from '../supabase/supabase.module';
 import { EmployeeInsightModule } from '../insight/employee-insight.module';
+import { SyncModule } from '../sync/sync.module';
 
 @Module({
-  imports: [SupabaseModule, EmployeeInsightModule],
+  imports: [SupabaseModule, EmployeeInsightModule, SyncModule],
   controllers: [CounselingCasesController],
   providers: [
     CounselingCasesService,

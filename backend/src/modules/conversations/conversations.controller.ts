@@ -50,7 +50,7 @@ export class ConversationsController {
   }
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   @ApiOperation({ summary: '建立對話（檔案上傳）' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -84,7 +84,7 @@ export class ConversationsController {
   }
 
   @Post('transcribe')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
   @ApiOperation({
     summary: '音檔/逐字稿轉錄與智慧預填',
     description:
@@ -233,7 +233,4 @@ export class ConversationsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '刪除對話' })
   @ApiResponse({ status: 204, description: '刪除成功' })
-  async delete(@Param('id', ParseUUIDPipe) id: string) {
-    await this.conversationsService.delete(id);
-  }
-}
+  async delete(@Param('id',

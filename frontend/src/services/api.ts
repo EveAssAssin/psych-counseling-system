@@ -161,10 +161,17 @@ export const conversationsApi = {
    * 上傳音檔 → Whisper 轉文字 → Claude 清理 + 識別員工/主管/背景
    * 不會建立對話記錄，回傳建議讓使用者預覽再確認
    */
-  transcribe: (formData: FormData) => api.post('/conversations/transcribe', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 180000,   // 音檔轉錄可能需要 1-3 分鐘
-  }),
+  transcribe: (formData: FormData, opts?: { onUploadProgress?: (e: any) => void }) =>
+    api.post('/conversations/transcribe', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      // Whisper (20-60s for 1MB) + Claude smart-fill (10-30s) 通常 1-3 分鐘
+      // 留 6 分鐘 buffer，配合 vite proxy 5 分鐘 timeout
+      timeout: 6 * 60 * 1000,
+      onUploadProgress: opts?.onUploadProgress,
+      // 大檔不要被 axios 預設 maxContentLength（10MB）擋
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    }),
 
   update: (id: string, data: any) => api.put(`/conversations/${id}`, data),
   
@@ -377,6 +384,16 @@ export const counselingApi = {
 
   // 狀態標籤
   listStateTags: () => api.get('/counseling-cases/state-tags'),
+  upsertStateTag: (body: {
+    code: string;
+    label: string;
+    description?: string;
+    ai_prompt_hint?: string;
+    severity?: string;
+    default_duration_days?: number;
+    sort_order?: number;
+  }) => api.post('/counseling-cases/state-tags', body),
+  deactivateStateTag: (id: string) => api.delete(`/counseling-cases/state-tags/${id}`),
 
   // 假日表
   listHolidays: (year?: number) => api.get('/counseling-cases/holidays', { params: { year } }),
@@ -450,6 +467,10 @@ export const counselingApi = {
       supervisor_identifier,
       content,
     }),
+
+  // 員工出勤（左手 API）
+  getEmployeeAttendance: (appNumber: string, params?: { start_date?: string; end_date?: string }) =>
+    api.get(`/counseling-cases/employee-attendance/${appNumber}`, { params }),
 
   // LINE 推播
   bindLine: (identifier: string, line_user_id: string) =>

@@ -304,6 +304,56 @@ export class LefthandApiService {
       };
     }
   }
+
+  /**
+   * API #28 - 取得員工出勤資料 (HRM 系統)
+   *
+   * 用於輔導案查看員工最近的休假/排休/請假狀況。
+   * 注意：此 API 走 hrm.lohaseyewear.tw（與其他 map.lohasglasses.com 不同）。
+   */
+  async getEmployeeAttendance(
+    employeeErpIds: string[],
+    startDate: string,
+    endDate: string,
+  ): Promise<{
+    success: boolean;
+    data: AttendanceApiData[];
+    message: string;
+  }> {
+    try {
+      if (!employeeErpIds || employeeErpIds.length === 0) {
+        return { success: false, data: [], message: '沒有員工 ERP ID' };
+      }
+      const HRM_URL = 'https://hrm.lohaseyewear.tw/_api/v1.ashx';
+      const idsStr = employeeErpIds.join(',');
+      const encryptedIds = this.encrypt(idsStr);
+
+      const response = await axios.post(
+        HRM_URL,
+        {
+          method: 'getemployeeattendance',
+          employeeErpids: encryptedIds,
+          startdate: startDate,
+          enddate: endDate,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 60000,
+        },
+      );
+
+      const result = response.data;
+      if (result.statecode === '0') {
+        const data = Array.isArray(result.data) ? result.data : [];
+        return { success: true, data, message: result.message || '取得成功' };
+      }
+      this.logger.warn(`Attendance API error: ${result.message}`);
+      return { success: false, data: [], message: result.message || 'API 錯誤' };
+    } catch (error: any) {
+      this.logger.error('Failed to fetch attendance:', error.message);
+      return { success: false, data: [], message: error.message };
+    }
+  }
 }
 
 // API 資料型態定義
@@ -373,3 +423,30 @@ export interface AreaApiData {
   id: number;
   name: string;
 }
+
+export interface AttendanceApiData {
+  employeeErpid: string;
+  employeeId: number;
+  employeeName: string;
+  attendances: AttendanceDayData[];
+}
+
+export interface AttendanceDayData {
+  workDate: string;
+  attendanceResult: string;  // '排休' / '上班' / '休假' / ...
+  groupName: string;
+  checkTime: string;
+  timeGap: string;
+  dayOff: { dayOffDate: string; groupName: string } | null;
+  annualLeave: { startTime: string; endTime: string; description: string } | null;
+  leaveItems: Array<{
+    leaveRuleTypeTitle: string;
+    description: string;
+    leaveRuleState: string;
+    startTime: string;
+    endTime: string;
+  }>;
+  overTime: { startTime: string; endTime: string; description: string } | null;
+  changeGroup: { fromGroupName: string; toGroupName: string; description: string } | null;
+}
+

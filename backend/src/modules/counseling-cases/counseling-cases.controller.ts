@@ -22,6 +22,17 @@ export class CounselingCasesController {
     private readonly notifier: CaseNotifierService,
   ) {}
 
+  // ── 員工出勤（左手 API） ──
+  @Get('employee-attendance/:appNumber')
+  @ApiOperation({ summary: '取得員工最近出勤狀況（含休假、請假），給輔導排程參考' })
+  getEmployeeAttendance(
+    @Param('appNumber') appNumber: string,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.svc.getEmployeeAttendance(appNumber, startDate, endDate);
+  }
+
   // ── 輔導員 picker（前端用） ──
   @Get('supervisors')
   @ApiOperation({ summary: '列出有效的輔導員（給前端 picker 用）' })

@@ -5,6 +5,7 @@ import {
   ArrowLeftIcon, ChatBubbleLeftRightIcon, CalendarIcon, ClipboardDocumentListIcon, PaperAirplaneIcon,
 } from '@heroicons/react/24/outline';
 import { counselingApi } from '../services/api';
+import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel';
 import SupervisorPicker, { getActingSupervisor } from '../components/SupervisorPicker';
 
 const METHOD_LABEL: Record<string, string> = {
@@ -18,6 +19,30 @@ const STATUS_BADGE: Record<string, string> = {
   skipped: 'bg-gray-100 text-gray-400 line-through',
   rescheduled: 'bg-yellow-100 text-yellow-700',
 };
+
+const PLAN_ITEM_STATUSES = [
+  { v: 'pending', label: '待執行' },
+  { v: 'done', label: '已完成' },
+  { v: 'skipped', label: '跳過' },
+  { v: 'rescheduled', label: '已改期' },
+];
+
+const CASE_STATUSES = [
+  { v: 'planning',  label: '規劃中',  cls: 'bg-gray-100 text-gray-700' },
+  { v: 'active',    label: '進行中',  cls: 'bg-green-100 text-green-800' },
+  { v: 'paused',    label: '暫停',    cls: 'bg-yellow-100 text-yellow-800' },
+  { v: 'completed', label: '已結案',  cls: 'bg-primary-100 text-primary-800' },
+  { v: 'archived',  label: '已封存',  cls: 'bg-gray-100 text-gray-500' },
+];
+
+const METHOD_OPTIONS = [
+  { v: 'phone', label: '電話' },
+  { v: 'face_to_face', label: '面談' },
+  { v: 'line_text', label: 'LINE 文字' },
+  { v: 'observation', label: '實地觀察' },
+  { v: 'group', label: '小組' },
+  { v: 'written', label: '書面' },
+];
 
 export default function CounselingCaseDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -84,7 +109,7 @@ export default function CounselingCaseDetailPage() {
         </div>
         <div>
           <p className="text-xs text-gray-500">狀態</p>
-          <p className="font-medium">{caseData.status}</p>
+          <CaseStatusSwitcher caseData={caseData} onChanged={load} />
         </div>
         <div className="col-span-2 md:col-span-4">
           <p className="text-xs text-gray-500">狀態標籤</p>
@@ -101,6 +126,9 @@ export default function CounselingCaseDetailPage() {
           </div>
         )}
       </div>
+
+      {/* 員工最近出勤 / 休假（從左手系統 API 抓） */}
+      <EmployeeAttendancePanel appNumber={caseData.employee_app_number} />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
@@ -143,10 +171,11 @@ function TabBtn({ active, onClick, icon, children }: any) {
 }
 
 // ─────────────────────────────────────────
-//  Timeline tab
+//  Timeline tab — 可內嵌編輯每個排程節點
 // ─────────────────────────────────────────
 function TimelineTab({ caseData, reload, supervisor }: { caseData: any; reload: () => void; supervisor: any }) {
   const [execModal, setExecModal] = useState<any | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   return (
     <div className="card p-0">
@@ -154,43 +183,61 @@ function TimelineTab({ caseData, reload, supervisor }: { caseData: any; reload: 
         <div className="p-8 text-center text-gray-500">無排程節點</div>
       ) : (
         <ul className="divide-y divide-gray-200">
-          {caseData.plan_items.map((it: any) => (
-            <li key={it.id} className="p-3 flex items-start gap-3">
-              <div className="text-center w-20 flex-shrink-0">
-                <p className="text-xs text-gray-500">#{it.sequence}</p>
-                <p className="text-sm font-semibold">{it.scheduled_date}</p>
-                <span className={`inline-block text-xs px-2 py-0.5 rounded mt-1 ${STATUS_BADGE[it.status] || ''}`}>
-                  {it.status}
-                </span>
-              </div>
-              <div className="flex-1">
-                <p className="text-sm">
-                  <span className="font-medium text-primary-700">[{METHOD_LABEL[it.method] || it.method}]</span> {it.objective}
-                </p>
-                {it.recommended_actions && Object.keys(it.recommended_actions).length > 0 && (
-                  <details className="text-xs text-gray-600 mt-1">
-                    <summary className="cursor-pointer">查看 AI 建議</summary>
-                    <pre className="mt-1 p-2 bg-gray-50 rounded whitespace-pre-wrap text-xs">
+          {caseData.plan_items.map((it: any) =>
+            editingId === it.id ? (
+              <PlanItemEditRow
+                key={it.id}
+                item={it}
+                allowedMethods={caseData.allowed_methods || []}
+                onCancel={() => setEditingId(null)}
+                onSaved={() => { setEditingId(null); reload(); }}
+              />
+            ) : (
+              <li key={it.id} className="p-3 flex items-start gap-3">
+                <div className="text-center w-20 flex-shrink-0">
+                  <p className="text-xs text-gray-500">#{it.sequence}</p>
+                  <p className="text-sm font-semibold">{it.scheduled_date}</p>
+                  <span className={`inline-block text-xs px-2 py-0.5 rounded mt-1 ${STATUS_BADGE[it.status] || ''}`}>
+                    {PLAN_ITEM_STATUSES.find(x => x.v === it.status)?.label || it.status}
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm">
+                    <span className="font-medium text-primary-700">
+                      [{METHOD_OPTIONS.find(m => m.v === it.method)?.label || it.method}]
+                    </span> {it.objective}
+                  </p>
+                  {it.recommended_actions && Object.keys(it.recommended_actions).length > 0 && (
+                    <details className="text-xs text-gray-600 mt-1">
+                      <summary className="cursor-pointer">查看 AI 建議</summary>
+                      <pre className="mt-1 p-2 bg-gray-50 rounded whitespace-pre-wrap text-xs">
 {JSON.stringify(it.recommended_actions, null, 2)}
-                    </pre>
-                  </details>
-                )}
-                {it.original_scheduled_date && (
-                  <p className="text-xs text-gray-400 mt-1">原排於 {it.original_scheduled_date}</p>
-                )}
-              </div>
-              <div className="flex-shrink-0">
-                {it.status === 'pending' && (
+                      </pre>
+                    </details>
+                  )}
+                  {it.original_scheduled_date && (
+                    <p className="text-xs text-gray-400 mt-1">原排於 {it.original_scheduled_date}</p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1 flex-shrink-0">
                   <button
-                    onClick={() => setExecModal(it)}
-                    className="text-xs px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                    onClick={() => setEditingId(it.id)}
+                    className="text-xs px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-50"
                   >
-                    填執行紀錄
+                    編輯
                   </button>
-                )}
-              </div>
-            </li>
-          ))}
+                  {it.status === 'pending' && (
+                    <button
+                      onClick={() => setExecModal(it)}
+                      className="text-xs px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                    >
+                      填執行紀錄
+                    </button>
+                  )}
+                </div>
+              </li>
+            )
+          )}
         </ul>
       )}
 
@@ -204,6 +251,190 @@ function TimelineTab({ caseData, reload, supervisor }: { caseData: any; reload: 
         />
       )}
     </div>
+  );
+}
+
+function PlanItemEditRow({ item, allowedMethods, onCancel, onSaved }: any) {
+  const [date, setDate] = useState(item.scheduled_date);
+  const [method, setMethod] = useState(item.method);
+  const [objective, setObjective] = useState(item.objective);
+  const [minutes, setMinutes] = useState(item.estimated_minutes ?? 30);
+  const [status, setStatus] = useState(item.status);
+  const [reason, setReason] = useState(item.reschedule_reason || '');
+  const [saving, setSaving] = useState(false);
+
+  const methods = (allowedMethods && allowedMethods.length > 0)
+    ? METHOD_OPTIONS.filter(m => allowedMethods.includes(m.v))
+    : METHOD_OPTIONS;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const patch: any = {
+        scheduled_date: date,
+        method,
+        objective,
+        estimated_minutes: minutes,
+        status,
+      };
+      if (status === 'rescheduled' && reason) patch.reschedule_reason = reason;
+      await counselingApi.updatePlanItem(item.id, patch);
+      toast.success('已更新');
+      onSaved();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || '更新失敗');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="p-3 bg-yellow-50 border-l-4 border-yellow-400 space-y-2">
+      <div className="flex items-center gap-2 flex-wrap text-sm">
+        <span className="font-bold text-primary-600">#{item.sequence}</span>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="border border-gray-300 rounded-md px-2 py-1"
+        />
+        <select
+          value={method}
+          onChange={(e) => setMethod(e.target.value)}
+          className="border border-gray-300 rounded-md px-2 py-1"
+        >
+          {methods.map(m => <option key={m.v} value={m.v}>{m.label}</option>)}
+        </select>
+        <input
+          type="number"
+          value={minutes}
+          onChange={(e) => setMinutes(parseInt(e.target.value, 10) || 30)}
+          className="border border-gray-300 rounded-md px-2 py-1 w-20"
+          min={5} max={180}
+        />
+        <span className="text-xs text-gray-500">分鐘</span>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="border border-gray-300 rounded-md px-2 py-1"
+        >
+          {PLAN_ITEM_STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+        </select>
+      </div>
+      <textarea
+        value={objective}
+        onChange={(e) => setObjective(e.target.value)}
+        rows={2}
+        className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm"
+        placeholder="目標"
+      />
+      {status === 'rescheduled' && (
+        <input
+          type="text"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="改期原因（選填）"
+          className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm"
+        />
+      )}
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="text-xs px-3 py-1 border border-gray-300 rounded-md">取消</button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="text-xs px-3 py-1 bg-primary-600 text-white rounded-md disabled:opacity-50"
+        >
+          {saving ? '儲存中...' : '儲存'}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+// 案件狀態切換器（在頭部）
+function CaseStatusSwitcher({ caseData, onChanged }: { caseData: any; onChanged: () => void }) {
+  const [closing, setClosing] = useState(false);
+  const [closeSummary, setCloseSummary] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const current = CASE_STATUSES.find(s => s.v === caseData.status);
+
+  const change = async (newStatus: string) => {
+    if (newStatus === 'completed') {
+      // 走結案流程，要填總結
+      setCloseSummary('');
+      setClosing(true);
+      return;
+    }
+    if (newStatus === caseData.status) return;
+    setSubmitting(true);
+    try {
+      await counselingApi.updateCase(caseData.id, { status: newStatus });
+      toast.success(`狀態已改為 ${CASE_STATUSES.find(s => s.v === newStatus)?.label}`);
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || '切換失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitClose = async () => {
+    setSubmitting(true);
+    try {
+      await counselingApi.closeCase(caseData.id, closeSummary.trim() || '(無補充)');
+      toast.success('案件已結案');
+      setClosing(false);
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || '結案失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <select
+        value={caseData.status}
+        onChange={(e) => change(e.target.value)}
+        disabled={submitting}
+        className={`text-xs px-2 py-1 rounded border-0 ${current?.cls || 'bg-gray-100 text-gray-700'} disabled:cursor-not-allowed`}
+      >
+        {CASE_STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+      </select>
+      {closing && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-4 border-b">
+              <h3 className="font-semibold text-gray-900">結案</h3>
+              <p className="text-xs text-gray-500 mt-1">填寫結案總結（會留檔）</p>
+            </div>
+            <div className="p-4">
+              <textarea
+                value={closeSummary}
+                onChange={(e) => setCloseSummary(e.target.value)}
+                rows={5}
+                placeholder="例如：員工狀況已改善，後續每月關懷一次即可"
+                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+              />
+            </div>
+            <div className="p-3 border-t flex justify-end gap-2">
+              <button onClick={() => setClosing(false)} className="px-3 py-1.5 border border-gray-300 rounded-md text-sm">
+                取消
+              </button>
+              <button
+                onClick={submitClose}
+                disabled={submitting}
+                className="px-3 py-1.5 bg-primary-600 text-white rounded-md text-sm disabled:opacity-50"
+              >
+                {submitting ? '結案中...' : '確認結案'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

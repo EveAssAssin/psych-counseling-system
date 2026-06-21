@@ -120,13 +120,41 @@ export default function NewConversationPage() {
       if (formData.employee_id) fd.append('hint_employee_id', formData.employee_id);
       fd.append('language', 'zh');
 
-      const res = await conversationsApi.transcribe(fd);
+      const startedAt = Date.now();
+      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+      const res = await conversationsApi.transcribe(fd, {
+        onUploadProgress: (e: any) => {
+          if (!e.total) return;
+          const pct = Math.round((e.loaded / e.total) * 100);
+          if (pct < 100) {
+            setTranscribeProgress(`📤 上傳中 ${pct}% (${sizeMB} MB)`);
+          } else {
+            const elapsed = Math.round((Date.now() - startedAt) / 1000);
+            setTranscribeProgress(
+              `✅ 已上傳完成 (${sizeMB} MB / ${elapsed}s)，AI 處理中（Whisper 轉錄 + Claude 整理，1-3 分鐘）…`
+            );
+          }
+        },
+      });
       setRawTranscript(res.data.raw_transcript || '');
       setSuggestions(res.data.suggestions || null);
       toast.success('智慧匯入完成，請檢視 AI 建議並選擇套用');
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || '上傳失敗';
-      toast.error(msg);
+      // 詳細錯誤分類
+      let msg: string;
+      if (err?.code === 'ECONNABORTED') {
+        msg = `處理超時（>6 分鐘）：${err.message}。可能原因：① 後端 AI 服務沒回應 ② Vite 代理 / nginx timeout 不夠長 ③ 檔案過大`;
+      } else if (err?.response?.status === 413) {
+        msg = '檔案過大被擋下（>25MB）。請壓縮或剪短。';
+      } else if (err?.response?.status === 502 || err?.response?.status === 504) {
+        msg = `代理層 ${err.response.status} 錯誤：通常是後端 timeout 或重啟中。`;
+      } else if (err?.response?.data?.message) {
+        msg = `[${err.response.status}] ${err.response.data.message}`;
+      } else {
+        msg = err?.message || '上傳失敗';
+      }
+      toast.error(msg, { duration: 10000 });
+      console.error('[transcribe error]', err);
     } finally {
       setTranscribing(false);
       setTranscribeProgress('');

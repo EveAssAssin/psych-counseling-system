@@ -4,6 +4,7 @@ import { EmployeeInsightService } from '../insight/employee-insight.service';
 import { HolidaysService } from './holidays.service';
 import { CaseDraftStoreService, CaseDraftPayload } from './case-draft-store.service';
 import { AiPlannerService } from './ai-planner.service';
+import { LefthandApiService } from '../sync/lefthand-api.service';
 import {
   CreateCaseDraftDto, ConfirmCaseDto, UpdateCaseDto,
   UpdatePlanItemDto, CreateExecutionDto,
@@ -21,6 +22,7 @@ export class CounselingCasesService {
     private readonly holidays: HolidaysService,
     private readonly draftStore: CaseDraftStoreService,
     private readonly planner: AiPlannerService,
+    private readonly lefthand: LefthandApiService,
   ) {}
 
   private get db() {
@@ -45,6 +47,70 @@ export class CounselingCasesService {
       role: r.role,
       has_line_binding: !!r.line_user_id,
     }));
+  }
+
+  // ═══════════════════════════════════════════
+  //  員工出勤資料（左手 API #28）
+  // ═══════════════════════════════════════════
+
+  /**
+   * 取得員工最近一段期間的出勤狀況（含休假、請假、加班）。
+   * 給輔導案排程時提供參考，避免在員工放假日安排輔導。
+   */
+  async getEmployeeAttendance(appNumber: string, startDate?: string, endDate?: string) {
+    // 預設過去 30 天 + 未來 14 天
+    const today = new Date();
+    const start = startDate || (() => {
+      const d = new Date(today); d.setDate(d.getDate() - 30);
+      return d.toISOString().slice(0, 10);
+    })();
+    const end = endDate || (() => {
+      const d = new Date(today); d.setDate(d.getDate() + 14);
+      return d.toISOString().slice(0, 10);
+    })();
+
+    // 1. app_number → erpid
+    const { data: emp, error } = await this.db
+      .from('employees')
+      .select('id, name, employeeappnumber, employeeerpid')
+      .eq('employeeappnumber', appNumber)
+      .single();
+    if (error || !emp) {
+      throw new NotFoundException(`找不到員工 ${appNumber}`);
+    }
+    if (!emp.employeeerpid) {
+      return {
+        success: false,
+        message: '此員工沒有 ERP ID，無法查詢出勤',
+        employee: { name: emp.name, app_number: emp.employeeappnumber },
+        days: [],
+      };
+    }
+
+    // 2. 呼叫左手 API
+    const r = await this.lefthand.getEmployeeAttendance([emp.employeeerpid], start, end);
+    if (!r.success) {
+      return {
+        success: false,
+        message: r.message,
+        employee: { name: emp.name, app_number: emp.employeeappnumber, erp_id: emp.employeeerpid },
+        days: [],
+      };
+    }
+
+    const empData = (r.data || []).find((d: any) => d.employeeErpid === emp.employeeerpid) || r.data?.[0];
+    const attendances = empData?.attendances || [];
+
+    return {
+      success: true,
+      employee: {
+        name: emp.name,
+        app_number: emp.employeeappnumber,
+        erp_id: emp.employeeerpid,
+      },
+      range: { start, end },
+      days: attendances,
+    };
   }
 
   // ═══════════════════════════════════════════

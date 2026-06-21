@@ -170,7 +170,7 @@ export default function NewCounselingCasePage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">狀態標籤（可多選）</label>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               {stateTags.map((t) => (
                 <button
                   key={t.code}
@@ -188,6 +188,7 @@ export default function NewCounselingCasePage() {
                   {t.label}
                 </button>
               ))}
+              <NewStateTagButton onCreated={(t) => { setStateTags(prev => [...prev, t]); setPickedTags(prev => [...prev, t.code]); }} />
             </div>
           </div>
 
@@ -369,5 +370,112 @@ export default function NewCounselingCasePage() {
         </div>
       )}
     </div>
+  );
+}
+
+function NewStateTagButton({ onCreated }: { onCreated: (t: any) => void }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState('');
+  const [desc, setDesc] = useState('');
+  const [duration, setDuration] = useState(14);
+  const [saving, setSaving] = useState(false);
+
+  const makeCode = () => {
+    // 簡單用時間戳作為唯一 code（label 由 user 填）
+    return 'custom_' + Date.now().toString(36);
+  };
+
+  const save = async () => {
+    const lbl = label.trim();
+    if (!lbl) {
+      toast.error('請填顯示名稱');
+      return;
+    }
+    setSaving(true);
+    try {
+      const code = makeCode();
+      const r = await counselingApi.upsertStateTag({
+        code,
+        label: lbl,
+        description: desc.trim() || undefined,
+        default_duration_days: duration,
+        severity: 'moderate',
+      });
+      toast.success('已新增狀態');
+      onCreated(r.data);
+      setOpen(false);
+      setLabel(''); setDesc(''); setDuration(14);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || '新增失敗');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="px-3 py-1 rounded-md text-sm border border-dashed border-primary-300 text-primary-700 hover:bg-primary-50"
+      >
+        + 新增自訂狀態
+      </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-4 border-b">
+              <h3 className="font-semibold text-gray-900">新增自訂狀態標籤</h3>
+              <p className="text-xs text-gray-500 mt-1">新增後可供本案與未來案件使用</p>
+            </div>
+            <div className="p-4 space-y-3 text-sm">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">顯示名稱 *</label>
+                <input
+                  type="text"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="例如：家庭因素 / 家人重病"
+                  className="w-full border border-gray-300 rounded-md px-2 py-1.5"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">說明</label>
+                <textarea
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  rows={2}
+                  placeholder="什麼狀況會歸到這類"
+                  className="w-full border border-gray-300 rounded-md px-2 py-1.5"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">建議輔導期（天）</label>
+                <input
+                  type="number"
+                  value={duration}
+                  onChange={(e) => setDuration(parseInt(e.target.value, 10) || 14)}
+                  min={1}
+                  className="w-32 border border-gray-300 rounded-md px-2 py-1.5"
+                />
+              </div>
+            </div>
+            <div className="p-3 border-t flex justify-end gap-2">
+              <button onClick={() => setOpen(false)} className="px-3 py-1.5 border border-gray-300 rounded-md text-sm">
+                取消
+              </button>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="px-3 py-1.5 bg-primary-600 text-white rounded-md text-sm disabled:opacity-50"
+              >
+                {saving ? '新增中...' : '新增'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
