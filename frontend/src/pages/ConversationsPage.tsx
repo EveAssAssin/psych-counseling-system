@@ -80,6 +80,7 @@ export default function ConversationsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">日期</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">員工</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">類型</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">訪談者</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">優先級</th>
@@ -91,9 +92,24 @@ export default function ConversationsPage() {
               {conversations.map((conv) => (
                 <tr key={conv.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {conv.conversation_date 
+                    {conv.conversation_date
                       ? new Date(conv.conversation_date).toLocaleDateString('zh-TW')
                       : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {conv.employee ? (
+                      <div>
+                        <div className="font-medium">{conv.employee.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {conv.employee.employeeappnumber}
+                          {conv.employee.store_name && (
+                            <span className="ml-1">· {conv.employee.store_name}</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {conv.conversation_type || '-'}

@@ -163,17 +163,19 @@ export class ConversationsService {
    * 取得單一對話
    */
   async findById(id: string): Promise<ConversationIntake> {
-    const intake = await this.supabase.findOne<ConversationIntake>(
-      this.TABLE,
-      { id },
-      { useAdmin: true },
-    );
+    // 用 raw client embed employees，讓詳情頁能顯示員工資料
+    const client = this.supabase.getAdminClient();
+    const { data: intake, error } = await client
+      .from(this.TABLE)
+      .select('*, employee:employees(id, name, employeeappnumber, department, store_name, title)')
+      .eq('id', id)
+      .single();
 
-    if (!intake) {
+    if (error || !intake) {
       throw new NotFoundException(`Conversation not found: ${id}`);
     }
 
-    return intake;
+    return intake as any;
   }
 
   /**
@@ -200,7 +202,10 @@ export class ConversationsService {
     const offset = dto.offset || 0;
 
     const client = this.supabase.getAdminClient();
-    let query = client.from(this.TABLE).select('*', { count: 'exact' });
+    // embed employees(name, employeeappnumber) 讓列表能顯示員工姓名
+    let query = client
+      .from(this.TABLE)
+      .select('*, employee:employees(id, name, employeeappnumber, department, store_name)', { count: 'exact' });
 
     // 篩選條件
     if (dto.employee_id) {
@@ -368,12 +373,4 @@ export class ConversationsService {
   }> {
     const [total, pending, completed, failed, needFollowup] = await Promise.all([
       this.supabase.count(this.TABLE, {}, { useAdmin: true }),
-      this.supabase.count(this.TABLE, { intake_status: IntakeStatus.PENDING }, { useAdmin: true }),
-      this.supabase.count(this.TABLE, { intake_status: IntakeStatus.COMPLETED }, { useAdmin: true }),
-      this.supabase.count(this.TABLE, { intake_status: IntakeStatus.FAILED }, { useAdmin: true }),
-      this.supabase.count(this.TABLE, { need_followup: true }, { useAdmin: true }),
-    ]);
-
-    return { total, pending, completed, failed, needFollowup };
-  }
-}
+      this.supabase.count(this.TABLE, { intake_status: IntakeStatus.PENDING }, { useA
