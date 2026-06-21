@@ -431,10 +431,16 @@ ${text}
   async getHighRiskAnalyses(limit: number = 20): Promise<AnalysisResult[]> {
     const client = this.supabase.getAdminClient();
 
+    // 用 inner join + 過濾條件，自動過濾「已離職 / 已停用」員工。
+    // !inner 讓 employees 變必要條件，且關聯 employee 會被一起回傳。
     const { data, error } = await client
       .from(this.TABLE)
-      .select('*')
+      .select(
+        '*, employee:employees!inner(id, name, employeeappnumber, department, store_name, is_active, is_leave)',
+      )
       .in('risk_level', ['high', 'critical'])
+      .eq('employee.is_active', true)
+      .eq('employee.is_leave', false)
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -442,6 +448,10 @@ ${text}
       throw error;
     }
 
-    return data || [];
+    // 把 employee.name 平鋪到頂層 employee_name，相容前端原本顯示邏輯
+    return (data || []).map((row: any) => ({
+      ...row,
+      employee_name: row.employee?.name || row.employee_name || null,
+    }));
   }
 }
