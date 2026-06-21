@@ -1,0 +1,124 @@
+# 心理輔導系統 nginx site config 範例
+# ────────────────────────────────────────────────────
+# 路徑：/etc/nginx/sites-available/psych.ruki-ai.com
+# 啟用：sudo ln -s /etc/nginx/sites-available/psych.ruki-ai.com /etc/nginx/sites-enabled/
+# 套用：sudo nginx -t && sudo systemctl reload nginx
+# ────────────────────────────────────────────────────
+#
+# 假設：
+#   - 前端 vite build 後產物在 /var/www/psych-counseling/frontend/dist
+#   - backend 在 localhost:3001（用 pm2 或 systemd 管）
+#
+# 若 backend 在 docker：把 localhost:3001 改成對應 service:port
+
+# ── 全域：允許大檔上傳（音檔 25MB+） ──
+# 也可以放在 location 內，這裡放外面比較通用
+client_max_body_size 100M;
+client_body_buffer_size 1M;
+
+# 上傳暫存區
+client_body_temp_path /var/cache/nginx/client_temp;
+
+# HTTP → HTTPS 自動跳轉
+server {
+    listen 80;
+    server_name psych.ruki-ai.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name psych.ruki-ai.com;
+
+    # SSL 憑證（用 certbot 申請後路徑通常長這樣）
+    ssl_certificate     /etc/letsencrypt/live/psych.ruki-ai.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/psych.ruki-ai.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    # ── 安全 header ──
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # ── 前端 SPA：先試靜態檔，不存在 fallback 到 index.html ──
+    root /var/www/psych-counseling/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+
+        # 靜態檔 cache
+        expires 1h;
+        add_header Cache-Control "public, max-age=3600";
+    }
+
+    # JS / CSS / 圖片可以更長 cache（vite build 會 hash 檔名）
+    location ~* \.(js|css|svg|png|jpg|jpeg|gif|woff|woff2|ttf|eot|ico)$ {
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files $uri =404;
+    }
+
+    # ────────────────────────────────────────────────────
+    # /api → backend
+    # ────────────────────────────────────────────────────
+    location /api/ {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+
+        # ⏱️ 重點：給長 AI 流程足夠時間
+        # Whisper 轉錄 + Claude smart-fill 可能跑 1-3 分鐘
+        proxy_connect_timeout 60s;       # 連到 backend 多久 timeout
+        proxy_send_timeout    360s;      # 寫請求給 backend 多久 timeout
+        proxy_read_timeout    360s;      # 等 backend 回應多久 timeout
+
+        # 別 buffer，long-running streaming 友善
+        proxy_buffering off;
+        proxy_request_buffering off;
+
+        # 把真實 IP / host / scheme 傳給 backend
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket 支援（若日後加即時功能）
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # ────────────────────────────────────────────────────
+    # 客製：上傳專用端點 — 給更大 body size
+    # 若不想全域 100M，可以縮全域、單獨放寬這幾個端點
+    # ────────────────────────────────────────────────────
+    location ~ ^/api/(conversations/(upload|transcribe)|upload) {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+
+        client_max_body_size 200M;       # 影片可能更大
+        client_body_timeout  360s;       # 慢速上傳保護
+
+        # 同上 timeout
+        proxy_connect_timeout 60s;
+        proxy_send_timeout    360s;
+        proxy_read_timeout    360s;
+        proxy_buffering       off;
+        proxy_request_buffering off;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # health check：給 cloudflare / monitoring 用
+    location = /health {
+        proxy_pass http://localhost:3001/api/health;
+        access_log off;
+    }
+
+    # access log
+    access_log /var/log/nginx/psych-counseling.access.log;
+    error_log  /var/log/nginx/psych-counseling.error.log warn;
+}
