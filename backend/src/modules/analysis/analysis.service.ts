@@ -184,33 +184,67 @@ ${text}
 
     // 解析回應
     const content = response.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type from Claude');
+    if (!content || content.type !== 'text') {
+      this.logger.error('Claude 回應不是文字格式:', response.content);
+      throw new Error(`AI 回應格式異常 (type=${content?.type || 'undefined'})`);
+    }
+    const rawText = content.text || '';
+
+    if (!rawText.trim()) {
+      this.logger.error('Claude 回應為空字串');
+      throw new Error('AI 回應為空，可能是 model 或內容觸發安全過濾');
     }
 
+    // ── 強健 JSON 提取 ──
+    // 不只剝 markdown fence，主動找第一個 {...} 區塊，能容忍 Claude 加前後說明文字
+    const extractJson = (text: string): string => {
+      let t = text.trim();
+      // 1. 剝 markdown fence
+      const fenceMatch = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```\s*$/i);
+      if (fenceMatch) t = fenceMatch[1].trim();
+      // 2. 若仍不以 { 開頭，找第一個 { 與最後一個 } 之間的內容
+      if (!t.startsWith('{')) {
+        const firstBrace = t.indexOf('{');
+        const lastBrace = t.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+          t = t.slice(firstBrace, lastBrace + 1);
+        }
+      }
+      return t;
+    };
+
+    let jsonText: string;
+    let output: AIAnalysisOutput;
     try {
-      // 嘗試解析 JSON
-      let jsonText = content.text.trim();
-      
-      // 移除可能的 markdown code block
-      if (jsonText.startsWith('```json')) {
-        jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      } else if (jsonText.startsWith('```')) {
-        jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      jsonText = extractJson(rawText);
+      const parsed = JSON.parse(jsonText);
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error(`AI 回傳的不是 JSON 物件（拿到 ${typeof parsed === 'object' && parsed === null ? 'null' : typeof parsed}）`);
       }
-
-      const output = JSON.parse(jsonText) as AIAnalysisOutput;
-      
-      // 驗證必要欄位
-      if (!output.current_psychological_state || !output.stress_level || !output.risk_level) {
-        throw new Error('Missing required fields in AI output');
-      }
-
-      return output;
-    } catch (parseError) {
-      this.logger.error('Failed to parse AI response:', content.text);
-      throw new Error(`Failed to parse AI response: ${parseError.message}`);
+      output = parsed as AIAnalysisOutput;
+    } catch (parseError: any) {
+      // 把 Claude 的原始回應記到 backend log 方便排查
+      this.logger.error(
+        `Failed to parse AI response: ${parseError?.message}\n` +
+        `Raw Claude response (前 500 字)：${rawText.slice(0, 500)}`,
+      );
+      throw new Error(
+        `AI 回應無法解析為 JSON：${parseError?.message}。` +
+        `原始回應前 200 字：${rawText.slice(0, 200)}`,
+      );
     }
+
+    // 驗證必要欄位
+    const missing: string[] = [];
+    if (!output.current_psychological_state) missing.push('current_psychological_state');
+    if (!output.stress_level) missing.push('stress_level');
+    if (!output.risk_level) missing.push('risk_level');
+    if (missing.length > 0) {
+      this.logger.error(`AI output 缺欄位: ${missing.join(', ')}, raw: ${rawText.slice(0, 300)}`);
+      throw new Error(`AI 分析輸出缺少必要欄位：${missing.join(', ')}`);
+    }
+
+    return output;
   }
 
   /**
