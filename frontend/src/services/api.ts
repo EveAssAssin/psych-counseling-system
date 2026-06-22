@@ -187,7 +187,8 @@ export const conversationsApi = {
 // ============================================
 export const analysisApi = {
   run: (conversationId: string, force?: boolean) => 
-    api.post(`/analysis/run/${conversationId}`, null, { params: { force } }),
+    // 注意：第二參數不能傳 null，Express body-parser strict mode 會 400
+    api.post(`/analysis/run/${conversationId}`, {}, { params: { force } }),
   
   getById: (id: string) => api.get(`/analysis/${id}`),
   
