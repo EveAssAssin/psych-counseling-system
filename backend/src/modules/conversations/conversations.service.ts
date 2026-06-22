@@ -163,11 +163,10 @@ export class ConversationsService {
    * 取得單一對話
    */
   async findById(id: string): Promise<ConversationIntake> {
-    // 用 raw client embed employees，讓詳情頁能顯示員工資料
     const client = this.supabase.getAdminClient();
     const { data: intake, error } = await client
       .from(this.TABLE)
-      .select('*, employee:employees(id, name, employeeappnumber, department, store_name, title)')
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -175,7 +174,20 @@ export class ConversationsService {
       throw new NotFoundException(`Conversation not found: ${id}`);
     }
 
-    return intake as any;
+    // 額外查員工資料 attach 上去（兩段式查詢避免 PostgREST embed 漏 row）
+    const anyIntake = intake as any;
+    if (anyIntake.employee_id) {
+      const { data: emp } = await client
+        .from('employees')
+        .select('id, name, employeeappnumber, department, store_name, title')
+        .eq('id', anyIntake.employee_id)
+        .maybeSingle();
+      anyIntake.employee = emp || null;
+    } else {
+      anyIntake.employee = null;
+    }
+
+    return anyIntake as ConversationIntake;
   }
 
   /**
@@ -202,10 +214,9 @@ export class ConversationsService {
     const offset = dto.offset || 0;
 
     const client = this.supabase.getAdminClient();
-    // embed employees(name, employeeappnumber) 讓列表能顯示員工姓名
     let query = client
       .from(this.TABLE)
-      .select('*, employee:employees(id, name, employeeappnumber, department, store_name)', { count: 'exact' });
+      .select('*', { count: 'exact' });
 
     // 篩選條件
     if (dto.employee_id) {
