@@ -1,21 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { conversationsApi } from '../services/api';
 import toast from 'react-hot-toast';
+
+const PAGE_SIZE_OPTIONS = [20, 50, 100, 200];
 
 export default function ConversationsPage() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
-  useEffect(() => {
-    loadConversations();
-  }, []);
-
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
+    setLoading(true);
     try {
-      const response = await conversationsApi.search({ limit: 50 });
+      const offset = (page - 1) * pageSize;
+      const response = await conversationsApi.search({ limit: pageSize, offset });
       setConversations(response.data.data);
       setTotal(response.data.total);
     } catch (error) {
@@ -23,6 +25,16 @@ export default function ConversationsPage() {
     } finally {
       setLoading(false);
     }
+  }, [page, pageSize]);
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
+
+  // 換 pageSize 時回到第 1 頁
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setPage(1);
   };
 
   const getStatusBadge = (status: string) => {
@@ -49,6 +61,10 @@ export default function ConversationsPage() {
     return texts[status] || status;
   };
 
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const startIdx = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endIdx = Math.min(page * pageSize, total);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -69,11 +85,17 @@ export default function ConversationsPage() {
           </div>
         ) : conversations.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
-            尚無對話記錄
-            <br />
-            <Link to="/conversations/new" className="text-primary-600 hover:underline mt-2 inline-block">
-              建立第一筆對話
-            </Link>
+            {total === 0 ? (
+              <>
+                尚無對話記錄
+                <br />
+                <Link to="/conversations/new" className="text-primary-600 hover:underline mt-2 inline-block">
+                  建立第一筆對話
+                </Link>
+              </>
+            ) : (
+              '此分頁無資料'
+            )}
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
@@ -139,6 +161,52 @@ export default function ConversationsPage() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* 分頁控制 */}
+        {!loading && total > 0 && (
+          <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 text-sm">
+            <div className="flex items-center gap-3 text-gray-600">
+              <span>
+                顯示 {startIdx} - {endIdx}，共 {total} 筆
+              </span>
+              <span className="text-gray-400">|</span>
+              <label className="flex items-center gap-1">
+                每頁
+                <select
+                  value={pageSize}
+                  onChange={(e) => handlePageSizeChange(parseInt(e.target.value, 10))}
+                  className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                >
+                  {PAGE_SIZE_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                筆
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="p-1.5 border border-gray-300 rounded-md disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
+                aria-label="上一頁"
+              >
+                <ChevronLeftIcon className="h-4 w-4" />
+              </button>
+              <span className="text-gray-700 px-2">
+                第 {page} / {totalPages} 頁
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="p-1.5 border border-gray-300 rounded-md disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
+                aria-label="下一頁"
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
