@@ -239,8 +239,26 @@ export class ConversationsService {
       throw error;
     }
 
+    // 批次查員工資料：把所有 unique employee_id 抓出來查一次，attach 回每筆 row。
+    // 改成兩段式查詢，避免 PostgREST embed (`*, employee:employees(...)`)
+    // 在某些 FK / null 情境下把整列 row 漏掉（5/26 之前的資料消失的根因）。
+    const rows = (data || []) as any[];
+    const empIds = Array.from(new Set(rows.map((r) => r.employee_id).filter(Boolean)));
+    const empMap = new Map<string, any>();
+    if (empIds.length > 0) {
+      const { data: emps } = await client
+        .from('employees')
+        .select('id, name, employeeappnumber, department, store_name')
+        .in('id', empIds);
+      for (const e of emps || []) empMap.set(e.id, e);
+    }
+    const enriched = rows.map((r) => ({
+      ...r,
+      employee: r.employee_id ? empMap.get(r.employee_id) || null : null,
+    }));
+
     return {
-      data: data || [],
+      data: enriched as any,
       total: count || 0,
       limit,
       offset,
