@@ -233,4 +233,7 @@ export class ConversationsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '刪除對話' })
   @ApiResponse({ status: 204, description: '刪除成功' })
-  async delete(@Param('id',
+  async delete(@Param('id', ParseUUIDPipe) id: string) {
+    await this.conversationsService.delete(id);
+  }
+}

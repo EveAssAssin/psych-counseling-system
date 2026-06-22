@@ -210,6 +210,11 @@ export class UpdateConversationDto {
   @IsOptional()
   background_note?: string;
 
+  @ApiPropertyOptional({ description: '對話內容文字' })
+  @IsString()
+  @IsOptional()
+  raw_text?: string;
+
   @ApiPropertyOptional({ enum: Priority })
   @IsEnum(Priority)
   @IsOptional()

@@ -264,10 +264,17 @@ export class ConversationsService {
   async update(id: string, dto: UpdateConversationDto): Promise<ConversationIntake> {
     this.logger.log(`Updating conversation: ${id}`);
 
+    // 編輯對話內容(raw_text)時一併同步 extracted_text，
+    // 否則分析讀的是 extracted_text || raw_text，會看到舊內容。
+    const patch: Record<string, any> = { ...dto };
+    if (dto.raw_text !== undefined) {
+      patch.extracted_text = dto.raw_text;
+    }
+
     const intake = await this.supabase.update<ConversationIntake>(
       this.TABLE,
       { id },
-      dto,
+      patch,
       { useAdmin: true },
     );
 
@@ -373,4 +380,12 @@ export class ConversationsService {
   }> {
     const [total, pending, completed, failed, needFollowup] = await Promise.all([
       this.supabase.count(this.TABLE, {}, { useAdmin: true }),
-      this.supabase.count(this.TABLE, { intake_status: IntakeStatus.PENDING }, { useA
+      this.supabase.count(this.TABLE, { intake_status: IntakeStatus.PENDING }, { useAdmin: true }),
+      this.supabase.count(this.TABLE, { intake_status: IntakeStatus.COMPLETED }, { useAdmin: true }),
+      this.supabase.count(this.TABLE, { intake_status: IntakeStatus.FAILED }, { useAdmin: true }),
+      this.supabase.count(this.TABLE, { need_followup: true }, { useAdmin: true }),
+    ]);
+
+    return { total, pending, completed, failed, needFollowup };
+  }
+}
