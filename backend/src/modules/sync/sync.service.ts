@@ -674,32 +674,54 @@ export class SyncService {
       const existingSet = new Set((existingRows || []).map((r: any) => r.source_record_id));
 
       // ── Step 2: 一次查出本批所有 app_number 的員工資料 ──
+      // 注意：employees 表的欄位是 `employeeappnumber`（無底線），
+      // official_channel_messages 表則是 `employee_app_number`（有底線）
       const appNumbers = [...new Set(messages.map(m => m.employee_app_number).filter(Boolean))];
       const employeeMap = new Map<string, any>();
 
       if (appNumbers.length > 0) {
-        const { data: employees } = await this.supabase
+        const { data: employees, error: empErr } = await this.supabase
           .getAdminClient()
           .from('employees')
-          .select('id, employee_app_number')
-          .in('employee_app_number', appNumbers);
+          .select('id, employeeappnumber')
+          .in('employeeappnumber', appNumbers);
+
+        if (empErr) {
+          this.logger.warn(`Failed to fetch employees for lookup: ${empErr.message}`);
+        }
 
         (employees || []).forEach((e: any) => {
-          employeeMap.set(e.employee_app_number, e);
+          employeeMap.set(e.employeeappnumber, e);
         });
+
+        this.logger.log(
+          `Employee lookup: ${appNumbers.length} app_numbers queried, ${employeeMap.size} matched in employees table`,
+        );
       }
 
       // ── Step 3: 分成 new / existing 兩批，各自批量操作 ──
       const toInsert: any[] = [];
       const toUpdate: any[] = [];
       const now = new Date().toISOString();
+      let nullAppNumberSkipped = 0;
 
       for (const msg of messages) {
+        // 沒有 employee_app_number 的訊息（例如系統訊息、匿名）跳過，
+        // 因為 official_channel_messages.employee_app_number 是 NOT NULL constraint。
+        // 這在既有邏輯中會導致「Batch insert error: null value... violates not-null constraint」，
+        // 一次讓整批 200 筆全滅。
+        if (!msg.employee_app_number) {
+          nullAppNumberSkipped++;
+          skipped++;
+          continue;
+        }
+
         const employee = employeeMap.get(msg.employee_app_number) || null;
 
-        if (!employee && msg.employee_app_number) {
+        if (!employee) {
           this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
-          skipped++;
+          // 即使查不到員工，還是要 insert（employee_id 用 null），
+          // 因為 employee_app_number 已經有值，符合 NOT NULL constraint
         }
 
         const record = {
@@ -778,6 +800,10 @@ export class SyncService {
       this.logger.error('upsertOfficialChannelMessages failed:', error.message);
       failed += messages.length;
     }
+
+    this.logger.log(
+      `upsertOfficialChannelMessages summary: ${messages.length} received → ${created} created, ${updated} updated, ${skipped} skipped, ${failed} failed`,
+    );
 
     return { created, updated, skipped, failed };
   }

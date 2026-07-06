@@ -455,23 +455,32 @@ let SyncService = SyncService_1 = class SyncService {
             const appNumbers = [...new Set(messages.map(m => m.employee_app_number).filter(Boolean))];
             const employeeMap = new Map();
             if (appNumbers.length > 0) {
-                const { data: employees } = await this.supabase
+                const { data: employees, error: empErr } = await this.supabase
                     .getAdminClient()
                     .from('employees')
-                    .select('id, employee_app_number')
-                    .in('employee_app_number', appNumbers);
+                    .select('id, employeeappnumber')
+                    .in('employeeappnumber', appNumbers);
+                if (empErr) {
+                    this.logger.warn(`Failed to fetch employees for lookup: ${empErr.message}`);
+                }
                 (employees || []).forEach((e) => {
-                    employeeMap.set(e.employee_app_number, e);
+                    employeeMap.set(e.employeeappnumber, e);
                 });
+                this.logger.log(`Employee lookup: ${appNumbers.length} app_numbers queried, ${employeeMap.size} matched in employees table`);
             }
             const toInsert = [];
             const toUpdate = [];
             const now = new Date().toISOString();
+            let nullAppNumberSkipped = 0;
             for (const msg of messages) {
-                const employee = employeeMap.get(msg.employee_app_number) || null;
-                if (!employee && msg.employee_app_number) {
-                    this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
+                if (!msg.employee_app_number) {
+                    nullAppNumberSkipped++;
                     skipped++;
+                    continue;
+                }
+                const employee = employeeMap.get(msg.employee_app_number) || null;
+                if (!employee) {
+                    this.logger.warn(`Employee not found for app_number: ${msg.employee_app_number} (${msg.employee_name})`);
                 }
                 const record = {
                     source_record_id: msg.source_record_id,
@@ -545,6 +554,7 @@ let SyncService = SyncService_1 = class SyncService {
             this.logger.error('upsertOfficialChannelMessages failed:', error.message);
             failed += messages.length;
         }
+        this.logger.log(`upsertOfficialChannelMessages summary: ${messages.length} received → ${created} created, ${updated} updated, ${skipped} skipped, ${failed} failed`);
         return { created, updated, skipped, failed };
     }
     async syncTicketHistory(triggeredBy) {
