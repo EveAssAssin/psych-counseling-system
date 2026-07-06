@@ -42,7 +42,6 @@ export declare class SyncService {
         created: number;
         failed: number;
     }>;
-    private syncExternalSource;
     private createSyncLog;
     private updateSyncLog;
     getSyncLog(id: string): Promise<SyncLog>;

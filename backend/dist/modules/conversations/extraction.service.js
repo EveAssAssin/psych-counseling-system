@@ -76,7 +76,7 @@ let ExtractionService = ExtractionService_1 = class ExtractionService {
             const base64 = buffer.toString('base64');
             const mediaType = mimeType;
             const response = await this.anthropic.messages.create({
-                model: this.configService.get('anthropic.model') || 'claude-sonnet-4-20250514',
+                model: this.configService.get('anthropic.model') || 'claude-sonnet-4-6',
                 max_tokens: 4096,
                 messages: [
                     {

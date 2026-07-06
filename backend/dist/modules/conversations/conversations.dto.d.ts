@@ -66,6 +66,7 @@ export declare class CreateConversationDto {
     priority?: Priority;
     need_followup?: boolean;
     tags?: string[];
+    attachments?: any[];
     auto_analyze?: boolean;
 }
 export declare class CreateConversationWithFileDto {
@@ -83,6 +84,7 @@ export declare class UpdateConversationDto {
     conversation_type?: string;
     interviewer_name?: string;
     background_note?: string;
+    raw_text?: string;
     priority?: Priority;
     need_followup?: boolean;
     tags?: string[];

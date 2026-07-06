@@ -33,6 +33,11 @@ export declare class LefthandApiService {
         data: AreaApiData[];
         message: string;
     }>;
+    getEmployeeAttendance(employeeErpIds: string[], startDate: string, endDate: string): Promise<{
+        success: boolean;
+        data: AttendanceApiData[];
+        message: string;
+    }>;
 }
 export interface EmployeeApiData {
     employeeappnumber: string;
@@ -97,4 +102,43 @@ export interface StoreEmployeeApiData {
 export interface AreaApiData {
     id: number;
     name: string;
+}
+export interface AttendanceApiData {
+    employeeErpid: string;
+    employeeId: number;
+    employeeName: string;
+    attendances: AttendanceDayData[];
+}
+export interface AttendanceDayData {
+    workDate: string;
+    attendanceResult: string;
+    groupName: string;
+    checkTime: string;
+    timeGap: string;
+    dayOff: {
+        dayOffDate: string;
+        groupName: string;
+    } | null;
+    annualLeave: {
+        startTime: string;
+        endTime: string;
+        description: string;
+    } | null;
+    leaveItems: Array<{
+        leaveRuleTypeTitle: string;
+        description: string;
+        leaveRuleState: string;
+        startTime: string;
+        endTime: string;
+    }>;
+    overTime: {
+        startTime: string;
+        endTime: string;
+        description: string;
+    } | null;
+    changeGroup: {
+        fromGroupName: string;
+        toGroupName: string;
+        description: string;
+    } | null;
 }

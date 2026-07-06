@@ -99,6 +99,15 @@ __decorate([
     __metadata("design:type", Array)
 ], CreateConversationDto.prototype, "tags", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: '附件清單（前端已上傳至 Storage，這裡僅建立 DB 關聯）',
+        type: [Object],
+    }),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Array)
+], CreateConversationDto.prototype, "attachments", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: '是否立即分析', default: true }),
     (0, class_validator_1.IsBoolean)(),
     (0, class_validator_1.IsOptional)(),
@@ -182,6 +191,12 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], UpdateConversationDto.prototype, "background_note", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: '對話內容文字' }),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], UpdateConversationDto.prototype, "raw_text", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ enum: Priority }),
     (0, class_validator_1.IsEnum)(Priority),

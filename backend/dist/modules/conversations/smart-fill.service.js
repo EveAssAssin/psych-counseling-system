@@ -58,7 +58,7 @@ let SmartFillService = SmartFillService_1 = class SmartFillService {
         this.employeesService = employeesService;
         this.logger = new common_1.Logger(SmartFillService_1.name);
         const apiKey = this.config.get('anthropic.apiKey');
-        this.model = this.config.get('anthropic.model') || 'claude-sonnet-4-20250514';
+        this.model = this.config.get('anthropic.model') || 'claude-sonnet-4-6';
         if (!apiKey) {
             this.logger.warn('ANTHROPIC_API_KEY not set — smart-fill disabled');
             this.anthropic = null;

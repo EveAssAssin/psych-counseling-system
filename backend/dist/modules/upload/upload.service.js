@@ -23,11 +23,17 @@ let UploadService = UploadService_1 = class UploadService {
             video: 100 * 1024 * 1024,
             audio: 50 * 1024 * 1024,
             document: 30 * 1024 * 1024,
+            archive: 50 * 1024 * 1024,
         };
         this.ALLOWED_TYPES = {
             image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'],
             video: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo', 'video/x-ms-wmv'],
-            audio: ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/m4a', 'audio/x-m4a'],
+            audio: [
+                'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
+                'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave',
+                'audio/webm', 'audio/ogg', 'audio/oga', 'audio/flac', 'audio/x-flac',
+                'audio/aac', 'audio/3gpp', 'audio/3gpp2', 'audio/amr',
+            ],
             document: [
                 'application/pdf',
                 'application/msword',
@@ -39,17 +45,23 @@ let UploadService = UploadService_1 = class UploadService {
                 'text/plain',
                 'text/csv',
             ],
+            archive: [
+                'application/zip',
+                'application/x-zip-compressed',
+                'application/x-zip',
+                'multipart/x-zip',
+            ],
         };
     }
     async uploadFile(file, category, subFolder) {
         try {
-            const fileType = this.getFileType(file.mimetype);
+            const fileType = this.getFileType(file.mimetype, file.originalname);
             if (!fileType) {
-                throw new common_1.BadRequestException(`不支援的檔案類型: ${file.mimetype}`);
+                throw new common_1.BadRequestException(`不支援的檔案格式，請轉成常見格式（音檔 mp3／m4a／wav，或壓縮成 zip）後再上傳。`);
             }
             const sizeLimit = this.SIZE_LIMITS[fileType];
             if (file.size > sizeLimit) {
-                throw new common_1.BadRequestException(`檔案過大，${fileType} 類型限制 ${Math.round(sizeLimit / 1024 / 1024)}MB`);
+                throw new common_1.BadRequestException(`檔案過大（${(file.size / 1024 / 1024).toFixed(1)}MB），上限 ${Math.round(sizeLimit / 1024 / 1024)}MB，請壓縮後再上傳。`);
             }
             const ext = this.getExtension(file.originalname);
             const fileName = `${(0, uuid_1.v4)()}${ext}`;
@@ -95,7 +107,7 @@ let UploadService = UploadService_1 = class UploadService {
             return false;
         }
     }
-    getFileType(mimeType) {
+    getFileType(mimeType, filename) {
         if (this.ALLOWED_TYPES.image.includes(mimeType))
             return 'image';
         if (this.ALLOWED_TYPES.video.includes(mimeType))
@@ -104,6 +116,21 @@ let UploadService = UploadService_1 = class UploadService {
             return 'audio';
         if (this.ALLOWED_TYPES.document.includes(mimeType))
             return 'document';
+        if (this.ALLOWED_TYPES.archive.includes(mimeType))
+            return 'archive';
+        const ext = filename?.split('.').pop()?.toLowerCase();
+        if (ext) {
+            if (['mp3', 'm4a', 'wav', 'ogg', 'oga', 'flac', 'aac', 'amr', '3gp', '3gpp', 'mpga', 'weba'].includes(ext))
+                return 'audio';
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(ext))
+                return 'image';
+            if (['mp4', 'mov', 'avi', 'wmv'].includes(ext))
+                return 'video';
+            if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'].includes(ext))
+                return 'document';
+            if (ext === 'zip')
+                return 'archive';
+        }
         return null;
     }
     getExtension(filename) {

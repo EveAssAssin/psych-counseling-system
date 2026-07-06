@@ -144,7 +144,7 @@ ${text}
 請依照指定格式輸出 JSON 分析結果。`;
         this.logger.debug('Calling Claude API for analysis');
         const response = await this.anthropic.messages.create({
-            model: this.configService.get('anthropic.model') || 'claude-sonnet-4-20250514',
+            model: this.configService.get('anthropic.model') || 'claude-sonnet-4-6',
             max_tokens: this.configService.get('anthropic.maxTokens') || 4096,
             system: ANALYSIS_SYSTEM_PROMPT,
             messages: [
@@ -155,27 +155,57 @@ ${text}
             ],
         });
         const content = response.content[0];
-        if (content.type !== 'text') {
-            throw new Error('Unexpected response type from Claude');
+        if (!content || content.type !== 'text') {
+            this.logger.error('Claude 回應不是文字格式:', response.content);
+            throw new Error(`AI 回應格式異常 (type=${content?.type || 'undefined'})`);
         }
+        const rawText = content.text || '';
+        if (!rawText.trim()) {
+            this.logger.error('Claude 回應為空字串');
+            throw new Error('AI 回應為空，可能是 model 或內容觸發安全過濾');
+        }
+        const extractJson = (text) => {
+            let t = text.trim();
+            const fenceMatch = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```\s*$/i);
+            if (fenceMatch)
+                t = fenceMatch[1].trim();
+            if (!t.startsWith('{')) {
+                const firstBrace = t.indexOf('{');
+                const lastBrace = t.lastIndexOf('}');
+                if (firstBrace >= 0 && lastBrace > firstBrace) {
+                    t = t.slice(firstBrace, lastBrace + 1);
+                }
+            }
+            return t;
+        };
+        let jsonText;
+        let output;
         try {
-            let jsonText = content.text.trim();
-            if (jsonText.startsWith('```json')) {
-                jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            jsonText = extractJson(rawText);
+            const parsed = JSON.parse(jsonText);
+            if (!parsed || typeof parsed !== 'object') {
+                throw new Error(`AI 回傳的不是 JSON 物件（拿到 ${typeof parsed === 'object' && parsed === null ? 'null' : typeof parsed}）`);
             }
-            else if (jsonText.startsWith('```')) {
-                jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-            }
-            const output = JSON.parse(jsonText);
-            if (!output.current_psychological_state || !output.stress_level || !output.risk_level) {
-                throw new Error('Missing required fields in AI output');
-            }
-            return output;
+            output = parsed;
         }
         catch (parseError) {
-            this.logger.error('Failed to parse AI response:', content.text);
-            throw new Error(`Failed to parse AI response: ${parseError.message}`);
+            this.logger.error(`Failed to parse AI response: ${parseError?.message}\n` +
+                `Raw Claude response (前 500 字)：${rawText.slice(0, 500)}`);
+            throw new Error(`AI 回應無法解析為 JSON：${parseError?.message}。` +
+                `原始回應前 200 字：${rawText.slice(0, 200)}`);
         }
+        const missing = [];
+        if (!output.current_psychological_state)
+            missing.push('current_psychological_state');
+        if (!output.stress_level)
+            missing.push('stress_level');
+        if (!output.risk_level)
+            missing.push('risk_level');
+        if (missing.length > 0) {
+            this.logger.error(`AI output 缺欄位: ${missing.join(', ')}, raw: ${rawText.slice(0, 300)}`);
+            throw new Error(`AI 分析輸出缺少必要欄位：${missing.join(', ')}`);
+        }
+        return output;
     }
     async saveAnalysisResult(conversationId, employeeId, output) {
         const followupSuggestedAt = output.followup_needed && output.followup_suggested_days
@@ -197,7 +227,7 @@ ${text}
             followup_suggested_at: followupSuggestedAt,
             supervisor_involvement: output.supervisor_involvement,
             next_talk_focus: output.next_talk_focus,
-            model_name: this.configService.get('anthropic.model') || 'claude-sonnet-4-20250514',
+            model_name: this.configService.get('anthropic.model') || 'claude-sonnet-4-6',
             analysis_prompt_version: ANALYSIS_PROMPT_VERSION,
             raw_response: output,
             confidence_score: output.confidence_score,
@@ -297,14 +327,19 @@ ${text}
         const client = this.supabase.getAdminClient();
         const { data, error } = await client
             .from(this.TABLE)
-            .select('*')
+            .select('*, employee:employees!inner(id, name, employeeappnumber, department, store_name, is_active, is_leave)')
             .in('risk_level', ['high', 'critical'])
+            .eq('employee.is_active', true)
+            .eq('employee.is_leave', false)
             .order('created_at', { ascending: false })
             .limit(limit);
         if (error) {
             throw error;
         }
-        return data || [];
+        return (data || []).map((row) => ({
+            ...row,
+            employee_name: row.employee?.name || row.employee_name || null,
+        }));
     }
 };
 exports.AnalysisService = AnalysisService;

@@ -225,6 +225,36 @@ let LefthandApiService = LefthandApiService_1 = class LefthandApiService {
             };
         }
     }
+    async getEmployeeAttendance(employeeErpIds, startDate, endDate) {
+        try {
+            if (!employeeErpIds || employeeErpIds.length === 0) {
+                return { success: false, data: [], message: '沒有員工 ERP ID' };
+            }
+            const HRM_URL = 'https://hrm.lohaseyewear.tw/_api/v1.ashx';
+            const idsStr = employeeErpIds.join(',');
+            const encryptedIds = this.encrypt(idsStr);
+            const response = await axios_1.default.post(HRM_URL, {
+                method: 'getemployeeattendance',
+                employeeErpids: encryptedIds,
+                startdate: startDate,
+                enddate: endDate,
+            }, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 60000,
+            });
+            const result = response.data;
+            if (result.statecode === '0') {
+                const data = Array.isArray(result.data) ? result.data : [];
+                return { success: true, data, message: result.message || '取得成功' };
+            }
+            this.logger.warn(`Attendance API error: ${result.message}`);
+            return { success: false, data: [], message: result.message || 'API 錯誤' };
+        }
+        catch (error) {
+            this.logger.error('Failed to fetch attendance:', error.message);
+            return { success: false, data: [], message: error.message };
+        }
+    }
 };
 exports.LefthandApiService = LefthandApiService;
 exports.LefthandApiService = LefthandApiService = LefthandApiService_1 = __decorate([

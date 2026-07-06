@@ -578,7 +578,7 @@ ${timelineText || '無資料'}
 }`;
         try {
             const response = await this.anthropic.messages.create({
-                model: this.configService.get('anthropic.model') || 'claude-sonnet-4-20250514',
+                model: this.configService.get('anthropic.model') || 'claude-sonnet-4-6',
                 max_tokens: 2000,
                 system: PERIOD_ANALYSIS_PROMPT,
                 messages: [{ role: 'user', content: prompt }],

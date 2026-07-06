@@ -306,6 +306,14 @@ export class SyncService {
 
   /**
    * 執行每日多來源資料同步
+   *
+   * 依序執行四個真實子同步任務（不是 stub）：
+   *   1. 官方頻道訊息（LINE + 工單留言，增量）
+   *   2. 工單歷史（增量）
+   *   3. 評價資料 reviews + 回覆對話（增量）
+   *   4. 客訴/回報統計（全量覆蓋）
+   *
+   * 每個子任務失敗不影響其他，統計數字加總後寫入本次的 sync_log。
    */
   async syncDailyData(triggeredBy?: string): Promise<SyncLog> {
     const syncLog = await this.createSyncLog('external_daily', 'multi_source', triggeredBy);
@@ -315,39 +323,70 @@ export class SyncService {
 
       let totalFetched = 0;
       let totalCreated = 0;
+      let totalUpdated = 0;
+      let totalSkipped = 0;
       let totalFailed = 0;
-      const errors: any[] = [];
+      const errors: { source: string; error: string }[] = [];
+      const summary: Record<string, any> = {};
 
-      // 同步各來源
-      const sources = ['attendance', 'score', 'review', 'official_channel'];
+      // 各子任務：名稱 + 執行函式（回傳 SyncLog）
+      const subTasks: Array<{ name: string; fn: () => Promise<SyncLog> }> = [
+        { name: 'official-channel', fn: () => this.syncOfficialChannelMessages(triggeredBy) },
+        { name: 'ticket-history', fn: () => this.syncTicketHistory(triggeredBy) },
+        { name: 'review-data', fn: () => this.syncReviewData(triggeredBy) },
+        { name: 'customer-feedback-stats', fn: () => this.syncCustomerFeedbackStats(triggeredBy) },
+      ];
 
-      for (const source of sources) {
+      for (const task of subTasks) {
+        this.logger.log(`[daily] running sub-task: ${task.name}`);
         try {
-          const result = await this.syncExternalSource(source);
-          totalFetched += result.fetched;
-          totalCreated += result.created;
-          totalFailed += result.failed;
-        } catch (sourceError) {
-          this.logger.error(`Failed to sync source ${source}:`, sourceError);
-          errors.push({ source, error: sourceError.message });
-          totalFailed++;
+          const result = await task.fn();
+          totalFetched += result.total_fetched || 0;
+          totalCreated += result.total_created || 0;
+          totalUpdated += result.total_updated || 0;
+          totalSkipped += result.total_skipped || 0;
+          totalFailed += result.total_failed || 0;
+          summary[task.name] = {
+            status: result.status,
+            fetched: result.total_fetched || 0,
+            created: result.total_created || 0,
+            updated: result.total_updated || 0,
+            failed: result.total_failed || 0,
+          };
+        } catch (sourceError: any) {
+          this.logger.error(`[daily] sub-task ${task.name} failed:`, sourceError?.message || sourceError);
+          errors.push({ source: task.name, error: sourceError?.message || String(sourceError) });
+          summary[task.name] = { status: 'failed', error: sourceError?.message };
         }
       }
 
-      // 更新同步日誌
-      const status = errors.length === 0 ? 'completed' : errors.length < sources.length ? 'partial' : 'failed';
+      const status =
+        errors.length === 0
+          ? 'completed'
+          : errors.length < subTasks.length
+            ? 'partial'
+            : 'failed';
 
       await this.updateSyncLog(syncLog.id, {
         status,
         finished_at: new Date().toISOString(),
         total_fetched: totalFetched,
         total_created: totalCreated,
+        total_updated: totalUpdated,
+        total_skipped: totalSkipped,
         total_failed: totalFailed,
-        error_details: errors.length > 0 ? { errors } : undefined,
+        error_details: {
+          summary,
+          errors: errors.length > 0 ? errors : undefined,
+        },
       });
 
+      this.logger.log(
+        `[daily] Done: fetched=${totalFetched}, created=${totalCreated}, updated=${totalUpdated}, failed=${totalFailed}, errors=${errors.length}`,
+      );
+
       return this.getSyncLog(syncLog.id);
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Daily sync failed:', error);
 
       await this.updateSyncLog(syncLog.id, {
@@ -362,30 +401,20 @@ export class SyncService {
 
   /**
    * 同步官方頻道對話
+   * @deprecated 保留給向後相容，實際功能由 syncOfficialChannelMessages 提供
    */
   async syncOfficialChannelConversations(triggeredBy?: string): Promise<{
     fetched: number;
     created: number;
     failed: number;
   }> {
-    this.logger.log('Syncing official channel conversations');
-
-    // 預留的整合邏輯
-    return { fetched: 0, created: 0, failed: 0 };
-  }
-
-  /**
-   * 同步外部資料來源
-   */
-  private async syncExternalSource(source: string): Promise<{
-    fetched: number;
-    created: number;
-    failed: number;
-  }> {
-    this.logger.log(`Syncing external source: ${source}`);
-
-    // 預留的整合邏輯
-    return { fetched: 0, created: 0, failed: 0 };
+    this.logger.log('syncOfficialChannelConversations is deprecated, use syncOfficialChannelMessages instead');
+    const result = await this.syncOfficialChannelMessages(triggeredBy);
+    return {
+      fetched: result.total_fetched || 0,
+      created: result.total_created || 0,
+      failed: result.total_failed || 0,
+    };
   }
 
   /**

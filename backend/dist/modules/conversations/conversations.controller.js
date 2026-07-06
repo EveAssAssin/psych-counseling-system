@@ -120,7 +120,7 @@ __decorate([
 ], ConversationsController.prototype, "create", null);
 __decorate([
     (0, common_1.Post)('upload'),
-    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file')),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file', { limits: { fileSize: 50 * 1024 * 1024 } })),
     (0, swagger_1.ApiOperation)({ summary: '建立對話（檔案上傳）' }),
     (0, swagger_1.ApiConsumes)('multipart/form-data'),
     (0, swagger_1.ApiBody)({
@@ -149,7 +149,7 @@ __decorate([
 ], ConversationsController.prototype, "createWithFile", null);
 __decorate([
     (0, common_1.Post)('transcribe'),
-    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file')),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file', { limits: { fileSize: 25 * 1024 * 1024 } })),
     (0, swagger_1.ApiOperation)({
         summary: '音檔/逐字稿轉錄與智慧預填',
         description: '上傳音檔（mp3/m4a/wav/...）或逐字稿（txt），系統會：' +

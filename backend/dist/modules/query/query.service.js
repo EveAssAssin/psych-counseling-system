@@ -217,7 +217,7 @@ let QueryService = QueryService_1 = class QueryService {
         const userPrompt = `${context ? `${context}\n\n` : ''}問題：${question}`;
         try {
             const response = await this.anthropic.messages.create({
-                model: this.configService.get('anthropic.model') || 'claude-sonnet-4-20250514',
+                model: this.configService.get('anthropic.model') || 'claude-sonnet-4-6',
                 max_tokens: 1024,
                 system: QUERY_SYSTEM_PROMPT,
                 messages: [

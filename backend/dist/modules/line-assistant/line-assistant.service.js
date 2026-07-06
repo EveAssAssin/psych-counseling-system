@@ -169,7 +169,7 @@ ${guidelineText || '（無特定規範，請依一般 HR 禮儀回覆）'}
                 content: `員工${dto.employee_name ? `（${dto.employee_name}）` : ''}傳來訊息：\n\n「${dto.original_message}」\n\n請生成一段適合的 HR 主管回覆。`,
             });
         }
-        const model = this.config.get('anthropic.model') || 'claude-sonnet-4-20250514';
+        const model = this.config.get('anthropic.model') || 'claude-sonnet-4-6';
         const response = await this.anthropic.messages.create({
             model,
             max_tokens: 512,

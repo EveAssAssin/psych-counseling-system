@@ -230,31 +230,59 @@ let SyncService = SyncService_1 = class SyncService {
             await this.updateSyncLog(syncLog.id, { status: 'running' });
             let totalFetched = 0;
             let totalCreated = 0;
+            let totalUpdated = 0;
+            let totalSkipped = 0;
             let totalFailed = 0;
             const errors = [];
-            const sources = ['attendance', 'score', 'review', 'official_channel'];
-            for (const source of sources) {
+            const summary = {};
+            const subTasks = [
+                { name: 'official-channel', fn: () => this.syncOfficialChannelMessages(triggeredBy) },
+                { name: 'ticket-history', fn: () => this.syncTicketHistory(triggeredBy) },
+                { name: 'review-data', fn: () => this.syncReviewData(triggeredBy) },
+                { name: 'customer-feedback-stats', fn: () => this.syncCustomerFeedbackStats(triggeredBy) },
+            ];
+            for (const task of subTasks) {
+                this.logger.log(`[daily] running sub-task: ${task.name}`);
                 try {
-                    const result = await this.syncExternalSource(source);
-                    totalFetched += result.fetched;
-                    totalCreated += result.created;
-                    totalFailed += result.failed;
+                    const result = await task.fn();
+                    totalFetched += result.total_fetched || 0;
+                    totalCreated += result.total_created || 0;
+                    totalUpdated += result.total_updated || 0;
+                    totalSkipped += result.total_skipped || 0;
+                    totalFailed += result.total_failed || 0;
+                    summary[task.name] = {
+                        status: result.status,
+                        fetched: result.total_fetched || 0,
+                        created: result.total_created || 0,
+                        updated: result.total_updated || 0,
+                        failed: result.total_failed || 0,
+                    };
                 }
                 catch (sourceError) {
-                    this.logger.error(`Failed to sync source ${source}:`, sourceError);
-                    errors.push({ source, error: sourceError.message });
-                    totalFailed++;
+                    this.logger.error(`[daily] sub-task ${task.name} failed:`, sourceError?.message || sourceError);
+                    errors.push({ source: task.name, error: sourceError?.message || String(sourceError) });
+                    summary[task.name] = { status: 'failed', error: sourceError?.message };
                 }
             }
-            const status = errors.length === 0 ? 'completed' : errors.length < sources.length ? 'partial' : 'failed';
+            const status = errors.length === 0
+                ? 'completed'
+                : errors.length < subTasks.length
+                    ? 'partial'
+                    : 'failed';
             await this.updateSyncLog(syncLog.id, {
                 status,
                 finished_at: new Date().toISOString(),
                 total_fetched: totalFetched,
                 total_created: totalCreated,
+                total_updated: totalUpdated,
+                total_skipped: totalSkipped,
                 total_failed: totalFailed,
-                error_details: errors.length > 0 ? { errors } : undefined,
+                error_details: {
+                    summary,
+                    errors: errors.length > 0 ? errors : undefined,
+                },
             });
+            this.logger.log(`[daily] Done: fetched=${totalFetched}, created=${totalCreated}, updated=${totalUpdated}, failed=${totalFailed}, errors=${errors.length}`);
             return this.getSyncLog(syncLog.id);
         }
         catch (error) {
@@ -268,12 +296,13 @@ let SyncService = SyncService_1 = class SyncService {
         }
     }
     async syncOfficialChannelConversations(triggeredBy) {
-        this.logger.log('Syncing official channel conversations');
-        return { fetched: 0, created: 0, failed: 0 };
-    }
-    async syncExternalSource(source) {
-        this.logger.log(`Syncing external source: ${source}`);
-        return { fetched: 0, created: 0, failed: 0 };
+        this.logger.log('syncOfficialChannelConversations is deprecated, use syncOfficialChannelMessages instead');
+        const result = await this.syncOfficialChannelMessages(triggeredBy);
+        return {
+            fetched: result.total_fetched || 0,
+            created: result.total_created || 0,
+            failed: result.total_failed || 0,
+        };
     }
     async createSyncLog(syncType, sourceName, triggeredBy) {
         const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

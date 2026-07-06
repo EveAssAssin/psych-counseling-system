@@ -40,6 +40,22 @@ let ConversationsService = ConversationsService_1 = class ConversationsService {
             uploaded_by: uploadedBy,
             imported_at: new Date().toISOString(),
         }, { useAdmin: true });
+        if (Array.isArray(dto.attachments) && dto.attachments.length > 0) {
+            for (const att of dto.attachments) {
+                if (!att || !att.path)
+                    continue;
+                await this.supabase.create(this.ATTACHMENTS_TABLE, {
+                    conversation_intake_id: intake.id,
+                    storage_path: att.path,
+                    file_name: att.fileName || String(att.path).split('/').pop(),
+                    mime_type: att.mimeType,
+                    size_bytes: att.fileSize,
+                    extraction_status: 'pending',
+                    uploaded_at: new Date().toISOString(),
+                }, { useAdmin: true });
+            }
+            this.logger.log(`Linked ${dto.attachments.length} attachment(s) to intake ${intake.id}`);
+        }
         this.logger.log(`Conversation created: ${intake.id}`);
         return intake;
     }
@@ -89,11 +105,28 @@ let ConversationsService = ConversationsService_1 = class ConversationsService {
         return intake;
     }
     async findById(id) {
-        const intake = await this.supabase.findOne(this.TABLE, { id }, { useAdmin: true });
-        if (!intake) {
+        const client = this.supabase.getAdminClient();
+        const { data: intake, error } = await client
+            .from(this.TABLE)
+            .select('*')
+            .eq('id', id)
+            .single();
+        if (error || !intake) {
             throw new common_1.NotFoundException(`Conversation not found: ${id}`);
         }
-        return intake;
+        const anyIntake = intake;
+        if (anyIntake.employee_id) {
+            const { data: emp } = await client
+                .from('employees')
+                .select('id, name, employeeappnumber, department, store_name, title')
+                .eq('id', anyIntake.employee_id)
+                .maybeSingle();
+            anyIntake.employee = emp || null;
+        }
+        else {
+            anyIntake.employee = null;
+        }
+        return anyIntake;
     }
     async getAttachments(conversationId) {
         return this.supabase.findMany(this.ATTACHMENTS_TABLE, {
@@ -106,7 +139,9 @@ let ConversationsService = ConversationsService_1 = class ConversationsService {
         const limit = dto.limit || 20;
         const offset = dto.offset || 0;
         const client = this.supabase.getAdminClient();
-        let query = client.from(this.TABLE).select('*', { count: 'exact' });
+        let query = client
+            .from(this.TABLE)
+            .select('*', { count: 'exact' });
         if (dto.employee_id) {
             query = query.eq('employee_id', dto.employee_id);
         }
@@ -133,8 +168,23 @@ let ConversationsService = ConversationsService_1 = class ConversationsService {
             this.logger.error('Error searching conversations:', error);
             throw error;
         }
+        const rows = (data || []);
+        const empIds = Array.from(new Set(rows.map((r) => r.employee_id).filter(Boolean)));
+        const empMap = new Map();
+        if (empIds.length > 0) {
+            const { data: emps } = await client
+                .from('employees')
+                .select('id, name, employeeappnumber, department, store_name')
+                .in('id', empIds);
+            for (const e of emps || [])
+                empMap.set(e.id, e);
+        }
+        const enriched = rows.map((r) => ({
+            ...r,
+            employee: r.employee_id ? empMap.get(r.employee_id) || null : null,
+        }));
         return {
-            data: data || [],
+            data: enriched,
             total: count || 0,
             limit,
             offset,
@@ -149,7 +199,11 @@ let ConversationsService = ConversationsService_1 = class ConversationsService {
     }
     async update(id, dto) {
         this.logger.log(`Updating conversation: ${id}`);
-        const intake = await this.supabase.update(this.TABLE, { id }, dto, { useAdmin: true });
+        const patch = { ...dto };
+        if (dto.raw_text !== undefined) {
+            patch.extracted_text = dto.raw_text;
+        }
+        const intake = await this.supabase.update(this.TABLE, { id }, patch, { useAdmin: true });
         if (!intake) {
             throw new common_1.NotFoundException(`Conversation not found: ${id}`);
         }
