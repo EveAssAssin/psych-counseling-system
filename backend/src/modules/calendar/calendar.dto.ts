@@ -17,6 +17,14 @@ export const CATEGORY_LABELS: Record<CategoryKey, string> = {
 
 export const DURATION_OPTIONS = [5, 10, 15, 30, 60] as const;
 
+export const CONTACT_METHODS = ['phone', 'face', 'line_text'] as const;
+export type ContactMethod = typeof CONTACT_METHODS[number];
+export const CONTACT_METHOD_LABELS: Record<ContactMethod, string> = {
+  phone: '電話',
+  face: '面談',
+  line_text: 'LINE文字',
+};
+
 export const SCHEDULE_STATUSES = ['pending', 'completed', 'cancelled', 'no_show', 'follow_up'] as const;
 export type ScheduleStatus = typeof SCHEDULE_STATUSES[number];
 
@@ -58,6 +66,9 @@ export class CreateScheduleDto {
   @ApiProperty({ description: '談話主題 / 備註' })
   @IsString() @MaxLength(500) note: string;
 
+  @ApiPropertyOptional({ description: '訪談方式', enum: CONTACT_METHODS })
+  @IsOptional() @IsIn(CONTACT_METHODS as any) contact_method?: ContactMethod;
+
   @ApiPropertyOptional({ description: '建立人顯示名' })
   @IsOptional() @IsString() created_by?: string;
 
@@ -77,6 +88,7 @@ export class UpdateScheduleDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) subcategory_name?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() subcategory_id?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) note?: string;
+  @ApiPropertyOptional({ enum: CONTACT_METHODS }) @IsOptional() @IsIn(CONTACT_METHODS as any) contact_method?: ContactMethod;
   @ApiPropertyOptional() @IsOptional() @IsIn(SCHEDULE_STATUSES as any) status?: ScheduleStatus;
   @ApiPropertyOptional({ description: '實際談話用時（分鐘），可傳 null 清除' })
   @IsOptional() @IsInt() @Min(0) actual_minutes?: number | null;

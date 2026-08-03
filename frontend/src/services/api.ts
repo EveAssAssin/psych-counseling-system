@@ -521,6 +521,7 @@ export const calendarApi = {
     subcategory_name: string;
     subcategory_id?: string;
     note: string;
+    contact_method?: string;
     created_by?: string;
     created_by_id?: string;
   }) => api.post('/calendar/schedules', body),

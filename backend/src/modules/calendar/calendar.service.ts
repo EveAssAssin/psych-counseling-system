@@ -336,6 +336,7 @@ export class CalendarService {
         subcategory_id: sub.id,
         subcategory_name: sub.name,
         note: dto.note,
+        contact_method: dto.contact_method || null,
         attendance_check: att.raw,
         status: 'pending',
         created_by: dto.created_by || null,
@@ -424,6 +425,7 @@ export class CalendarService {
     }
 
     if (dto.note !== undefined) patch.note = dto.note;
+    if (dto.contact_method !== undefined) patch.contact_method = dto.contact_method;
     if (dto.actual_minutes !== undefined) patch.actual_minutes = dto.actual_minutes;
     if (dto.status !== undefined) {
       patch.status = dto.status;

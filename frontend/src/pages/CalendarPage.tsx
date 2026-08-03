@@ -52,6 +52,13 @@ const DURATION_OPTIONS = [
 const STATUS_LABEL: Record<string, string> = {
   pending: '待進行', completed: '已完成', cancelled: '已取消', no_show: '未執行', follow_up: '需後續追蹤',
 };
+// 訪談方式
+const CONTACT_METHODS = [
+  { value: 'phone', label: '電話' },
+  { value: 'face', label: '面談' },
+  { value: 'line_text', label: 'LINE文字' },
+];
+const METHOD_LABEL: Record<string, string> = { phone: '電話', face: '面談', line_text: 'LINE文字' };
 // 可手動切換的狀態（取消另走取消流程）
 const STATUS_FLOW = ['pending', 'completed', 'no_show', 'follow_up'];
 
@@ -70,6 +77,7 @@ interface Schedule {
   category_key: string;
   subcategory_name: string;
   note: string;
+  contact_method?: string | null;
   status: string;
   created_by?: string;
   created_at?: string;
@@ -369,6 +377,7 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
   const [subName, setSubName] = useState(initial?.subcategory_name || '');
   const [subId, setSubId] = useState<string | undefined>(undefined);
   const [note, setNote] = useState(initial?.note || '');
+  const [method, setMethod] = useState(initial?.contact_method || '');
   const [start, setStart] = useState(initial ? hm(initial.start_time) : (prefill?.start || ''));
   const [duration, setDuration] = useState(initial?.duration_minutes || 30);
   const [submitting, setSubmitting] = useState(false);
@@ -419,6 +428,7 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
           subcategory_name: subName,
           subcategory_id: subId,
           note: note.trim(),
+          contact_method: method || undefined,
           updated_by: user?.name || user?.email,
         });
         toast.success('排程已更新。');
@@ -432,6 +442,7 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
           subcategory_name: subName,
           subcategory_id: subId,
           note: note.trim(),
+          contact_method: method || undefined,
           created_by: user?.name || user?.email,
           created_by_id: user?.id,
         });
@@ -496,6 +507,18 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
           <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={3}
                     placeholder="本次排程預計處理的內容…" className="w-full rounded-md border border-gray-300 px-3 py-2" />
           <div className="mt-1 text-right text-xs text-gray-400">{note.length}/500</div>
+        </Field>
+
+        <Field label="訪談方式">
+          <div className="flex flex-wrap gap-2">
+            {CONTACT_METHODS.map((m) => (
+              <button key={m.value} type="button" onClick={() => setMethod((cur) => (cur === m.value ? '' : m.value))}
+                className={clsx('rounded-full border px-3 py-1.5 text-sm',
+                  method === m.value ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}>
+                {m.label}
+              </button>
+            ))}
+          </div>
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
@@ -649,6 +672,7 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
     ['標籤大分類', cat.name],
     ['標籤小分類', schedule.subcategory_name],
     ['談話主題／備註', schedule.note],
+    ['訪談方式', schedule.contact_method ? (METHOD_LABEL[schedule.contact_method] || schedule.contact_method) : '—'],
     ['建立人', schedule.created_by || '—'],
     ['排程狀態', STATUS_LABEL[schedule.status] || schedule.status],
   ];
@@ -683,6 +707,21 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
     }
   };
 
+  const changeMethod = async (next: string) => {
+    if (busy) return;
+    const val = schedule.contact_method === next ? null : next; // 再點一次取消選擇
+    setBusy(true);
+    try {
+      await calendarApi.updateSchedule(schedule.id, { contact_method: val, updated_by: user?.name || user?.email });
+      toast.success('訪談方式已更新。');
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || '更新失敗');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Overlay onClose={onClose}>
       <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
@@ -712,6 +751,21 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
                       className="rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50">
                 儲存
               </button>
+            </div>
+          </div>
+        )}
+
+        {schedule.status !== 'cancelled' && !cancelling && (
+          <div className="pt-1">
+            <div className="mb-1 text-sm text-gray-500">訪談方式</div>
+            <div className="flex flex-wrap gap-2">
+              {CONTACT_METHODS.map((m) => (
+                <button key={m.value} type="button" disabled={busy} onClick={() => changeMethod(m.value)}
+                        className={clsx('rounded-full border px-3 py-1 text-sm disabled:opacity-50',
+                          schedule.contact_method === m.value ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}>
+                  {m.label}
+                </button>
+              ))}
             </div>
           </div>
         )}
