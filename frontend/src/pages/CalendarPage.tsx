@@ -213,7 +213,10 @@ export default function CalendarPage() {
                               style={{ top, height }}>
                         <div className="flex items-center gap-1 font-semibold">
                           {cat.urgent && <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />}
-                          {s.employee_name}
+                          <span className="truncate">{s.employee_name}</span>
+                          <span className="ml-auto shrink-0 rounded bg-black/10 px-1 text-[10px] font-medium leading-4">
+                            {STATUS_LABEL[s.status] || s.status}
+                          </span>
                         </div>
                         <div className="truncate opacity-90">{cat.name}｜{s.subcategory_name}</div>
                         <div className="opacity-80">{hm(s.start_time)}－{hm(s.end_time)}</div>
