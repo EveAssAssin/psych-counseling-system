@@ -23,6 +23,7 @@ import clsx from 'clsx';
 
 const navigation = [
   { name: '儀表板', href: '/dashboard', icon: HomeIcon },
+  { name: '行事曆', href: '/calendar', icon: CalendarDaysIcon },
   { name: '員工管理', href: '/employees', icon: UsersIcon },
   { name: '對話記錄', href: '/conversations', icon: ChatBubbleLeftRightIcon },
   { name: '風險標記', href: '/risk-flags', icon: ExclamationTriangleIcon },

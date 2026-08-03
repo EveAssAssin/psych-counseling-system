@@ -5,6 +5,7 @@ import MainLayout from './layouts/MainLayout';
 
 // Pages
 import DashboardPage from './pages/DashboardPage';
+import CalendarPage from './pages/CalendarPage';
 import EmployeesPage from './pages/EmployeesPage';
 import EmployeeDetailPage from './pages/EmployeeDetailPage';
 import ConversationsPage from './pages/ConversationsPage';
@@ -60,6 +61,7 @@ function App() {
       {/* 主要頁面 */}
       <Route element={<MainLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/employees" element={<EmployeesPage />} />
         <Route path="/employees/:id" element={<EmployeeDetailPage />} />
         <Route path="/conversations" element={<ConversationsPage />} />
