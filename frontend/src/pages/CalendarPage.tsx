@@ -218,8 +218,8 @@ export default function CalendarPage() {
                     active={cardFilter === 'pending'} onClick={() => applyFilter('pending')} />
           <StatCard label="逾期" value={`${stats.overdue} 件`} color="red" alert={stats.overdue > 0}
                     active={cardFilter === 'overdue'} onClick={() => applyFilter('overdue')} />
-          <StatCard label="今日談話時間" value={fmtMinutes(stats.talk)} color="indigo" />
-          <StatCard label="今日電話時間" value={`${stats.phone} 分鐘`} color="purple" />
+          <StatCard label="預計訪談時間" value={fmtMinutes(stats.talk)} color="indigo" />
+          <StatCard label="實際訪談時間" value={fmtMinutes(stats.phone)} color="purple" />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <StatCard label="新人輔導" value={`${stats.newcomer} 件`} color="amber"
