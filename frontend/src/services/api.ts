@@ -121,6 +121,13 @@ export const employeesApi = {
 };
 
 // ============================================
+// Stores API（門市，含 region 供區域篩選）
+// ============================================
+export const storesApi = {
+  list: () => api.get('/stores'),
+};
+
+// ============================================
 // Conversations API
 // ============================================
 export const conversationsApi = {

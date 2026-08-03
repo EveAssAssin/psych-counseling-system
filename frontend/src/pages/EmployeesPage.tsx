@@ -1,8 +1,8 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { Dialog, Transition } from '@headlessui/react';
 import { MagnifyingGlassIcon, XMarkIcon, ChatBubbleLeftRightIcon, ShieldCheckIcon, UsersIcon } from '@heroicons/react/24/outline';
-import { employeesApi, officialChannelApi } from '../services/api';
+import { employeesApi, storesApi, officialChannelApi } from '../services/api';
 import { useAuthStore } from '../stores';
 import PermissionsTab from '../components/PermissionsTab';
 import toast from 'react-hot-toast';
@@ -13,6 +13,8 @@ interface Employee {
   name: string;
   department?: string;
   store_name?: string;
+  store_id?: string;
+  person_type?: string; // store / nonstore / special / excluded
   is_active: boolean;
 }
 
@@ -26,17 +28,25 @@ interface ChannelMessage {
   author_name?: string;
 }
 
+// 人員單位標籤
+const unitLabel = (pt?: string) =>
+  pt === 'store' ? '門市人員' : (pt === 'nonstore' || pt === 'special') ? '總部人員' : '—';
+
 export default function EmployeesPage() {
   const currentUser = useAuthStore((state) => state.user);
   const isAdmin = currentUser?.roles?.includes('admin') ?? false;
 
-  // tab：employees（員工列表） / permissions（權限管理，僅 admin 可見）
   const [tab, setTab] = useState<'employees' | 'permissions'>('employees');
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [storeRegion, setStoreRegion] = useState<Record<string, string>>({});
+  const [regionOptions, setRegionOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 篩選條件
   const [search, setSearch] = useState('');
-  const [total, setTotal] = useState(0);
+  const [unit, setUnit] = useState<'all' | 'store' | 'hq'>('all');
+  const [region, setRegion] = useState<string>('all');
 
   // 對話記錄 Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -45,15 +55,30 @@ export default function EmployeesPage() {
   const [modalLoading, setModalLoading] = useState(false);
 
   useEffect(() => {
-    loadEmployees();
+    loadData();
   }, []);
 
-  const loadEmployees = async (query?: string) => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const response = await employeesApi.search({ q: query, limit: 9999 });
-      setEmployees(response.data.data);
-      setTotal(response.data.total);
+      const [empRes, storeRes] = await Promise.all([
+        employeesApi.search({ limit: 9999 }),
+        storesApi.list().catch(() => ({ data: [] as any[] })),
+      ]);
+      setEmployees(empRes.data.data || []);
+
+      // 門市 → 區域 對照
+      const stores: any[] = Array.isArray(storeRes.data) ? storeRes.data : storeRes.data?.data ?? [];
+      const map: Record<string, string> = {};
+      const regions = new Set<string>();
+      for (const s of stores) {
+        if (s.id && s.region) {
+          map[s.id] = s.region;
+          regions.add(s.region);
+        }
+      }
+      setStoreRegion(map);
+      setRegionOptions(Array.from(regions).sort());
     } catch (error) {
       toast.error('載入員工列表失敗');
     } finally {
@@ -61,23 +86,50 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    loadEmployees(search);
+  // 依所屬門市帶出區域
+  const empRegion = (emp: Employee): string | undefined =>
+    emp.store_id ? storeRegion[emp.store_id] : undefined;
+
+  // 選「總部人員」時，區域篩選停用並自動回全部
+  const handleUnitChange = (v: 'all' | 'store' | 'hq') => {
+    setUnit(v);
+    if (v === 'hq') setRegion('all');
   };
+
+  const clearFilters = () => {
+    setSearch('');
+    setUnit('all');
+    setRegion('all');
+  };
+
+  // 即時篩選（搜尋 + 單位 + 區域 同時生效，全部條件皆須符合）
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return employees.filter((emp) => {
+      if (q) {
+        const hit =
+          emp.name?.toLowerCase().includes(q) ||
+          emp.employeeappnumber?.toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      if (unit === 'store' && emp.person_type !== 'store') return false;
+      if (unit === 'hq' && !(emp.person_type === 'nonstore' || emp.person_type === 'special')) return false;
+      if (region !== 'all' && empRegion(emp) !== region) return false;
+      return true;
+    });
+  }, [employees, search, unit, region, storeRegion]);
+
+  const regionDisabled = unit === 'hq';
 
   const openConversationModal = async (emp: Employee) => {
     setModalEmployee(emp);
     setModalOpen(true);
     setModalLoading(true);
     setModalMessages([]);
-
     try {
-      // 優先用 appNumber 查，因為 employee_id 可能對不上
       const res = await officialChannelApi.getByAppNumber(emp.employeeappnumber, 200);
       setModalMessages(res.data || []);
     } catch {
-      // fallback: 用 employee_id 查
       try {
         const res = await officialChannelApi.getByEmployeeId(emp.id, 200);
         setModalMessages(res.data || []);
@@ -89,23 +141,11 @@ export default function EmployeesPage() {
     }
   };
 
-  const getChannelLabel = (channel: string) => {
-    return channel === 'official-line' ? 'LINE' : '工單留言';
-  };
-
-  const getChannelColor = (channel: string) => {
-    return channel === 'official-line'
-      ? 'bg-green-100 text-green-800'
-      : 'bg-blue-100 text-blue-800';
-  };
-
+  const getChannelLabel = (channel: string) => (channel === 'official-line' ? 'LINE' : '工單留言');
+  const getChannelColor = (channel: string) =>
+    channel === 'official-line' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800';
   const getDirectionLabel = (direction: string) => {
-    const labels: Record<string, string> = {
-      inbound: '員工',
-      store: '門市',
-      engineer: '工程師',
-      reviewer: '審核人員',
-    };
+    const labels: Record<string, string> = { inbound: '員工', store: '門市', engineer: '工程師', reviewer: '審核人員' };
     return labels[direction] || direction;
   };
 
@@ -115,73 +155,84 @@ export default function EmployeesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">員工管理</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {tab === 'employees' ? `共 ${total} 位員工` : '管理可登入本系統的人員與其角色'}
+            {tab === 'employees' ? `共 ${employees.length} 位員工` : '管理可登入本系統的人員與其角色'}
           </p>
         </div>
       </div>
 
-      {/* Tab 切換（super_admin 才看得到「權限管理」） */}
       {isAdmin && (
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex gap-6" aria-label="Tabs">
-            <button
-              type="button"
-              onClick={() => setTab('employees')}
+            <button type="button" onClick={() => setTab('employees')}
               className={`inline-flex items-center gap-2 py-3 px-1 border-b-2 text-sm font-medium ${
-                tab === 'employees'
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <UsersIcon className="h-4 w-4" />
-              員工列表
+                tab === 'employees' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}>
+              <UsersIcon className="h-4 w-4" />員工列表
             </button>
-            <button
-              type="button"
-              onClick={() => setTab('permissions')}
+            <button type="button" onClick={() => setTab('permissions')}
               className={`inline-flex items-center gap-2 py-3 px-1 border-b-2 text-sm font-medium ${
-                tab === 'permissions'
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <ShieldCheckIcon className="h-4 w-4" />
-              權限管理
+                tab === 'permissions' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}>
+              <ShieldCheckIcon className="h-4 w-4" />權限管理
             </button>
           </nav>
         </div>
       )}
 
-      {/* 權限管理 tab 內容 */}
       {tab === 'permissions' && isAdmin && <PermissionsTab />}
 
-      {/* 員工列表 tab 內容（預設） */}
       {tab === 'employees' && (
       <>
-      <form onSubmit={handleSearch} className="flex gap-4">
-        <div className="flex-1 relative">
-          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="搜尋員工姓名、編號..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input pl-10 w-full"
-          />
+      {/* 搜尋 */}
+      <div className="relative">
+        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+        <input type="text" placeholder="搜尋員工姓名、編號..." value={search}
+               onChange={(e) => setSearch(e.target.value)} className="input pl-10 w-full" />
+      </div>
+
+      {/* 篩選器 */}
+      <div className="flex flex-wrap items-end gap-4">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">人員單位</label>
+          <select value={unit} onChange={(e) => handleUnitChange(e.target.value as any)}
+                  className="input min-w-[140px]">
+            <option value="all">全部人員</option>
+            <option value="store">門市人員</option>
+            <option value="hq">總部人員</option>
+          </select>
         </div>
-        <button type="submit" className="btn-primary">
-          搜尋
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">所屬區域</label>
+          <select value={region} onChange={(e) => setRegion(e.target.value)} disabled={regionDisabled}
+                  className="input min-w-[140px] disabled:bg-gray-100 disabled:text-gray-400">
+            <option value="all">全部區域</option>
+            {regionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+
+        <button type="button" onClick={clearFilters}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          清除篩選
         </button>
-      </form>
+
+        <div className="ml-auto text-sm text-gray-600">
+          符合條件：<span className="font-semibold text-gray-900">{filtered.length}</span> 人
+        </div>
+      </div>
+
+      {regionDisabled && (
+        <p className="text-xs text-amber-600">總部人員不適用門市區域篩選。</p>
+      )}
 
       <div className="card">
         {loading ? (
           <div className="p-8 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
           </div>
-        ) : employees.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
-            沒有找到員工資料
+            查無符合條件的人員，請調整篩選條件。
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
@@ -189,47 +240,30 @@ export default function EmployeesPage() {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">編號</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">部門</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">門市</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">單位</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">門市／部門</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">區域</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {employees.map((emp) => (
+              {filtered.map((emp) => (
                 <tr key={emp.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {emp.employeeappnumber}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {emp.name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {emp.department || '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {emp.store_name || '-'}
-                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{emp.employeeappnumber}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{emp.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{unitLabel(emp.person_type)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emp.store_name || emp.department || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{empRegion(emp) || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={emp.is_active ? 'badge-low' : 'badge-high'}>
-                      {emp.is_active ? '在職' : '離職'}
-                    </span>
+                    <span className={emp.is_active ? 'badge-low' : 'badge-high'}>{emp.is_active ? '在職' : '離職'}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm space-x-3">
-                    <button
-                      onClick={() => openConversationModal(emp)}
-                      className="text-green-600 hover:text-green-900 inline-flex items-center gap-1"
-                      title="查看對話紀錄"
-                    >
-                      <ChatBubbleLeftRightIcon className="h-4 w-4" />
-                      對話紀錄
+                    <button onClick={() => openConversationModal(emp)}
+                            className="text-green-600 hover:text-green-900 inline-flex items-center gap-1" title="查看對話紀錄">
+                      <ChatBubbleLeftRightIcon className="h-4 w-4" />對話紀錄
                     </button>
-                    <Link
-                      to={`/employees/${emp.id}`}
-                      className="text-primary-600 hover:text-primary-900"
-                    >
-                      查看詳情
-                    </Link>
+                    <Link to={`/employees/${emp.id}`} className="text-primary-600 hover:text-primary-900">查看詳情</Link>
                   </td>
                 </tr>
               ))}
@@ -241,31 +275,18 @@ export default function EmployeesPage() {
       {/* 對話紀錄 Modal */}
       <Transition.Root show={modalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={setModalOpen}>
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
+          <Transition.Child as={Fragment}
+            enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100"
+            leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
           </Transition.Child>
-
           <div className="fixed inset-0 z-10 overflow-y-auto">
             <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-              <Transition.Child
-                as={Fragment}
-                enter="ease-out duration-300"
-                enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                enterTo="opacity-100 translate-y-0 sm:scale-100"
-                leave="ease-in duration-200"
-                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-                leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-              >
+              <Transition.Child as={Fragment}
+                enter="ease-out duration-300" enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+                enterTo="opacity-100 translate-y-0 sm:scale-100" leave="ease-in duration-200"
+                leaveFrom="opacity-100 translate-y-0 sm:scale-100" leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95">
                 <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-3xl">
-                  {/* Header */}
                   <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                     <div>
                       <Dialog.Title as="h3" className="text-lg font-semibold text-gray-900">
@@ -275,24 +296,17 @@ export default function EmployeesPage() {
                         {modalEmployee?.employeeappnumber} · LINE 訊息與工單留言
                       </p>
                     </div>
-                    <button
-                      onClick={() => setModalOpen(false)}
-                      className="text-gray-400 hover:text-gray-600"
-                    >
+                    <button onClick={() => setModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                       <XMarkIcon className="h-6 w-6" />
                     </button>
                   </div>
-
-                  {/* Content */}
                   <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
                     {modalLoading ? (
                       <div className="flex items-center justify-center py-12">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                       </div>
                     ) : modalMessages.length === 0 ? (
-                      <div className="text-center py-12 text-gray-500">
-                        尚無對話紀錄
-                      </div>
+                      <div className="text-center py-12 text-gray-500">尚無對話紀錄</div>
                     ) : (
                       <div className="space-y-3">
                         <p className="text-sm text-gray-500">共 {modalMessages.length} 筆紀錄</p>
@@ -302,34 +316,22 @@ export default function EmployeesPage() {
                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getChannelColor(msg.channel)}`}>
                                 {getChannelLabel(msg.channel)}
                               </span>
-                              <span className="text-xs text-gray-500">
-                                {getDirectionLabel(msg.direction)}
-                              </span>
-                              {msg.ticket_no && (
-                                <span className="text-xs text-gray-400">
-                                  {msg.ticket_no}
-                                </span>
-                              )}
+                              <span className="text-xs text-gray-500">{getDirectionLabel(msg.direction)}</span>
+                              {msg.ticket_no && <span className="text-xs text-gray-400">{msg.ticket_no}</span>}
                               <span className="text-xs text-gray-400 ml-auto">
                                 {new Date(msg.message_time).toLocaleString('zh-TW')}
                               </span>
                             </div>
                             <p className="text-sm text-gray-900 whitespace-pre-wrap">{msg.message_text}</p>
-                            {msg.author_name && (
-                              <p className="text-xs text-gray-400 mt-1">留言者：{msg.author_name}</p>
-                            )}
+                            {msg.author_name && <p className="text-xs text-gray-400 mt-1">留言者：{msg.author_name}</p>}
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-
-                  {/* Footer */}
                   <div className="flex justify-end px-6 py-3 border-t border-gray-200 bg-gray-50">
-                    <button
-                      onClick={() => setModalOpen(false)}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                    >
+                    <button onClick={() => setModalOpen(false)}
+                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                       關閉
                     </button>
                   </div>
