@@ -62,6 +62,7 @@ interface Schedule {
   start_time: string;      // HH:mm:ss
   end_time: string;        // HH:mm:ss
   duration_minutes: number;
+  actual_minutes?: number | null;
   employee_id?: string;
   employee_name: string;
   employee_app_number: string;
@@ -529,7 +530,24 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [actual, setActual] = useState(schedule.actual_minutes != null ? String(schedule.actual_minutes) : '');
   const cat = catOf(schedule.category_key);
+
+  const saveActual = async () => {
+    const raw = actual.trim();
+    const val = raw === '' ? null : Number(raw);
+    if (val !== null && (!Number.isInteger(val) || val < 0)) { toast.error('請輸入 0 以上的整數分鐘'); return; }
+    setBusy(true);
+    try {
+      await calendarApi.updateSchedule(schedule.id, { actual_minutes: val, updated_by: user?.name || user?.email });
+      toast.success('已更新實際用時。');
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || '更新失敗');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const rows: [string, string][] = [
     ['排程日期', schedule.schedule_date],
@@ -541,6 +559,7 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
     ['建立人', schedule.created_by || '—'],
     ['排程狀態', STATUS_LABEL[schedule.status] || schedule.status],
   ];
+  if (schedule.actual_minutes != null) rows.push(['實際用時', `${schedule.actual_minutes} 分鐘`]);
   if (schedule.status === 'cancelled' && schedule.cancel_reason) rows.push(['取消原因', schedule.cancel_reason]);
 
   const doCancel = async () => {
@@ -588,6 +607,21 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
             <span className="text-gray-900">{v}</span>
           </div>
         ))}
+
+        {schedule.status !== 'cancelled' && !cancelling && (
+          <div className="pt-1">
+            <div className="mb-1 text-sm text-gray-500">實際用時（分鐘）</div>
+            <div className="flex items-center gap-2">
+              <input type="number" min={0} value={actual} onChange={(e) => setActual(e.target.value)}
+                     placeholder={`預計 ${schedule.duration_minutes} 分鐘`}
+                     className="w-40 rounded-md border border-gray-300 px-3 py-2 text-sm" />
+              <button type="button" onClick={saveActual} disabled={busy}
+                      className="rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50">
+                儲存
+              </button>
+            </div>
+          </div>
+        )}
 
         {schedule.status !== 'cancelled' && !cancelling && (
           <div className="pt-1">

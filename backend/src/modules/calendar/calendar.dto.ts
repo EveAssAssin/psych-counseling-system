@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsIn, IsDateString, Matches, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsIn, IsDateString, Matches, MaxLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ──────────────────────────────────────────────
@@ -78,6 +78,8 @@ export class UpdateScheduleDto {
   @ApiPropertyOptional() @IsOptional() @IsString() subcategory_id?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) note?: string;
   @ApiPropertyOptional() @IsOptional() @IsIn(SCHEDULE_STATUSES as any) status?: ScheduleStatus;
+  @ApiPropertyOptional({ description: '實際談話用時（分鐘），可傳 null 清除' })
+  @IsOptional() @IsInt() @Min(0) actual_minutes?: number | null;
   @ApiPropertyOptional() @IsOptional() @IsString() updated_by?: string;
 }
 

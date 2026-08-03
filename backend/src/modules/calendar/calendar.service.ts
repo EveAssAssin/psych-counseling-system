@@ -424,6 +424,7 @@ export class CalendarService {
     }
 
     if (dto.note !== undefined) patch.note = dto.note;
+    if (dto.actual_minutes !== undefined) patch.actual_minutes = dto.actual_minutes;
     if (dto.status !== undefined) {
       patch.status = dto.status;
       if (dto.status === 'completed') patch.completed_at = new Date().toISOString();
