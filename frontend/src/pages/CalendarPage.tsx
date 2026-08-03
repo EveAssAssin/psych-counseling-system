@@ -97,9 +97,8 @@ export default function CalendarPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showNew, setShowNew] = useState(false);
   const [detail, setDetail] = useState<Schedule | null>(null);
-  const [prefill, setPrefill] = useState<{ date?: string; start?: string }>({});
+  const [form, setForm] = useState<{ open: boolean; mode: 'create' | 'edit'; initial?: Schedule; prefill?: { date?: string; start?: string } }>({ open: false, mode: 'create' });
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const hours = useMemo(
@@ -132,8 +131,7 @@ export default function CalendarPage() {
   const gotoThisWeek = () => setWeekStart(startOfWeek(new Date()));
 
   const openNewAt = (date: string, hour: number) => {
-    setPrefill({ date, start: `${String(hour).padStart(2, '0')}:00` });
-    setShowNew(true);
+    setForm({ open: true, mode: 'create', prefill: { date, start: `${String(hour).padStart(2, '0')}:00` } });
   };
 
   return (
@@ -227,37 +225,60 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <button onClick={() => { setPrefill({}); setShowNew(true); }}
+      <button onClick={() => setForm({ open: true, mode: 'create', prefill: {} })}
               className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-full bg-primary-600 px-5 py-3 text-sm font-semibold text-white shadow-lg hover:bg-primary-700">
         <PlusIcon className="h-5 w-5" />新增
       </button>
 
-      {showNew && (
-        <NewScheduleModal prefill={prefill} onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); fetchWeek(); }} />
+      {form.open && (
+        <ScheduleFormModal
+          mode={form.mode}
+          initial={form.initial}
+          prefill={form.prefill}
+          onClose={() => setForm((f) => ({ ...f, open: false }))}
+          onSaved={() => { setForm((f) => ({ ...f, open: false })); fetchWeek(); }}
+        />
       )}
-      {detail && <DetailModal schedule={detail} onClose={() => setDetail(null)} onChanged={() => { setDetail(null); fetchWeek(); }} />}
+      {detail && (
+        <DetailModal
+          schedule={detail}
+          onClose={() => setDetail(null)}
+          onEdit={(s) => { setDetail(null); setForm({ open: true, mode: 'edit', initial: s }); }}
+          onChanged={() => { setDetail(null); fetchWeek(); }}
+        />
+      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════
-//  新增排程 Modal
+//  排程表單 Modal（新增 / 編輯共用）
 // ═══════════════════════════════════════════
-function NewScheduleModal({ prefill, onClose, onCreated }: {
-  prefill: { date?: string; start?: string };
+function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
+  mode: 'create' | 'edit';
+  initial?: Schedule;
+  prefill?: { date?: string; start?: string };
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }) {
   const user = useAuthStore((s) => s.user);
-  const [date, setDate] = useState(prefill.date || '');
-  const [appNumber, setAppNumber] = useState('');
-  const [category, setCategory] = useState('');
-  const [subName, setSubName] = useState('');
+  const isEdit = mode === 'edit' && !!initial;
+  const [date, setDate] = useState(initial?.schedule_date || prefill?.date || '');
+  const [appNumber, setAppNumber] = useState(initial?.employee_app_number || '');
+  const [category, setCategory] = useState(initial?.category_key || '');
+  const [subName, setSubName] = useState(initial?.subcategory_name || '');
   const [subId, setSubId] = useState<string | undefined>(undefined);
-  const [note, setNote] = useState('');
-  const [start, setStart] = useState(prefill.start || '');
-  const [duration, setDuration] = useState(30);
+  const [note, setNote] = useState(initial?.note || '');
+  const [start, setStart] = useState(initial ? hm(initial.start_time) : (prefill?.start || ''));
+  const [duration, setDuration] = useState(initial?.duration_minutes || 30);
   const [submitting, setSubmitting] = useState(false);
+
+  // 是否需重新排休/衝突檢查：新增一定要；編輯只在改了日期/人員/時間時
+  const recheckNeeded = !isEdit || !initial ||
+    date !== initial.schedule_date ||
+    appNumber !== initial.employee_app_number ||
+    start !== hm(initial.start_time) ||
+    duration !== initial.duration_minutes;
 
   // 排休檢查
   const [att, setAtt] = useState<{ status: 'idle' | 'loading' | 'work' | 'off' | 'unknown'; message: string }>({ status: 'idle', message: '' });
@@ -278,28 +299,45 @@ function NewScheduleModal({ prefill, onClose, onCreated }: {
     return arr;
   }, []);
 
-  const canCreate = Boolean(date && appNumber && att.status === 'work' && category && subName && note.trim() && start && !submitting);
+  // 需重新檢查時，排休須為「上班」才能存；未改動時不受排休狀態影響
+  const attOk = !recheckNeeded || att.status === 'work';
+  const canSave = Boolean(date && appNumber && attOk && category && subName && note.trim() && start && !submitting);
 
-  const create = async () => {
-    if (!canCreate) return;
+  const save = async () => {
+    if (!canSave) return;
     setSubmitting(true);
     try {
-      await calendarApi.createSchedule({
-        schedule_date: date,
-        start_time: start,
-        duration_minutes: duration,
-        employee_app_number: appNumber,
-        category_key: category,
-        subcategory_name: subName,
-        subcategory_id: subId,
-        note: note.trim(),
-        created_by: user?.name || user?.email,
-        created_by_id: user?.id,
-      });
-      toast.success('排程建立成功。');
-      onCreated();
+      if (isEdit && initial) {
+        await calendarApi.updateSchedule(initial.id, {
+          schedule_date: date,
+          start_time: start,
+          duration_minutes: duration,
+          employee_app_number: appNumber,
+          category_key: category,
+          subcategory_name: subName,
+          subcategory_id: subId,
+          note: note.trim(),
+          updated_by: user?.name || user?.email,
+        });
+        toast.success('排程已更新。');
+      } else {
+        await calendarApi.createSchedule({
+          schedule_date: date,
+          start_time: start,
+          duration_minutes: duration,
+          employee_app_number: appNumber,
+          category_key: category,
+          subcategory_name: subName,
+          subcategory_id: subId,
+          note: note.trim(),
+          created_by: user?.name || user?.email,
+          created_by_id: user?.id,
+        });
+        toast.success('排程建立成功。');
+      }
+      onSaved();
     } catch (e: any) {
-      toast.error(e.response?.data?.message || '排程建立失敗，請稍後再試。');
+      toast.error(e.response?.data?.message || (isEdit ? '更新失敗，請稍後再試。' : '排程建立失敗，請稍後再試。'));
     } finally {
       setSubmitting(false);
     }
@@ -308,7 +346,7 @@ function NewScheduleModal({ prefill, onClose, onCreated }: {
   return (
     <Overlay onClose={onClose}>
       <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-        <h2 className="text-lg font-semibold text-gray-900">新增排程</h2>
+        <h2 className="text-lg font-semibold text-gray-900">{isEdit ? '編輯排程' : '新增排程'}</h2>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><XMarkIcon className="h-5 w-5" /></button>
       </div>
 
@@ -382,9 +420,9 @@ function NewScheduleModal({ prefill, onClose, onCreated }: {
 
       <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
         <button onClick={onClose} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50">取消</button>
-        <button onClick={create} disabled={!canCreate}
+        <button onClick={save} disabled={!canSave}
                 className="rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50">
-          {submitting ? '建立中…' : '建立'}
+          {submitting ? (isEdit ? '更新中…' : '建立中…') : (isEdit ? '儲存' : '建立')}
         </button>
       </div>
     </Overlay>
@@ -473,9 +511,10 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
 // ═══════════════════════════════════════════
 //  排程詳情 Modal（含取消）
 // ═══════════════════════════════════════════
-function DetailModal({ schedule, onClose, onChanged }: {
+function DetailModal({ schedule, onClose, onEdit, onChanged }: {
   schedule: Schedule;
   onClose: () => void;
+  onEdit: (s: Schedule) => void;
   onChanged: () => void;
 }) {
   const user = useAuthStore((s) => s.user);
@@ -538,6 +577,9 @@ function DetailModal({ schedule, onClose, onChanged }: {
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
+        {schedule.status !== 'cancelled' && !cancelling && (
+          <button onClick={() => onEdit(schedule)} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">編輯</button>
+        )}
         {schedule.status !== 'cancelled' && !cancelling && (
           <button onClick={() => setCancelling(true)} className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">取消排程</button>
         )}
