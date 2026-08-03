@@ -52,6 +52,8 @@ const DURATION_OPTIONS = [
 const STATUS_LABEL: Record<string, string> = {
   pending: '待進行', completed: '已完成', cancelled: '已取消', no_show: '未執行', follow_up: '需後續追蹤',
 };
+// 可手動切換的狀態（取消另走取消流程）
+const STATUS_FLOW = ['pending', 'completed', 'no_show', 'follow_up'];
 
 // ── 後端排程資料型別 ──
 interface Schedule {
@@ -551,6 +553,20 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
     }
   };
 
+  const changeStatus = async (next: string) => {
+    if (next === schedule.status || busy) return;
+    setBusy(true);
+    try {
+      await calendarApi.updateSchedule(schedule.id, { status: next, updated_by: user?.name || user?.email });
+      toast.success('狀態已更新。');
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || '狀態更新失敗');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Overlay onClose={onClose}>
       <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
@@ -568,6 +584,21 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
             <span className="text-gray-900">{v}</span>
           </div>
         ))}
+
+        {schedule.status !== 'cancelled' && !cancelling && (
+          <div className="pt-1">
+            <div className="mb-1 text-sm text-gray-500">更新狀態</div>
+            <div className="flex flex-wrap gap-2">
+              {STATUS_FLOW.map((k) => (
+                <button key={k} type="button" disabled={busy} onClick={() => changeStatus(k)}
+                        className={clsx('rounded-full border px-3 py-1 text-sm disabled:opacity-50',
+                          schedule.status === k ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}>
+                  {STATUS_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {cancelling && (
           <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3">
