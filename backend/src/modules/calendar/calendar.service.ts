@@ -30,10 +30,15 @@ export function isWorkingResult(attendanceResult?: string | null): boolean {
   if (!attendanceResult) return false;
   return attendanceResult.includes('上班');
 }
-/** 只保留日期數字，容錯比對 2026-08-03 / 2026/08/03 */
+/** 日期正規化為 YYYYMMDD，容錯 2026-08-03 / 2026/08/03 / 2026/8/3 */
+function normDate(s?: string): string {
+  if (!s) return '';
+  const m = s.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  if (m) return `${m[1]}${m[2].padStart(2, '0')}${m[3].padStart(2, '0')}`;
+  return s.replace(/\D/g, '').slice(0, 8);
+}
 function sameDate(a?: string, b?: string): boolean {
-  if (!a || !b) return false;
-  return a.replace(/\D/g, '').slice(0, 8) === b.replace(/\D/g, '').slice(0, 8);
+  return !!a && !!b && normDate(a) === normDate(b);
 }
 
 @Injectable()
@@ -51,16 +56,23 @@ export class CalendarService {
 
   // 台北時區的今天 / 現在分鐘
   private nowTaipei(): { date: string; min: number } {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Taipei',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false,
-    }).formatToParts(new Date());
-    const get = (t: string) => parts.find((p) => p.type === t)?.value || '00';
-    const date = `${get('year')}-${get('month')}-${get('day')}`;
-    let hh = get('hour');
-    if (hh === '24') hh = '00';
-    return { date, min: Number(hh) * 60 + Number(get('minute')) };
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Taipei',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }).formatToParts(new Date());
+      const get = (t: string) => parts.find((p) => p.type === t)?.value || '00';
+      const date = `${get('year')}-${get('month')}-${get('day')}`;
+      let hh = get('hour');
+      if (hh === '24') hh = '00';
+      return { date, min: Number(hh) * 60 + Number(get('minute')) };
+    } catch {
+      // 後備：手動 UTC+8（避免部署環境缺完整 ICU 時崩潰）
+      const t = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const date = t.toISOString().slice(0, 10);
+      return { date, min: t.getUTCHours() * 60 + t.getUTCMinutes() };
+    }
   }
 
   // ═══════════════════════════════════════════
@@ -191,12 +203,13 @@ export class CalendarService {
     if (exist) {
       if (exist.is_active) throw new BadRequestException('此小分類已存在，請直接選擇既有項目。');
       // 曾停用 → 重新啟用
-      const { data: reactivated } = await this.db
+      const { data: reactivated, error: reErr } = await this.db
         .from('calendar_subcategories')
         .update({ is_active: true })
         .eq('id', exist.id)
         .select()
         .single();
+      if (reErr) throw reErr;
       return reactivated;
     }
 
@@ -342,13 +355,22 @@ export class CalendarService {
     const startMin = toMin(startStr);
     const endMin = startMin + duration;
 
+    // 只在「值真的變了」時才重跑排休/衝突檢查（與前端一致、符合需求 15.1）
+    const curStart = String(current.start_time).slice(0, 5);
     const timeOrPersonChanged =
-      dto.schedule_date !== undefined || dto.start_time !== undefined ||
-      dto.duration_minutes !== undefined || dto.employee_app_number !== undefined;
+      (dto.schedule_date !== undefined && dto.schedule_date !== current.schedule_date) ||
+      (dto.start_time !== undefined && dto.start_time !== curStart) ||
+      (dto.duration_minutes !== undefined && dto.duration_minutes !== current.duration_minutes) ||
+      (dto.employee_app_number !== undefined && dto.employee_app_number !== current.employee_app_number);
 
     if (timeOrPersonChanged) {
       if (startMin < WORK_START_MIN || endMin > WORK_END_MIN) {
         throw new BadRequestException(`排程時間需落在 ${minToHHMM(WORK_START_MIN)}–${minToHHMM(WORK_END_MIN)} 之間`);
+      }
+      // 不可改到過去（與建立一致）
+      const now = this.nowTaipei();
+      if (date < now.date || (date === now.date && startMin < now.min)) {
+        throw new BadRequestException('不可將排程改到已經過的日期或時間。');
       }
       // 換人 / 換日 → 重新排休檢查
       const att = await this.checkAttendance(empAppNumber, date);
