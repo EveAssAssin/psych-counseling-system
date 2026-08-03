@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -62,6 +63,7 @@ interface Schedule {
   start_time: string;      // HH:mm:ss
   end_time: string;        // HH:mm:ss
   duration_minutes: number;
+  employee_id?: string;
   employee_name: string;
   employee_app_number: string;
   store_name?: string;
@@ -525,6 +527,7 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
   onChanged: () => void;
 }) {
   const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -613,6 +616,12 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
+        {schedule.employee_id && !cancelling && (
+          <button onClick={() => navigate(`/employees/${schedule.employee_id}`)}
+                  className="mr-auto rounded-md border border-primary-300 px-4 py-2 text-sm font-medium text-primary-700 hover:bg-primary-50">
+            個人頁面
+          </button>
+        )}
         {schedule.status !== 'cancelled' && !cancelling && (
           <button onClick={() => onEdit(schedule)} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">編輯</button>
         )}
