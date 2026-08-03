@@ -97,9 +97,36 @@ const toMin = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); re
 const minToHHMM = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 const hm = (t?: string) => (t ? t.slice(0, 5) : '');
 
+// 逾期：已過預計結束時間但未完成（且非取消——列表預設已排除取消）
+const isOverdue = (s: Schedule): boolean =>
+  s.status !== 'completed' && new Date(`${s.schedule_date}T${hm(s.end_time)}:00`).getTime() < Date.now();
+
+// 分鐘 → 「X 小時 Y 分鐘」
+const fmtMinutes = (min: number): string => {
+  if (!min) return '0 分鐘';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h > 0 ? `${h} 小時 ${m} 分鐘` : `${m} 分鐘`;
+};
+
+// 今日總覽卡片點擊 → 行事曆篩選比對
+const CARD_FILTER_LABEL: Record<string, string> = {
+  completed: '已完成', pending: '待執行', overdue: '逾期',
+  routine: '例行性關懷', announce: '流程佈達', project: '專案焦點', newcomer: '新人輔導', urgent: '緊急案件',
+};
+function matchesCardFilter(s: Schedule, f: string | null): boolean {
+  if (!f) return true;
+  if (f === 'completed') return s.status === 'completed';
+  if (f === 'pending') return s.status !== 'completed';
+  if (f === 'overdue') return isOverdue(s);
+  return s.category_key === f;
+}
+
 export default function CalendarPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [today, setToday] = useState<Schedule[]>([]);
+  const [cardFilter, setCardFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Schedule | null>(null);
   const [form, setForm] = useState<{ open: boolean; mode: 'create' | 'edit'; initial?: Schedule; prefill?: { date?: string; start?: string } }>({ open: false, mode: 'create' });
@@ -129,10 +156,44 @@ export default function CalendarPage() {
     }
   }, [weekStart]);
 
+  // 今日總覽資料（永遠是「今天」，與週切換無關）
+  const fetchToday = useCallback(async () => {
+    try {
+      const res = await calendarApi.listSchedules({ start_date: todayStr, end_date: todayStr });
+      const list = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      setToday(list);
+    } catch {
+      /* 總覽非關鍵，靜默 */
+    }
+  }, [todayStr]);
+
   useEffect(() => { fetchWeek(); }, [fetchWeek]);
+  useEffect(() => { fetchToday(); }, [fetchToday]);
+
+  const reload = () => { fetchWeek(); fetchToday(); };
+
+  // 今日統計
+  const stats = useMemo(() => {
+    const list = today;
+    const total = list.length;
+    const completed = list.filter((s) => s.status === 'completed').length;
+    const pending = total - completed;
+    const overdue = list.filter(isOverdue).length;
+    const talk = list.reduce((a, s) => a + (s.duration_minutes || 0), 0);
+    const phone = list.reduce((a, s) => a + (s.actual_minutes || 0), 0);
+    const rate = total ? Math.round((completed / total) * 100) : 0;
+    const cat = (k: string) => list.filter((s) => s.category_key === k).length;
+    return { total, completed, pending, overdue, talk, phone, rate, newcomer: cat('newcomer'), routine: cat('routine'), urgent: cat('urgent') };
+  }, [today]);
 
   const gotoWeek = (delta: number) => setWeekStart((w) => addDays(w, delta * 7));
   const gotoThisWeek = () => setWeekStart(startOfWeek(new Date()));
+
+  // 點卡片 → 跳到本週並套用/取消篩選
+  const applyFilter = (f: string | null) => {
+    gotoThisWeek();
+    setCardFilter((cur) => (cur === f ? null : f));
+  };
 
   const openNewAt = (date: string, hour: number) => {
     setForm({ open: true, mode: 'create', prefill: { date, start: `${String(hour).padStart(2, '0')}:00` } });
@@ -143,6 +204,38 @@ export default function CalendarPage() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">行事曆</h1>
         {loading && <span className="text-xs text-gray-400">載入中…</span>}
+      </div>
+
+      {/* 今日總覽 */}
+      <div className="mb-4">
+        <h2 className="mb-2 text-sm font-semibold text-gray-700">今日總覽（{todayStr}）</h2>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <StatCard label="今日排程" value={`${stats.total} 件`} color="blue"
+                    active={cardFilter === null} onClick={() => { gotoThisWeek(); setCardFilter(null); }} />
+          <StatCard label="已完成" value={`${stats.completed} 件`} color="green"
+                    active={cardFilter === 'completed'} onClick={() => applyFilter('completed')} />
+          <StatCard label="待執行" value={`${stats.pending} 件`} color="orange"
+                    active={cardFilter === 'pending'} onClick={() => applyFilter('pending')} />
+          <StatCard label="逾期" value={`${stats.overdue} 件`} color="red" alert={stats.overdue > 0}
+                    active={cardFilter === 'overdue'} onClick={() => applyFilter('overdue')} />
+          <StatCard label="今日談話時間" value={fmtMinutes(stats.talk)} color="indigo" />
+          <StatCard label="今日電話時間" value={`${stats.phone} 分鐘`} color="purple" />
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <StatCard label="新人輔導" value={`${stats.newcomer} 件`} color="amber"
+                    active={cardFilter === 'newcomer'} onClick={() => applyFilter('newcomer')} />
+          <StatCard label="例行關懷" value={`${stats.routine} 件`} color="blue"
+                    active={cardFilter === 'routine'} onClick={() => applyFilter('routine')} />
+          <StatCard label="緊急案件" value={`${stats.urgent} 件`} color="red" alert={stats.urgent > 0}
+                    active={cardFilter === 'urgent'} onClick={() => applyFilter('urgent')} />
+          <StatCard label="完成率" value={`${stats.rate}%`} color="green" />
+        </div>
+        {cardFilter && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+            <span>行事曆目前只顯示：<span className="font-semibold text-gray-900">{CARD_FILTER_LABEL[cardFilter] || cardFilter}</span></span>
+            <button onClick={() => setCardFilter(null)} className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50">清除篩選</button>
+          </div>
+        )}
       </div>
 
       {/* 週切換列 */}
@@ -195,7 +288,7 @@ export default function CalendarPage() {
 
             {days.map((d, di) => {
               const dateStr = fmt(d);
-              const daySchedules = schedules.filter((s) => s.schedule_date === dateStr);
+              const daySchedules = schedules.filter((s) => s.schedule_date === dateStr && matchesCardFilter(s, cardFilter));
               return (
                 <div key={di} className="relative border-l border-gray-200" style={{ height: hours.length * HOUR_PX }}>
                   {hours.slice(0, -1).map((h, i) => (
@@ -243,7 +336,7 @@ export default function CalendarPage() {
           initial={form.initial}
           prefill={form.prefill}
           onClose={() => setForm((f) => ({ ...f, open: false }))}
-          onSaved={() => { setForm((f) => ({ ...f, open: false })); fetchWeek(); }}
+          onSaved={() => { setForm((f) => ({ ...f, open: false })); reload(); }}
         />
       )}
       {detail && (
@@ -251,7 +344,7 @@ export default function CalendarPage() {
           schedule={detail}
           onClose={() => setDetail(null)}
           onEdit={(s) => { setDetail(null); setForm({ open: true, mode: 'edit', initial: s }); }}
-          onChanged={() => { setDetail(null); fetchWeek(); }}
+          onChanged={() => { setDetail(null); reload(); }}
         />
       )}
     </div>
@@ -669,6 +762,32 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
         <button onClick={onClose} className="rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">關閉</button>
       </div>
     </Overlay>
+  );
+}
+
+// ── 今日總覽卡片 ──
+const CARD_COLORS: Record<string, string> = {
+  blue: 'bg-blue-50 text-blue-700 border-blue-200',
+  green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  orange: 'bg-orange-50 text-orange-700 border-orange-200',
+  red: 'bg-red-50 text-red-700 border-red-200',
+  indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  purple: 'bg-violet-50 text-violet-700 border-violet-200',
+  amber: 'bg-amber-50 text-amber-700 border-amber-200',
+};
+function StatCard({ label, value, color, onClick, active, alert }: {
+  label: string; value: string; color: string;
+  onClick?: () => void; active?: boolean; alert?: boolean;
+}) {
+  const clickable = !!onClick;
+  return (
+    <button type="button" onClick={onClick} disabled={!clickable}
+            className={clsx('rounded-lg border px-3 py-2 text-left transition', CARD_COLORS[color] || CARD_COLORS.blue,
+              clickable ? 'cursor-pointer hover:brightness-95' : 'cursor-default',
+              active && 'ring-2 ring-offset-1 ring-gray-400')}>
+      <div className="text-xs opacity-80">{label}</div>
+      <div className={clsx('text-lg font-bold', alert && 'text-red-600')}>{value}</div>
+    </button>
   );
 }
 
