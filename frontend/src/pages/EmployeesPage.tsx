@@ -32,6 +32,24 @@ interface ChannelMessage {
 const unitLabel = (pt?: string) =>
   pt === 'store' ? '門市人員' : (pt === 'nonstore' || pt === 'special') ? '總部人員' : '—';
 
+// 門市 → 四大區域對照（依實際門市歸屬設定）
+const REGION_GROUPS: Record<string, string[]> = {
+  新北區: ['林口', '中壢', '板橋', '永和'],
+  新竹區: ['新竹', '竹北', '六家'],
+  台中區: ['東山', '潭子', '大里', '中科', '中清', '大墩'],
+  高雄區: ['鼎山', '南京', '高應大', '文山', '熱河', '高美', '新左營', '楠梓'],
+};
+const REGIONS = Object.keys(REGION_GROUPS);
+
+// 依文字（門市名稱/區域）判斷所屬四大區
+function classifyRegion(text?: string): string | undefined {
+  if (!text) return undefined;
+  for (const [region, keywords] of Object.entries(REGION_GROUPS)) {
+    if (keywords.some((k) => text.includes(k))) return region;
+  }
+  return undefined;
+}
+
 export default function EmployeesPage() {
   const currentUser = useAuthStore((state) => state.user);
   const isAdmin = currentUser?.roles?.includes('admin') ?? false;
@@ -40,7 +58,6 @@ export default function EmployeesPage() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [storeRegion, setStoreRegion] = useState<Record<string, string>>({});
-  const [regionOptions, setRegionOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 篩選條件
@@ -67,18 +84,14 @@ export default function EmployeesPage() {
       ]);
       setEmployees(empRes.data.data || []);
 
-      // 門市 → 區域 對照
+      // 門市 → 四大區域 對照（以門市名稱或 region 文字歸類）
       const stores: any[] = Array.isArray(storeRes.data) ? storeRes.data : storeRes.data?.data ?? [];
       const map: Record<string, string> = {};
-      const regions = new Set<string>();
       for (const s of stores) {
-        if (s.id && s.region) {
-          map[s.id] = s.region;
-          regions.add(s.region);
-        }
+        const bucket = classifyRegion(s.name) || classifyRegion(s.region);
+        if (s.id && bucket) map[s.id] = bucket;
       }
       setStoreRegion(map);
-      setRegionOptions(Array.from(regions).sort());
     } catch (error) {
       toast.error('載入員工列表失敗');
     } finally {
@@ -86,9 +99,11 @@ export default function EmployeesPage() {
     }
   };
 
-  // 依所屬門市帶出區域
+  // 依所屬門市帶出區域：優先用員工的門市名稱歸類，其次用 store_id 對照，再其次用部門文字
   const empRegion = (emp: Employee): string | undefined =>
-    emp.store_id ? storeRegion[emp.store_id] : undefined;
+    classifyRegion(emp.store_name) ||
+    (emp.store_id ? storeRegion[emp.store_id] : undefined) ||
+    classifyRegion(emp.department);
 
   // 選「總部人員」時，區域篩選停用並自動回全部
   const handleUnitChange = (v: 'all' | 'store' | 'hq') => {
@@ -207,7 +222,7 @@ export default function EmployeesPage() {
           <select value={region} onChange={(e) => setRegion(e.target.value)} disabled={regionDisabled}
                   className="input min-w-[140px] disabled:bg-gray-100 disabled:text-gray-400">
             <option value="all">全部區域</option>
-            {regionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+            {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
 
