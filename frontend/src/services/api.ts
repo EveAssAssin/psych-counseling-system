@@ -506,6 +506,7 @@ export const calendarApi = {
     api.get('/calendar/subcategories', { params: { category_key } }),
   createSubcategory: (body: { category_key: string; name: string; created_by?: string }) =>
     api.post('/calendar/subcategories', body),
+  renameSubcategory: (id: string, name: string) => api.patch(`/calendar/subcategories/${id}`, { name }),
   deactivateSubcategory: (id: string) => api.delete(`/calendar/subcategories/${id}`),
 
   // 排程

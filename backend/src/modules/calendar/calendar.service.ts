@@ -231,6 +231,38 @@ export class CalendarService {
     return data;
   }
 
+  async renameSubcategory(id: string, name: string) {
+    const clean = (name || '').trim();
+    if (!clean) throw new BadRequestException('不可建立空白內容');
+    if (clean.length > 20) throw new BadRequestException('小分類名稱不可超過 20 字');
+
+    const { data: cur } = await this.db
+      .from('calendar_subcategories')
+      .select('id, category_key')
+      .eq('id', id)
+      .maybeSingle();
+    if (!cur) throw new NotFoundException('找不到此小分類');
+
+    // 同大分類下不可與其他項目重名
+    const { data: dup } = await this.db
+      .from('calendar_subcategories')
+      .select('id')
+      .eq('category_key', cur.category_key)
+      .eq('name', clean)
+      .neq('id', id)
+      .maybeSingle();
+    if (dup) throw new BadRequestException('此小分類已存在，請直接選擇既有項目。');
+
+    const { data, error } = await this.db
+      .from('calendar_subcategories')
+      .update({ name: clean })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
   async deactivateSubcategory(id: string) {
     const { data, error } = await this.db
       .from('calendar_subcategories')

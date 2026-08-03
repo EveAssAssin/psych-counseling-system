@@ -8,6 +8,9 @@ import {
   ClockIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
+  PencilSquareIcon,
+  TrashIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -567,6 +570,9 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
   const [newName, setNewName] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     calendarApi.listSubcategories(categoryKey)
@@ -595,6 +601,35 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
     }
   };
 
+  const startEdit = (s: { id: string; name: string }) => { setEditingId(s.id); setEditName(s.name); };
+  const saveEdit = async (s: { id: string; name: string }) => {
+    const name = editName.trim();
+    if (!name) { toast.error('不可為空白'); return; }
+    if (name === s.name) { setEditingId(null); return; }
+    setBusyId(s.id);
+    try {
+      await calendarApi.renameSubcategory(s.id, name);
+      setList((prev) => prev.map((x) => (x.id === s.id ? { ...x, name } : x)));
+      if (value === s.name) onChange(name, s.id);
+      setEditingId(null);
+      toast.success('小分類已更名。');
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || '更名失敗');
+    } finally { setBusyId(null); }
+  };
+  const removeSub = async (s: { id: string; name: string }) => {
+    if (!window.confirm(`確定要停用「${s.name}」嗎？（歷史排程不受影響）`)) return;
+    setBusyId(s.id);
+    try {
+      await calendarApi.deactivateSubcategory(s.id);
+      setList((prev) => prev.filter((x) => x.id !== s.id));
+      if (value === s.name) onChange('');
+      toast.success('小分類已停用。');
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || '停用失敗');
+    } finally { setBusyId(null); }
+  };
+
   return (
     <div>
       <div className="relative mb-2">
@@ -604,11 +639,32 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
       </div>
       <div className="flex flex-wrap gap-2">
         {filtered.map((s) => (
-          <button key={s.id} type="button" onClick={() => onChange(s.name, s.id)}
-                  className={clsx('rounded-full border px-3 py-1 text-sm',
-                    value === s.name ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}>
-            {s.name}
-          </button>
+          editingId === s.id ? (
+            <div key={s.id} className="flex items-center gap-1 rounded-full border border-primary-300 bg-white px-2 py-1">
+              <input value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus maxLength={20}
+                     className="w-24 text-sm outline-none" />
+              <button type="button" onClick={() => saveEdit(s)} disabled={busyId === s.id}
+                      className="text-primary-600 hover:text-primary-800 disabled:opacity-50" title="儲存">
+                <CheckIcon className="h-4 w-4" />
+              </button>
+              <button type="button" onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600" title="取消">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div key={s.id}
+                 className={clsx('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm',
+                   value === s.name ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600')}>
+              <button type="button" onClick={() => onChange(s.name, s.id)} className="hover:underline">{s.name}</button>
+              <button type="button" onClick={() => startEdit(s)} className="text-gray-400 hover:text-primary-600" title="修改名稱">
+                <PencilSquareIcon className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" onClick={() => removeSub(s)} disabled={busyId === s.id}
+                      className="text-gray-400 hover:text-red-600 disabled:opacity-50" title="停用">
+                <TrashIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )
         ))}
         {!adding && (
           <button type="button" onClick={() => setAdding(true)}

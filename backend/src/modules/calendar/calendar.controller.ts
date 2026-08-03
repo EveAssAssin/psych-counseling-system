@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CalendarService } from './calendar.service';
 import {
   CreateScheduleDto, UpdateScheduleDto, CancelScheduleDto,
-  CreateSubcategoryDto, ListSchedulesQueryDto,
+  CreateSubcategoryDto, RenameSubcategoryDto, ListSchedulesQueryDto,
   CATEGORY_KEYS, CATEGORY_LABELS, STATUS_LABELS, DURATION_OPTIONS,
 } from './calendar.dto';
 
@@ -42,6 +42,12 @@ export class CalendarController {
   @ApiOperation({ summary: '新增自訂小分類' })
   createSubcategory(@Body() dto: CreateSubcategoryDto) {
     return this.svc.createSubcategory(dto);
+  }
+
+  @Patch('subcategories/:id')
+  @ApiOperation({ summary: '修改小分類名稱' })
+  renameSubcategory(@Param('id') id: string, @Body() dto: RenameSubcategoryDto) {
+    return this.svc.renameSubcategory(id, dto.name);
   }
 
   @Delete('subcategories/:id')

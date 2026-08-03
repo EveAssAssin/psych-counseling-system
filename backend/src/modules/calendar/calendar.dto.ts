@@ -118,6 +118,14 @@ export class CreateSubcategoryDto {
 }
 
 // ──────────────────────────────────────────────
+//  小分類 — 改名
+// ──────────────────────────────────────────────
+export class RenameSubcategoryDto {
+  @ApiProperty({ description: '新的小分類名稱（上限 20 字）' })
+  @IsString() @MaxLength(20) name: string;
+}
+
+// ──────────────────────────────────────────────
 //  週查詢
 // ──────────────────────────────────────────────
 export class ListSchedulesQueryDto {
