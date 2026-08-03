@@ -25,10 +25,17 @@ export function minToHHMM(min: number): string {
 export function isOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
   return aStart < bEnd && aEnd > bStart;
 }
-/** HRM 出勤結果 → 是否上班 */
-export function isWorkingResult(attendanceResult?: string | null): boolean {
-  if (!attendanceResult) return false;
-  return attendanceResult.includes('上班');
+/**
+ * HRM 出勤資料 → 當日是否「放假」（與既有 EmployeeAttendancePanel 判斷一致）。
+ * 放假條件：attendanceResult 含「休」或「假」，或有請假項目，或有排休(dayOff)。
+ * 其餘一律視為上班（上班日的 attendanceResult 可能是班別名稱、空字串等，不會固定為「上班」二字）。
+ */
+export function isDayOff(attendanceResult?: string | null, hasLeaveItems = false, hasDayOff = false): boolean {
+  const r = attendanceResult || '';
+  if (r.includes('休') || r.includes('假')) return true;
+  if (hasLeaveItems) return true;
+  if (hasDayOff) return true;
+  return false;
 }
 /** 日期正規化為 YYYYMMDD，容錯 2026-08-03 / 2026/08/03 / 2026/8/3 */
 function normDate(s?: string): string {
@@ -113,10 +120,12 @@ export class CalendarService {
       return { status: 'unknown', raw: null, message: '目前查不到該人員當日的排班資料，請稍後再試或確認排班資料。', employee: { name: emp.name, app_number: appNumber } };
     }
     const result: string = day.attendanceResult || '';
-    if (isWorkingResult(result)) {
-      return { status: 'work', raw: result, message: '已確認該人員當日有上班，可繼續建立排程。', employee: { name: emp.name, app_number: appNumber } };
+    const hasLeave = Array.isArray(day.leaveItems) && day.leaveItems.length > 0;
+    const hasDayOff = !!day.dayOff;
+    if (!isDayOff(result, hasLeave, hasDayOff)) {
+      return { status: 'work', raw: result || '上班', message: '已確認該人員當日有上班，可繼續建立排程。', employee: { name: emp.name, app_number: appNumber } };
     }
-    return { status: 'off', raw: result, message: '該人員當日休假，無法建立排程。', employee: { name: emp.name, app_number: appNumber } };
+    return { status: 'off', raw: result || '休假', message: '該人員當日休假，無法建立排程。', employee: { name: emp.name, app_number: appNumber } };
   }
 
   // ═══════════════════════════════════════════
