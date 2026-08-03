@@ -64,6 +64,7 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState('');
   const [unit, setUnit] = useState<'all' | 'store' | 'hq'>('all');
   const [region, setRegion] = useState<string>('all');
+  const [store, setStore] = useState<string>('all');
 
   // 對話記錄 Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -105,16 +106,34 @@ export default function EmployeesPage() {
     (emp.store_id ? storeRegion[emp.store_id] : undefined) ||
     classifyRegion(emp.department);
 
-  // 選「總部人員」時，區域篩選停用並自動回全部
+  // 所屬門市選項：門市人員的門市名稱，若已選區域則只列該區
+  const storeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const emp of employees) {
+      if (emp.person_type !== 'store' || !emp.store_name) continue;
+      if (region !== 'all' && classifyRegion(emp.store_name) !== region) continue;
+      set.add(emp.store_name);
+    }
+    return Array.from(set).sort();
+  }, [employees, region]);
+
+  // 選「總部人員」時，區域/門市篩選停用並自動回全部
   const handleUnitChange = (v: 'all' | 'store' | 'hq') => {
     setUnit(v);
-    if (v === 'hq') setRegion('all');
+    if (v === 'hq') { setRegion('all'); setStore('all'); }
+  };
+
+  // 換區域時清掉門市選擇（避免殘留不屬於該區的門市）
+  const handleRegionChange = (v: string) => {
+    setRegion(v);
+    setStore('all');
   };
 
   const clearFilters = () => {
     setSearch('');
     setUnit('all');
     setRegion('all');
+    setStore('all');
   };
 
   // 即時篩選（搜尋 + 單位 + 區域 同時生效，全部條件皆須符合）
@@ -130,9 +149,10 @@ export default function EmployeesPage() {
       if (unit === 'store' && emp.person_type !== 'store') return false;
       if (unit === 'hq' && !(emp.person_type === 'nonstore' || emp.person_type === 'special')) return false;
       if (region !== 'all' && empRegion(emp) !== region) return false;
+      if (store !== 'all' && emp.store_name !== store) return false;
       return true;
     });
-  }, [employees, search, unit, region, storeRegion]);
+  }, [employees, search, unit, region, store, storeRegion]);
 
   const regionDisabled = unit === 'hq';
 
@@ -219,10 +239,19 @@ export default function EmployeesPage() {
 
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">所屬區域</label>
-          <select value={region} onChange={(e) => setRegion(e.target.value)} disabled={regionDisabled}
+          <select value={region} onChange={(e) => handleRegionChange(e.target.value)} disabled={regionDisabled}
                   className="input min-w-[140px] disabled:bg-gray-100 disabled:text-gray-400">
             <option value="all">全部區域</option>
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">所屬門市</label>
+          <select value={store} onChange={(e) => setStore(e.target.value)} disabled={regionDisabled}
+                  className="input min-w-[140px] disabled:bg-gray-100 disabled:text-gray-400">
+            <option value="all">全部門市</option>
+            {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
 
