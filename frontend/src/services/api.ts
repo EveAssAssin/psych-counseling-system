@@ -482,3 +482,42 @@ export const counselingApi = {
   notifyTodayOne: (supervisorId: string) =>
     api.post(`/counseling-cases/notify/today/${supervisorId}`),
 };
+
+// ============================================
+// Calendar API（行事曆排程）
+// ============================================
+export const calendarApi = {
+  // 常數
+  getMeta: () => api.get('/calendar/meta'),
+
+  // 排休 / 出勤檢查
+  checkAttendance: (appNumber: string, date: string) =>
+    api.get(`/calendar/attendance/${appNumber}`, { params: { date } }),
+
+  // 小分類
+  listSubcategories: (category_key?: string) =>
+    api.get('/calendar/subcategories', { params: { category_key } }),
+  createSubcategory: (body: { category_key: string; name: string; created_by?: string }) =>
+    api.post('/calendar/subcategories', body),
+  deactivateSubcategory: (id: string) => api.delete(`/calendar/subcategories/${id}`),
+
+  // 排程
+  listSchedules: (params: { start_date: string; end_date: string; created_by_id?: string; include_cancelled?: string }) =>
+    api.get('/calendar/schedules', { params }),
+  getSchedule: (id: string) => api.get(`/calendar/schedules/${id}`),
+  createSchedule: (body: {
+    schedule_date: string;
+    start_time: string;
+    duration_minutes: number;
+    employee_app_number: string;
+    category_key: string;
+    subcategory_name: string;
+    subcategory_id?: string;
+    note: string;
+    created_by?: string;
+    created_by_id?: string;
+  }) => api.post('/calendar/schedules', body),
+  updateSchedule: (id: string, body: any) => api.patch(`/calendar/schedules/${id}`, body),
+  cancelSchedule: (id: string, cancel_reason: string, updated_by?: string) =>
+    api.post(`/calendar/schedules/${id}/cancel`, { cancel_reason, updated_by }),
+};
