@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -527,7 +526,6 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
   onChanged: () => void;
 }) {
   const user = useAuthStore((s) => s.user);
-  const navigate = useNavigate();
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -617,7 +615,7 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
 
       <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
         {schedule.employee_id && !cancelling && (
-          <button onClick={() => navigate(`/employees/${schedule.employee_id}`)}
+          <button onClick={() => window.open(`/employees/${schedule.employee_id}`, '_blank', 'noopener')}
                   className="mr-auto rounded-md border border-primary-300 px-4 py-2 text-sm font-medium text-primary-700 hover:bg-primary-50">
             個人頁面
           </button>
