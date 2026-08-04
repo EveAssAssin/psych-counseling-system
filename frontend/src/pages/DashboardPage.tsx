@@ -8,8 +8,23 @@ import {
   ArrowPathIcon,
   ClockIcon,
 } from '@heroicons/react/24/outline';
-import { employeesApi, conversationsApi, riskFlagsApi, analysisApi, syncApi } from '../services/api';
+import { employeesApi, conversationsApi, riskFlagsApi, analysisApi, syncApi, calendarApi } from '../services/api';
 import toast from 'react-hot-toast';
+
+// 本月訪談時數 — 大分類（顏色與行事曆一致）
+const DASH_CATS = [
+  { key: 'routine', name: '例行性關懷', color: 'bg-blue-500' },
+  { key: 'announce', name: '流程佈達', color: 'bg-emerald-500' },
+  { key: 'project', name: '專案焦點', color: 'bg-violet-500' },
+  { key: 'newcomer', name: '新人輔導', color: 'bg-amber-500' },
+  { key: 'urgent', name: '緊急案件', color: 'bg-red-500' },
+];
+const fmtHM = (min: number) => {
+  if (!min) return '0 分';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h > 0 ? `${h} 小時 ${m} 分` : `${m} 分`;
+};
 
 interface Stats {
   employees: { total: number; active: number };
@@ -55,6 +70,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [highRiskItems, setHighRiskItems] = useState<HighRiskItem[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [monthTalk, setMonthTalk] = useState<{ total: number; byCat: Record<string, number> }>({ total: 0, byCat: {} });
   const [loading, setLoading] = useState(true);
   const [syncingChannel, setSyncingChannel] = useState(false);
 
@@ -64,12 +80,21 @@ export default function DashboardPage() {
 
   const loadData = async () => {
     try {
-      const [empStats, convStats, riskStats, highRisk, syncStatusRes] = await Promise.all([
+      // 本月日期範圍
+      const now = new Date();
+      const y = now.getFullYear();
+      const mo = now.getMonth();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const first = `${y}-${pad(mo + 1)}-01`;
+      const last = `${y}-${pad(mo + 1)}-${pad(new Date(y, mo + 1, 0).getDate())}`;
+
+      const [empStats, convStats, riskStats, highRisk, syncStatusRes, calRes] = await Promise.all([
         employeesApi.getStats(),
         conversationsApi.getStats(),
         riskFlagsApi.getStats(),
         analysisApi.getHighRisk(5),
         syncApi.getStatus().catch(() => ({ data: null })),
+        calendarApi.listSchedules({ start_date: first, end_date: last }).catch(() => ({ data: [] as any[] })),
       ]);
 
       setStats({
@@ -80,6 +105,18 @@ export default function DashboardPage() {
 
       setHighRiskItems(highRisk.data);
       if (syncStatusRes.data) setSyncStatus(syncStatusRes.data);
+
+      // 本月訪談時數（實際訪談時間，全部訪談方式，依大分類加總）
+      const monthScheds: any[] = Array.isArray(calRes.data) ? calRes.data : calRes.data?.data ?? [];
+      const byCat: Record<string, number> = {};
+      let total = 0;
+      for (const s of monthScheds) {
+        const mins = s.actual_minutes || 0;
+        if (!mins) continue;
+        byCat[s.category_key] = (byCat[s.category_key] || 0) + mins;
+        total += mins;
+      }
+      setMonthTalk({ total, byCat });
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -126,6 +163,44 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">儀表板</h1>
         <p className="mt-1 text-sm text-gray-500">系統總覽與重要指標</p>
+      </div>
+
+      {/* 本月訪談時數 */}
+      <div className="card p-5">
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-500">本月訪談時數（實際）</p>
+            <p className="mt-1 text-3xl font-bold text-gray-900">{fmtHM(monthTalk.total)}</p>
+          </div>
+          <p className="text-sm text-gray-400">{new Date().getMonth() + 1} 月 · 全部訪談方式</p>
+        </div>
+
+        {/* 分段進度條 */}
+        <div className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
+          {monthTalk.total > 0 &&
+            DASH_CATS.map((c) => {
+              const m = monthTalk.byCat[c.key] || 0;
+              if (!m) return null;
+              return (
+                <div key={c.key} className={c.color} style={{ width: `${(m / monthTalk.total) * 100}%` }}
+                     title={`${c.name}：${fmtHM(m)}`} />
+              );
+            })}
+        </div>
+
+        {/* 圖例 + 各分類時數 */}
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+          {DASH_CATS.map((c) => (
+            <div key={c.key} className="flex items-center gap-1.5 text-xs text-gray-600">
+              <span className={`h-2.5 w-2.5 rounded-full ${c.color}`} />
+              {c.name}：<span className="font-medium text-gray-900">{fmtHM(monthTalk.byCat[c.key] || 0)}</span>
+            </div>
+          ))}
+        </div>
+
+        {monthTalk.total === 0 && (
+          <p className="mt-2 text-xs text-gray-400">本月尚無填寫實際訪談時間的排程。</p>
+        )}
       </div>
 
       {/* Stats cards */}
