@@ -26,6 +26,27 @@ const fmtHM = (min: number) => {
   return h > 0 ? `${h} 小時 ${m} 分` : `${m} 分`;
 };
 
+interface TalkData { total: number; byCat: Record<string, number> }
+
+function TalkBar({ label, data }: { label: string; data: TalkData }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="text-xs font-medium text-gray-500">{label}</span>
+        <span className="text-sm font-semibold text-gray-900">{fmtHM(data.total)}</span>
+      </div>
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
+        {data.total > 0 &&
+          DASH_CATS.map((c) => {
+            const m = data.byCat[c.key] || 0;
+            if (!m) return null;
+            return <div key={c.key} className={c.color} style={{ width: `${(m / data.total) * 100}%` }} title={`${c.name}：${fmtHM(m)}`} />;
+          })}
+      </div>
+    </div>
+  );
+}
+
 interface Stats {
   employees: { total: number; active: number };
   conversations: { total: number; pending: number; needFollowup: number };
@@ -70,7 +91,8 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [highRiskItems, setHighRiskItems] = useState<HighRiskItem[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [monthTalk, setMonthTalk] = useState<{ total: number; byCat: Record<string, number> }>({ total: 0, byCat: {} });
+  const [monthTalk, setMonthTalk] = useState<TalkData>({ total: 0, byCat: {} });
+  const [todayTalk, setTodayTalk] = useState<TalkData>({ total: 0, byCat: {} });
   const [loading, setLoading] = useState(true);
   const [syncingChannel, setSyncingChannel] = useState(false);
 
@@ -106,17 +128,25 @@ export default function DashboardPage() {
       setHighRiskItems(highRisk.data);
       if (syncStatusRes.data) setSyncStatus(syncStatusRes.data);
 
-      // 本月訪談時數（實際訪談時間，全部訪談方式，依大分類加總）
+      // 本月 / 今日訪談時數（實際訪談時間，全部訪談方式，依大分類加總）
+      const todayStr = `${y}-${pad(mo + 1)}-${pad(now.getDate())}`;
       const monthScheds: any[] = Array.isArray(calRes.data) ? calRes.data : calRes.data?.data ?? [];
-      const byCat: Record<string, number> = {};
-      let total = 0;
+      const mByCat: Record<string, number> = {};
+      const tByCat: Record<string, number> = {};
+      let mTotal = 0;
+      let tTotal = 0;
       for (const s of monthScheds) {
         const mins = s.actual_minutes || 0;
         if (!mins) continue;
-        byCat[s.category_key] = (byCat[s.category_key] || 0) + mins;
-        total += mins;
+        mByCat[s.category_key] = (mByCat[s.category_key] || 0) + mins;
+        mTotal += mins;
+        if (s.schedule_date === todayStr) {
+          tByCat[s.category_key] = (tByCat[s.category_key] || 0) + mins;
+          tTotal += mins;
+        }
       }
-      setMonthTalk({ total, byCat });
+      setMonthTalk({ total: mTotal, byCat: mByCat });
+      setTodayTalk({ total: tTotal, byCat: tByCat });
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -165,41 +195,30 @@ export default function DashboardPage() {
         <p className="mt-1 text-sm text-gray-500">系統總覽與重要指標</p>
       </div>
 
-      {/* 本月訪談時數 */}
+      {/* 訪談時數（實際）— 今日 / 本月 */}
       <div className="card p-5">
-        <div className="flex items-end justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-500">本月訪談時數（實際）</p>
-            <p className="mt-1 text-3xl font-bold text-gray-900">{fmtHM(monthTalk.total)}</p>
-          </div>
-          <p className="text-sm text-gray-400">{new Date().getMonth() + 1} 月 · 全部訪談方式</p>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-medium text-gray-500">訪談時數（實際）</p>
+          <p className="text-xs text-gray-400">全部訪談方式</p>
         </div>
 
-        {/* 分段進度條 */}
-        <div className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
-          {monthTalk.total > 0 &&
-            DASH_CATS.map((c) => {
-              const m = monthTalk.byCat[c.key] || 0;
-              if (!m) return null;
-              return (
-                <div key={c.key} className={c.color} style={{ width: `${(m / monthTalk.total) * 100}%` }}
-                     title={`${c.name}：${fmtHM(m)}`} />
-              );
-            })}
+        <div className="space-y-3">
+          <TalkBar label="今日" data={todayTalk} />
+          <TalkBar label={`本月（${new Date().getMonth() + 1} 月）`} data={monthTalk} />
         </div>
 
-        {/* 圖例 + 各分類時數 */}
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+        {/* 圖例 */}
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
           {DASH_CATS.map((c) => (
             <div key={c.key} className="flex items-center gap-1.5 text-xs text-gray-600">
               <span className={`h-2.5 w-2.5 rounded-full ${c.color}`} />
-              {c.name}：<span className="font-medium text-gray-900">{fmtHM(monthTalk.byCat[c.key] || 0)}</span>
+              {c.name}
             </div>
           ))}
         </div>
 
-        {monthTalk.total === 0 && (
-          <p className="mt-2 text-xs text-gray-400">本月尚無填寫實際訪談時間的排程。</p>
+        {todayTalk.total === 0 && monthTalk.total === 0 && (
+          <p className="mt-2 text-xs text-gray-400">目前尚無填寫實際訪談時間的排程。</p>
         )}
       </div>
 
