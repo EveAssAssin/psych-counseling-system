@@ -232,6 +232,15 @@ export class SyncService {
       const result = await this.employeesService.bulkUpsert(employeesToUpsert as any);
 
       // ========================================
+      // Step 6.5: 反向對帳 — 標記已離職者
+      // 原因：getallemployees(#13) 母體「不含離職店家人員」，離職者會從名單消失，
+      //       upsert 永遠不會碰到他們 → is_active 停留在 true。
+      // 做法（安全）：對「DB 在職但不在本次名單」的人，用 #11 逐一驗證是否 isleave/isfreeze；
+      //       確認離職（或來源已查無此人）才標離職。驗證 API 失敗一律不動，避免誤殺。
+      // ========================================
+      const reconcileResult = await this.reconcileResignedEmployees(employeesToUpsert);
+
+      // ========================================
       // Step 7: 更新同步日誌
       // ========================================
       const syncDetails = {
@@ -239,6 +248,7 @@ export class SyncService {
         total_valid: validEmployees.length,
         total_excluded: excludedCount,
         skipped_samples: skippedReasons.slice(0, 10),
+        reconcile: reconcileResult,
         person_type_breakdown: {
           store: employeesToUpsert.filter((e: any) => e.person_type === 'store').length,
           nonstore: employeesToUpsert.filter((e: any) => e.person_type === 'nonstore').length,
@@ -276,6 +286,75 @@ export class SyncService {
       });
 
       throw error;
+    }
+  }
+
+  /**
+   * 反向對帳：標記已離職者（approach B，逐一驗證）。
+   * 回傳統計，供 sync log 記錄。任何例外都吞掉（不影響主同步）。
+   */
+  private async reconcileResignedEmployees(
+    syncedEmployees: any[],
+  ): Promise<{ ran: boolean; candidates: number; deactivated: number; note?: string }> {
+    try {
+      // 安全閥：本次有效名單太小，可能是 API 回傳不完整，跳過對帳以免誤殺
+      if (!syncedEmployees || syncedEmployees.length < 20) {
+        return { ran: false, candidates: 0, deactivated: 0, note: `batch too small (${syncedEmployees?.length ?? 0})` };
+      }
+
+      const syncedAppNumbers = new Set(syncedEmployees.map((e) => e.employeeappnumber));
+      const db = this.supabase.getAdminClient();
+
+      // DB 目前在職的人
+      const { data: activeRows, error } = await db
+        .from('employees')
+        .select('id, employeeappnumber, employeeerpid')
+        .eq('is_active', true);
+      if (error) return { ran: false, candidates: 0, deactivated: 0, note: `query active failed: ${error.message}` };
+
+      // 在職但不在本次名單、且有 erpid（才驗證得了）
+      const candidates = (activeRows ?? []).filter(
+        (r: any) => !syncedAppNumbers.has(r.employeeappnumber) && r.employeeerpid,
+      );
+      if (candidates.length === 0) return { ran: true, candidates: 0, deactivated: 0 };
+
+      // 分批向 #11 驗證（每批 100 筆）
+      const CHUNK = 100;
+      const detailByErp = new Map<string, any>();
+      const verifiedErp = new Set<string>();
+      for (let i = 0; i < candidates.length; i += CHUNK) {
+        const chunk = candidates.slice(i, i + CHUNK);
+        const erpIds = chunk.map((c: any) => String(c.employeeerpid));
+        const r = await this.lefthandApi.getEmployeesByErpIds(erpIds);
+        if (!r.success) {
+          this.logger.warn(`Reconcile: verify chunk failed, skip these (${r.message})`);
+          continue; // 該批驗證失敗 → 不動這批
+        }
+        for (const id of erpIds) verifiedErp.add(id);
+        for (const d of r.data ?? []) detailByErp.set(String(d.erpid), d);
+      }
+
+      // 只處理「有被成功驗證」的候選人
+      let deactivated = 0;
+      for (const c of candidates) {
+        const erp = String(c.employeeerpid);
+        if (!verifiedErp.has(erp)) continue; // 沒驗證成功 → 不動
+        const d = detailByErp.get(erp);
+        // 確認離職：API 有回傳且 isleave/isfreeze，或明確查無此人（要了卻沒回 → 已從來源移除）
+        const confirmedLeft = d ? (!!d.isleave || !!d.isfreeze) : true;
+        if (!confirmedLeft) continue;
+        const { error: upErr } = await db
+          .from('employees')
+          .update({ is_active: false, is_leave: true })
+          .eq('id', c.id);
+        if (!upErr) deactivated++;
+      }
+
+      this.logger.log(`Reconcile done: ${deactivated} marked inactive of ${candidates.length} candidates`);
+      return { ran: true, candidates: candidates.length, deactivated };
+    } catch (e: any) {
+      this.logger.error('Reconcile failed (non-fatal):', e.message);
+      return { ran: false, candidates: 0, deactivated: 0, note: e.message };
     }
   }
 
