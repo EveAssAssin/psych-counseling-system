@@ -148,6 +148,7 @@ export default function CalendarPage() {
   const [monthOv, setMonthOv] = useState<Schedule[]>([]);
   const [ovRange, setOvRange] = useState<'today' | 'week' | 'month'>('today');
   const [cardFilter, setCardFilter] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ s: Schedule; x: number; y: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Schedule | null>(null);
   const [form, setForm] = useState<{ open: boolean; mode: 'create' | 'edit'; initial?: Schedule; prefill?: { date?: string; start?: string }; rescheduleOfId?: string }>({ open: false, mode: 'create' });
@@ -389,26 +390,20 @@ export default function CalendarPage() {
                   {daySchedules.map((s) => {
                     const startMin = toMin(hm(s.start_time));
                     const top = ((startMin - WORK_START_HOUR * 60) / 60) * HOUR_PX;
-                    // 至少依時長高度，但內容較多時自動長高，避免被切掉
-                    const minH = Math.max((s.duration_minutes / 60) * HOUR_PX, 40);
+                    // 高度貼近實際時長（短方塊只放姓名，不撐高）
+                    const minH = Math.max((s.duration_minutes / 60) * HOUR_PX, 18);
                     const cat = catOf(s.category_key);
-                    const catCount = s.category_keys?.length || 1;
-                    const subs = s.subcategory_names?.length ? s.subcategory_names : (s.subcategory_name ? [s.subcategory_name] : []);
                     return (
                       <button key={s.id} onClick={() => setDetail(s)}
-                              className={clsx('absolute left-1 right-1 z-10 rounded border px-1.5 py-1 text-left text-xs shadow-sm hover:z-20', cat.block)}
+                              onMouseEnter={(e) => setHover({ s, x: e.clientX, y: e.clientY })}
+                              onMouseMove={(e) => setHover((h) => (h && h.s.id === s.id ? { s, x: e.clientX, y: e.clientY } : h))}
+                              onMouseLeave={() => setHover((h) => (h && h.s.id === s.id ? null : h))}
+                              className={clsx('absolute left-1 right-1 z-10 overflow-hidden rounded border px-1.5 py-0.5 text-left text-xs shadow-sm hover:z-20', cat.block)}
                               style={{ top, minHeight: minH }}>
-                        <div className="flex items-center gap-1 font-semibold">
+                        <div className="flex items-center gap-1 font-semibold leading-tight">
                           {cat.urgent && <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />}
                           <span className="truncate">{s.employee_name}</span>
-                          <span className="ml-auto shrink-0 rounded bg-black/10 px-1 text-[10px] font-medium leading-4">
-                            {STATUS_LABEL[s.status] || s.status}
-                          </span>
                         </div>
-                        <div className="break-words opacity-90">
-                          {cat.name}{catCount > 1 ? ` +${catCount - 1}` : ''}｜{subs[0] || ''}{subs.length > 1 ? ` +${subs.length - 1}` : ''}
-                        </div>
-                        <div className="opacity-80">{hm(s.start_time)}－{hm(s.end_time)}</div>
                       </button>
                     );
                   })}
@@ -442,6 +437,29 @@ export default function CalendarPage() {
           onChanged={() => { setDetail(null); reload(); }}
         />
       )}
+
+      {/* Hover 浮動詳情 */}
+      {hover && (() => {
+        const s = hover.s;
+        const c = catOf(s.category_key);
+        const cats = (s.category_keys?.length ? s.category_keys : [s.category_key]).map((k) => catOf(k).name).join('、');
+        const subs = (s.subcategory_names?.length ? s.subcategory_names : (s.subcategory_name ? [s.subcategory_name] : [])).filter(Boolean).join('、');
+        const left = Math.min(hover.x + 14, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 244);
+        return (
+          <div className="pointer-events-none fixed z-50 w-56 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-xl"
+               style={{ left, top: hover.y + 14 }}>
+            <div className="mb-1 flex items-center gap-1 font-semibold text-gray-900">
+              <span className={clsx('h-2.5 w-2.5 shrink-0 rounded-full', c.dot)} />
+              <span className="truncate">{s.employee_name}</span>
+              <span className="ml-auto shrink-0 rounded bg-gray-100 px-1 text-[10px] font-medium text-gray-600">{STATUS_LABEL[s.status] || s.status}</span>
+            </div>
+            <div className="text-gray-600">{cats}｜{subs || '無'}</div>
+            <div className="text-gray-500">{hm(s.start_time)}－{hm(s.end_time)}（{s.duration_minutes} 分鐘）</div>
+            {s.contact_method && <div className="text-gray-500">訪談方式：{METHOD_LABEL[s.contact_method] || s.contact_method}</div>}
+            {s.note && <div className="mt-1 text-gray-500">{s.note}</div>}
+          </div>
+        );
+      })()}
     </div>
   );
 }
