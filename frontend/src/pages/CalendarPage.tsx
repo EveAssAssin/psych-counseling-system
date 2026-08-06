@@ -285,7 +285,7 @@ export default function CalendarPage() {
           <span className="text-xs text-gray-400">{ovRange === 'today' ? todayStr : ovRange === 'week' ? '本週' : '本月'}</span>
         </div>
 
-        {/* 指標 + 時數（時數卡寬度不動） */}
+        {/* 第一列：指標 */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard label={ovRange === 'today' ? '今日排程' : ovRange === 'week' ? '本週排程' : '本月排程'} value={`${stats.total} 件`} color="blue" icon={CalendarDaysIcon}
                     active={cardFilter === null} onClick={() => { gotoThisWeek(); setCardFilter(null); }} />
@@ -296,25 +296,27 @@ export default function CalendarPage() {
           <StatCard label="逾期" value={`${stats.overdue} 件`} color="red" icon={ExclamationTriangleIcon} alert={stats.overdue > 0}
                     active={cardFilter === 'overdue'} onClick={() => applyFilter('overdue')} />
           <StatCard label="完成率" value={`${stats.rate}%`} color="green" icon={ChartPieIcon} />
-          <StatCard label="預計訪談時間" value={fmtMinutes(stats.talk)} color="indigo" icon={ClipboardDocumentListIcon} />
-          <StatCard label="實際訪談時間" value={fmtMinutes(stats.phone)} color="purple" icon={PhoneIcon} />
         </div>
 
-        {/* 5 種訪談分類（緊湊格，寬度較小） */}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          {CAT_ORDER.map((k) => (
-            <button key={k} type="button" onClick={() => applyFilter(k)}
-                    className={clsx('flex items-center justify-between rounded-lg border bg-white px-3 py-2 shadow-sm transition hover:shadow-md',
-                      cardFilter === k ? 'border-primary-400 ring-1 ring-primary-300' : 'border-gray-100')}>
-              <span className="flex min-w-0 items-center gap-1.5 text-xs text-gray-600">
-                <span className={clsx('h-2.5 w-2.5 shrink-0 rounded-full', CAT[k].dot)} />
-                <span className="truncate">{CAT[k].name}</span>
-              </span>
-              <span className={clsx('ml-2 shrink-0 text-sm font-bold', k === 'urgent' && (stats.byCat[k] || 0) > 0 ? 'text-red-600' : 'text-gray-900')}>
-                {stats.byCat[k] || 0}
-              </span>
-            </button>
-          ))}
+        {/* 第二列：時數卡（寬度不動）+ 右側放 5 種訪談分類 */}
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <StatCard label="預計訪談時間" value={fmtMinutes(stats.talk)} color="indigo" icon={ClipboardDocumentListIcon} />
+          <StatCard label="實際訪談時間" value={fmtMinutes(stats.phone)} color="purple" icon={PhoneIcon} />
+          <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-3 sm:grid-cols-3 lg:col-span-3">
+            {CAT_ORDER.map((k) => (
+              <button key={k} type="button" onClick={() => applyFilter(k)}
+                      className={clsx('flex items-center justify-between rounded-lg border bg-white px-3 py-2 shadow-sm transition hover:shadow-md',
+                        cardFilter === k ? 'border-primary-400 ring-1 ring-primary-300' : 'border-gray-100')}>
+                <span className="flex min-w-0 items-center gap-1.5 text-xs text-gray-600">
+                  <span className={clsx('h-2.5 w-2.5 shrink-0 rounded-full', CAT[k].dot)} />
+                  <span className="truncate">{CAT[k].name}</span>
+                </span>
+                <span className={clsx('ml-2 shrink-0 text-sm font-bold', k === 'urgent' && (stats.byCat[k] || 0) > 0 ? 'text-red-600' : 'text-gray-900')}>
+                  {stats.byCat[k] || 0}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {cardFilter && (
