@@ -144,7 +144,7 @@ export class CalendarService {
     if (q.created_by_id) query = query.eq('created_by_id', q.created_by_id);
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data ?? [];
   }
 
@@ -169,7 +169,7 @@ export class CalendarService {
     if (params.excludeId) query = query.neq('id', params.excludeId);
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
 
     for (const it of data ?? []) {
       const s = toMin(String(it.start_time).slice(0, 5));
@@ -192,7 +192,7 @@ export class CalendarService {
     let query = this.db.from('calendar_subcategories').select('*').eq('is_active', true).order('name');
     if (categoryKey) query = query.eq('category_key', categoryKey);
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data ?? [];
   }
 
@@ -227,7 +227,7 @@ export class CalendarService {
       .insert({ category_key: dto.category_key, name, created_by: dto.created_by || null })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data;
   }
 
@@ -259,7 +259,7 @@ export class CalendarService {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data;
   }
 
@@ -270,7 +270,7 @@ export class CalendarService {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data;
   }
 
@@ -298,7 +298,7 @@ export class CalendarService {
       .insert({ category_key: categoryKey, name: clean, created_by: createdBy || null })
       .select('id, name')
       .single();
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return { id: created.id, name: created.name };
   }
 
@@ -383,7 +383,7 @@ export class CalendarService {
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
 
     for (const s of ensuredSubs) await this.bumpSubcategoryUsage(s.id);
     return data;
@@ -505,7 +505,7 @@ export class CalendarService {
     if (Object.keys(patch).length === 0) return current;
 
     const { data, error } = await this.db.from('calendar_schedules').update(patch).eq('id', id).select().single();
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data;
   }
 
@@ -519,7 +519,7 @@ export class CalendarService {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data;
   }
 
@@ -535,7 +535,7 @@ export class CalendarService {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data;
   }
 }
