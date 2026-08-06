@@ -349,8 +349,13 @@ export class CalendarService {
     });
     if (conflict) throw new BadRequestException(conflict.message);
 
-    // 6. 小分類
-    const sub = await this.ensureSubcategory(dto.category_key, dto.subcategory_name, dto.created_by);
+    // 6. 標籤（大/小分類皆可多選，第一個為主要；小分類掛在主要大分類下）
+    const categoryKeys = this.resolveCategoryKeys(dto.category_keys, dto.category_key);
+    const primaryCat = categoryKeys[0];
+    const rawSubs = this.resolveSubNames(dto.subcategory_names, dto.subcategory_name);
+    const ensuredSubs: { id: string; name: string }[] = [];
+    for (const n of rawSubs) ensuredSubs.push(await this.ensureSubcategory(primaryCat, n, dto.created_by));
+    const primarySub = ensuredSubs[0];
 
     // 7. 寫入
     const { data, error } = await this.db
@@ -364,9 +369,11 @@ export class CalendarService {
         employee_app_number: emp.employeeappnumber,
         employee_name: emp.name,
         store_name: emp.store_name || null,
-        category_key: dto.category_key,
-        subcategory_id: sub.id,
-        subcategory_name: sub.name,
+        category_key: primaryCat,
+        category_keys: categoryKeys,
+        subcategory_id: primarySub.id,
+        subcategory_name: primarySub.name,
+        subcategory_names: ensuredSubs.map((e) => e.name),
         note: dto.note,
         contact_method: dto.contact_method || null,
         attendance_check: att.raw,
@@ -378,8 +385,26 @@ export class CalendarService {
       .single();
     if (error) throw error;
 
-    await this.bumpSubcategoryUsage(sub.id);
+    for (const s of ensuredSubs) await this.bumpSubcategoryUsage(s.id);
     return data;
+  }
+
+  /** 解析大分類多選（第一個為主要），相容單一 category_key */
+  private resolveCategoryKeys(keys?: CategoryKey[], single?: CategoryKey): CategoryKey[] {
+    const arr = (keys && keys.length ? keys : (single ? [single] : [])).filter(Boolean) as CategoryKey[];
+    // 去重、保留順序
+    const uniq = Array.from(new Set(arr));
+    if (!uniq.length) throw new BadRequestException('請至少選擇一個標籤分類');
+    return uniq;
+  }
+
+  /** 解析小分類多選（去空白、去重、保留順序），相容單一 subcategory_name */
+  private resolveSubNames(names?: string[], single?: string): string[] {
+    const arr = (names && names.length ? names : (single ? [single] : []))
+      .map((s) => (s || '').trim()).filter(Boolean);
+    const uniq = Array.from(new Set(arr));
+    if (!uniq.length) throw new BadRequestException('請至少選擇一個標籤細項');
+    return uniq;
   }
 
   // ═══════════════════════════════════════════
@@ -446,14 +471,26 @@ export class CalendarService {
       patch.end_time = minToHHMM(endMin);
     }
 
-    // 分類
-    const categoryKey = (dto.category_key ?? current.category_key) as CategoryKey;
-    if (dto.subcategory_name !== undefined || dto.category_key !== undefined) {
-      const subName = dto.subcategory_name ?? current.subcategory_name;
-      const sub = await this.ensureSubcategory(categoryKey, subName, current.created_by);
-      patch.category_key = categoryKey;
-      patch.subcategory_id = sub.id;
-      patch.subcategory_name = sub.name;
+    // 分類（大/小分類多選；有帶任何一個就重算）
+    const catChanged = dto.category_keys !== undefined || dto.category_key !== undefined;
+    const subChanged = dto.subcategory_names !== undefined || dto.subcategory_name !== undefined;
+    if (catChanged || subChanged) {
+      const categoryKeys = this.resolveCategoryKeys(
+        dto.category_keys ?? (dto.category_key ? [dto.category_key] : undefined) ?? (current.category_keys as CategoryKey[]),
+        current.category_key,
+      );
+      const primaryCat = categoryKeys[0];
+      const rawSubs = this.resolveSubNames(
+        dto.subcategory_names ?? (dto.subcategory_name ? [dto.subcategory_name] : undefined) ?? (current.subcategory_names as string[]),
+        current.subcategory_name,
+      );
+      const ensured: { id: string; name: string }[] = [];
+      for (const n of rawSubs) ensured.push(await this.ensureSubcategory(primaryCat, n, current.created_by));
+      patch.category_key = primaryCat;
+      patch.category_keys = categoryKeys;
+      patch.subcategory_id = ensured[0].id;
+      patch.subcategory_name = ensured[0].name;
+      patch.subcategory_names = ensured.map((e) => e.name);
     }
 
     if (dto.note !== undefined) patch.note = dto.note;

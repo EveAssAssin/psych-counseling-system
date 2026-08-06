@@ -518,8 +518,10 @@ export const calendarApi = {
     start_time: string;
     duration_minutes: number;
     employee_app_number: string;
-    category_key: string;
-    subcategory_name: string;
+    category_key?: string;
+    category_keys?: string[];
+    subcategory_name?: string;
+    subcategory_names?: string[];
     subcategory_id?: string;
     note: string;
     contact_method?: string;

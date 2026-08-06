@@ -85,7 +85,9 @@ interface Schedule {
   employee_app_number: string;
   store_name?: string;
   category_key: string;
+  category_keys?: string[];
   subcategory_name: string;
+  subcategory_names?: string[];
   note: string;
   contact_method?: string | null;
   status: string;
@@ -359,6 +361,8 @@ export default function CalendarPage() {
                     const top = ((startMin - WORK_START_HOUR * 60) / 60) * HOUR_PX;
                     const height = Math.max((s.duration_minutes / 60) * HOUR_PX, 22);
                     const cat = catOf(s.category_key);
+                    const catCount = s.category_keys?.length || 1;
+                    const subs = s.subcategory_names?.length ? s.subcategory_names : (s.subcategory_name ? [s.subcategory_name] : []);
                     return (
                       <button key={s.id} onClick={() => setDetail(s)}
                               className={clsx('absolute left-1 right-1 overflow-hidden rounded border px-1.5 py-1 text-left text-xs shadow-sm', cat.block)}
@@ -370,7 +374,9 @@ export default function CalendarPage() {
                             {STATUS_LABEL[s.status] || s.status}
                           </span>
                         </div>
-                        <div className="truncate opacity-90">{cat.name}｜{s.subcategory_name}</div>
+                        <div className="truncate opacity-90">
+                          {cat.name}{catCount > 1 ? ` +${catCount - 1}` : ''}｜{subs[0] || ''}{subs.length > 1 ? ` +${subs.length - 1}` : ''}
+                        </div>
                         <div className="opacity-80">{hm(s.start_time)}－{hm(s.end_time)}</div>
                       </button>
                     );
@@ -422,9 +428,13 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
   const isEdit = mode === 'edit' && !!initial;
   const [date, setDate] = useState(initial?.schedule_date || prefill?.date || '');
   const [appNumber, setAppNumber] = useState(initial?.employee_app_number || '');
-  const [category, setCategory] = useState(initial?.category_key || '');
-  const [subName, setSubName] = useState(initial?.subcategory_name || '');
-  const [subId, setSubId] = useState<string | undefined>(undefined);
+  // 大分類、小分類皆多選（第一個為主要）
+  const [categories, setCategories] = useState<string[]>(
+    initial?.category_keys?.length ? initial.category_keys : (initial?.category_key ? [initial.category_key] : []),
+  );
+  const [subNames, setSubNames] = useState<string[]>(
+    initial?.subcategory_names?.length ? initial.subcategory_names : (initial?.subcategory_name ? [initial.subcategory_name] : []),
+  );
   const [note, setNote] = useState(initial?.note || '');
   const [method, setMethod] = useState(initial?.contact_method || '');
   const [start, setStart] = useState(initial ? hm(initial.start_time) : (prefill?.start || ''));
@@ -461,7 +471,8 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
 
   // 需重新檢查時，排休須為「上班」才能存；未改動時不受排休狀態影響
   const attOk = !recheckNeeded || att.status === 'work';
-  const canSave = Boolean(date && appNumber && attOk && category && subName && note.trim() && start && !submitting);
+  const primaryCat = categories[0] || '';
+  const canSave = Boolean(date && appNumber && attOk && categories.length && subNames.length && note.trim() && start && !submitting);
 
   const save = async () => {
     if (!canSave) return;
@@ -473,9 +484,8 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
           start_time: start,
           duration_minutes: duration,
           employee_app_number: appNumber,
-          category_key: category,
-          subcategory_name: subName,
-          subcategory_id: subId,
+          category_keys: categories,
+          subcategory_names: subNames,
           note: note.trim(),
           contact_method: method || undefined,
           updated_by: user?.name || user?.email,
@@ -487,9 +497,8 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
           start_time: start,
           duration_minutes: duration,
           employee_app_number: appNumber,
-          category_key: category,
-          subcategory_name: subName,
-          subcategory_id: subId,
+          category_keys: categories,
+          subcategory_names: subNames,
           note: note.trim(),
           contact_method: method || undefined,
           created_by: user?.name || user?.email,
@@ -532,22 +541,28 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
           </div>
         )}
 
-        <Field label="標籤分類" required>
+        <Field label="標籤分類（可多選，第一個為主要）" required>
           <div className="flex flex-wrap gap-2">
-            {CAT_ORDER.map((k) => (
-              <button key={k} type="button" onClick={() => { setCategory(k); setSubName(''); setSubId(undefined); }}
-                className={clsx('inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm',
-                  category === k ? CAT[k].chip + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}>
-                <span className={clsx('h-2.5 w-2.5 rounded-full', CAT[k].dot)} />{CAT[k].name}
-              </button>
-            ))}
+            {CAT_ORDER.map((k) => {
+              const idx = categories.indexOf(k);
+              const selected = idx >= 0;
+              return (
+                <button key={k} type="button"
+                  onClick={() => setCategories((prev) => prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k])}
+                  className={clsx('inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm',
+                    selected ? CAT[k].chip + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}>
+                  <span className={clsx('h-2.5 w-2.5 rounded-full', CAT[k].dot)} />{CAT[k].name}
+                  {idx === 0 && <span className="ml-0.5 rounded bg-black/10 px-1 text-[10px]">主要</span>}
+                </button>
+              );
+            })}
           </div>
         </Field>
 
-        {category && (
-          <Field label="標籤細項" required>
-            <SubcategoryField categoryKey={category} value={subName}
-              onChange={(name, id) => { setSubName(name); setSubId(id); }}
+        {primaryCat && (
+          <Field label="標籤細項（可多選，第一個為主要）" required>
+            <SubcategoryField categoryKey={primaryCat} value={subNames}
+              onChange={(names) => setSubNames(names)}
               createdBy={user?.name || user?.email} />
           </Field>
         )}
@@ -606,10 +621,11 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
 // 小分類欄位：選 / 搜 / 新增（真 API）
 function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
   categoryKey: string;
-  value: string;
-  onChange: (name: string, id?: string) => void;
+  value: string[];
+  onChange: (names: string[]) => void;
   createdBy?: string;
 }) {
+  const toggle = (name: string) => onChange(value.includes(name) ? value.filter((x) => x !== name) : [...value, name]);
   const [list, setList] = useState<{ id: string; name: string }[]>([]);
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
@@ -638,7 +654,7 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
       const r = await calendarApi.createSubcategory({ category_key: categoryKey, name, created_by: createdBy });
       const created = r.data;
       setList((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
-      onChange(created.name, created.id);
+      if (!value.includes(created.name)) onChange([...value, created.name]);
       setAdding(false); setNewName(''); setErr('');
     } catch (e: any) {
       setErr(e.response?.data?.message || '新增失敗');
@@ -656,7 +672,7 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
     try {
       await calendarApi.renameSubcategory(s.id, name);
       setList((prev) => prev.map((x) => (x.id === s.id ? { ...x, name } : x)));
-      if (value === s.name) onChange(name, s.id);
+      if (value.includes(s.name)) onChange(value.map((x) => (x === s.name ? name : x)));
       setEditingId(null);
       toast.success('小分類已更名。');
     } catch (e: any) {
@@ -669,7 +685,7 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
     try {
       await calendarApi.deactivateSubcategory(s.id);
       setList((prev) => prev.filter((x) => x.id !== s.id));
-      if (value === s.name) onChange('');
+      if (value.includes(s.name)) onChange(value.filter((x) => x !== s.name));
       toast.success('小分類已停用。');
     } catch (e: any) {
       toast.error(e.response?.data?.message || '停用失敗');
@@ -700,8 +716,9 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
           ) : (
             <div key={s.id}
                  className={clsx('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm',
-                   value === s.name ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600')}>
-              <button type="button" onClick={() => onChange(s.name, s.id)} className="hover:underline">{s.name}</button>
+                   value.includes(s.name) ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600')}>
+              <button type="button" onClick={() => toggle(s.name)} className="hover:underline">{s.name}</button>
+              {value[0] === s.name && <span className="rounded bg-primary-200 px-1 text-[10px] text-primary-800">主要</span>}
               <button type="button" onClick={() => startEdit(s)} className="text-gray-400 hover:text-primary-600" title="修改名稱">
                 <PencilSquareIcon className="h-3.5 w-3.5" />
               </button>
@@ -771,8 +788,8 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
     ['排程日期', schedule.schedule_date],
     ['時間', `${hm(schedule.start_time)}－${hm(schedule.end_time)}（${schedule.duration_minutes} 分鐘）`],
     ['人員', `${schedule.employee_name}｜${schedule.employee_app_number}${schedule.store_name ? '｜' + schedule.store_name : ''}`],
-    ['標籤大分類', cat.name],
-    ['標籤小分類', schedule.subcategory_name],
+    ['標籤大分類', (schedule.category_keys?.length ? schedule.category_keys : [schedule.category_key]).map((k) => catOf(k).name).join('、')],
+    ['標籤小分類', (schedule.subcategory_names?.length ? schedule.subcategory_names : [schedule.subcategory_name]).filter(Boolean).join('、')],
     ['談話主題／備註', schedule.note],
     ['訪談方式', schedule.contact_method ? (METHOD_LABEL[schedule.contact_method] || schedule.contact_method) : '—'],
     ['建立人', schedule.created_by || '—'],

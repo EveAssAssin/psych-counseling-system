@@ -8,6 +8,7 @@ import {
   IsDateString,
   IsNotEmpty,
   MaxLength,
+  IsArray,
 } from 'class-validator';
 
 // ============================================
@@ -71,6 +72,12 @@ export class CreateEmployeeDto {
   @IsOptional()
   title?: string;
 
+  @ApiPropertyOptional({ description: '職稱標籤（人工，可多選）：店長/副店長/正職/新人', isArray: true })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  job_tags?: string[];
+
   @ApiPropertyOptional({ description: '門市 ID' })
   @IsUUID()
   @IsOptional()
@@ -132,6 +139,12 @@ export class UpdateEmployeeDto {
   @IsString()
   @IsOptional()
   title?: string;
+
+  @ApiPropertyOptional({ description: '職稱標籤（人工，可多選）：店長/副店長/正職/新人', isArray: true })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  job_tags?: string[];
 
   @ApiPropertyOptional({ description: '門市 ID' })
   @IsUUID()

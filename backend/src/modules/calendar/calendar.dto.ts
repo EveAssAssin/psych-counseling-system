@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsIn, IsDateString, Matches, MaxLength, Min } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsIn, IsDateString, Matches, MaxLength, Min, IsArray } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ──────────────────────────────────────────────
@@ -54,11 +54,17 @@ export class CreateScheduleDto {
   @ApiProperty({ description: '員工 app_number' })
   @IsString() employee_app_number: string;
 
-  @ApiProperty({ description: '大分類 key', enum: CATEGORY_KEYS })
-  @IsIn(CATEGORY_KEYS as any) category_key: CategoryKey;
+  @ApiPropertyOptional({ description: '大分類 key（主要，未帶時取 category_keys[0]）', enum: CATEGORY_KEYS })
+  @IsOptional() @IsIn(CATEGORY_KEYS as any) category_key?: CategoryKey;
 
-  @ApiProperty({ description: '小分類名稱' })
-  @IsString() @MaxLength(20) subcategory_name: string;
+  @ApiPropertyOptional({ description: '大分類多選（第一個為主要）', enum: CATEGORY_KEYS, isArray: true })
+  @IsOptional() @IsArray() @IsIn(CATEGORY_KEYS as any, { each: true }) category_keys?: CategoryKey[];
+
+  @ApiPropertyOptional({ description: '小分類名稱（主要）' })
+  @IsOptional() @IsString() @MaxLength(20) subcategory_name?: string;
+
+  @ApiPropertyOptional({ description: '小分類多選（第一個為主要）', isArray: true })
+  @IsOptional() @IsArray() @IsString({ each: true }) subcategory_names?: string[];
 
   @ApiPropertyOptional({ description: '小分類 id（既有項目時帶）' })
   @IsOptional() @IsString() subcategory_id?: string;
@@ -85,7 +91,9 @@ export class UpdateScheduleDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() @IsIn(DURATION_OPTIONS as any) duration_minutes?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() employee_app_number?: string;
   @ApiPropertyOptional() @IsOptional() @IsIn(CATEGORY_KEYS as any) category_key?: CategoryKey;
+  @ApiPropertyOptional({ enum: CATEGORY_KEYS, isArray: true }) @IsOptional() @IsArray() @IsIn(CATEGORY_KEYS as any, { each: true }) category_keys?: CategoryKey[];
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) subcategory_name?: string;
+  @ApiPropertyOptional({ isArray: true }) @IsOptional() @IsArray() @IsString({ each: true }) subcategory_names?: string[];
   @ApiPropertyOptional() @IsOptional() @IsString() subcategory_id?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) note?: string;
   @ApiPropertyOptional({ enum: CONTACT_METHODS }) @IsOptional() @IsIn(CONTACT_METHODS as any) contact_method?: ContactMethod;

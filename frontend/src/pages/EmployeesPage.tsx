@@ -15,8 +15,12 @@ interface Employee {
   store_name?: string;
   store_id?: string;
   person_type?: string; // store / nonstore / special / excluded
+  job_tags?: string[];  // 店長/副店長/正職/新人（人工）
   is_active: boolean;
 }
+
+// 職稱標籤選項
+const JOB_TAGS = ['店長', '副店長', '正職', '新人'];
 
 interface ChannelMessage {
   id: string;
@@ -65,6 +69,7 @@ export default function EmployeesPage() {
   const [unit, setUnit] = useState<'all' | 'store' | 'hq'>('all');
   const [region, setRegion] = useState<string>('all');
   const [store, setStore] = useState<string>('all');
+  const [jobTag, setJobTag] = useState<string>('all');
   const [showInactive, setShowInactive] = useState(false);
 
   // 對話記錄 Modal
@@ -135,6 +140,7 @@ export default function EmployeesPage() {
     setUnit('all');
     setRegion('all');
     setStore('all');
+    setJobTag('all');
   };
 
   // 即時篩選（搜尋 + 單位 + 區域 同時生效，全部條件皆須符合）
@@ -151,10 +157,11 @@ export default function EmployeesPage() {
       if (unit === 'hq' && !(emp.person_type === 'nonstore' || emp.person_type === 'special')) return false;
       if (region !== 'all' && empRegion(emp) !== region) return false;
       if (store !== 'all' && emp.store_name !== store) return false;
+      if (jobTag !== 'all' && !(emp.job_tags || []).includes(jobTag)) return false;
       if (!showInactive && emp.is_active === false) return false;
       return true;
     });
-  }, [employees, search, unit, region, store, showInactive, storeRegion]);
+  }, [employees, search, unit, region, store, jobTag, showInactive, storeRegion]);
 
   const regionDisabled = unit === 'hq';
 
@@ -263,6 +270,14 @@ export default function EmployeesPage() {
           顯示離職人員
         </label>
 
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">職稱</label>
+          <select value={jobTag} onChange={(e) => setJobTag(e.target.value)} className="input min-w-[120px]">
+            <option value="all">全部職稱</option>
+            {JOB_TAGS.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+
         <button type="button" onClick={clearFilters}
                 className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
           清除篩選
@@ -295,6 +310,7 @@ export default function EmployeesPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">單位</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">門市／部門</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">區域</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">職稱</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
               </tr>
@@ -307,6 +323,15 @@ export default function EmployeesPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{unitLabel(emp.person_type)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emp.store_name || emp.department || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{empRegion(emp) || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {emp.job_tags && emp.job_tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {emp.job_tags.map((t) => (
+                          <span key={t} className="rounded bg-primary-50 px-1.5 py-0.5 text-xs text-primary-700">{t}</span>
+                        ))}
+                      </div>
+                    ) : <span className="text-sm text-gray-400">-</span>}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={emp.is_active ? 'badge-low' : 'badge-high'}>{emp.is_active ? '在職' : '離職'}</span>
                   </td>

@@ -5,9 +5,13 @@ import { employeesApi, conversationsApi, analysisApi, officialChannelApi } from 
 import { EmployeeInsightTab } from '../components/EmployeeInsightTab';
 import toast from 'react-hot-toast';
 
+const JOB_TAGS = ['店長', '副店長', '正職', '新人'];
+
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [employee, setEmployee] = useState<any>(null);
+  const [jobTags, setJobTags] = useState<string[]>([]);
+  const [savingJob, setSavingJob] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
   const [latestAnalysis, setLatestAnalysis] = useState<any>(null);
   const [officialMessages, setOfficialMessages] = useState<any[]>([]);
@@ -26,6 +30,7 @@ export default function EmployeeDetailPage() {
         analysisApi.getLatestByEmployee(id!),
       ]);
       setEmployee(empRes.data);
+      setJobTags(Array.isArray(empRes.data?.job_tags) ? empRes.data.job_tags : []);
       setConversations(convRes.data);
       setLatestAnalysis(analysisRes.data?.found !== false ? analysisRes.data : null);
 
@@ -115,6 +120,41 @@ export default function EmployeeDetailPage() {
                 <span className={employee.is_active ? 'badge-low' : 'badge-high'}>
                   {employee.is_active ? '在職' : '離職'}
                 </span>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-500 mb-1">職稱標籤（可多選，第一個為主要）</dt>
+              <dd>
+                <div className="flex flex-wrap gap-2">
+                  {JOB_TAGS.map((t) => {
+                    const selected = jobTags.includes(t);
+                    return (
+                      <button key={t} type="button"
+                        onClick={() => setJobTags((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
+                        className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm ${
+                          selected ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}>
+                        {t}{jobTags[0] === t && <span className="rounded bg-primary-200 px-1 text-[10px] text-primary-800">主要</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button type="button" disabled={savingJob}
+                  onClick={async () => {
+                    setSavingJob(true);
+                    try {
+                      await employeesApi.update(id!, { job_tags: jobTags });
+                      setEmployee((e: any) => ({ ...e, job_tags: jobTags }));
+                      toast.success('職稱標籤已更新。');
+                    } catch (err: any) {
+                      toast.error(err.response?.data?.message || '更新失敗（後端需已部署並執行 migration 020）');
+                    } finally {
+                      setSavingJob(false);
+                    }
+                  }}
+                  className="mt-2 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50">
+                  {savingJob ? '儲存中…' : '儲存職稱標籤'}
+                </button>
               </dd>
             </div>
           </dl>
