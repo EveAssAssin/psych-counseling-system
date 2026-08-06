@@ -84,7 +84,7 @@ export class ConversationsController {
   }
 
   @Post('transcribe')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   @ApiOperation({
     summary: '音檔/逐字稿轉錄與智慧預填',
     description:

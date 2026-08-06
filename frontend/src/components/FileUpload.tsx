@@ -42,7 +42,7 @@ export default function FileUpload({
 
     // 客戶端預檢：上傳前先擋掉過大的檔案並給友善提示，避免久候後才失敗、讓使用者誤以為系統故障
     const SIZE_LIMIT_MB: Record<string, number> = {
-      image: 10, video: 100, audio: 50, document: 30, archive: 50,
+      image: 50, video: 100, audio: 50, document: 50, archive: 50,
     };
     const classify = (file: File): keyof typeof SIZE_LIMIT_MB | null => {
       const t = file.type;

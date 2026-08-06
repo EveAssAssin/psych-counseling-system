@@ -20,10 +20,10 @@ export class UploadService {
   
   // 檔案大小限制 (bytes)
   private readonly SIZE_LIMITS = {
-    image: 10 * 1024 * 1024,      // 10MB
+    image: 50 * 1024 * 1024,      // 50MB
     video: 100 * 1024 * 1024,     // 100MB
     audio: 50 * 1024 * 1024,      // 50MB
-    document: 30 * 1024 * 1024,   // 30MB
+    document: 50 * 1024 * 1024,   // 50MB
     archive: 50 * 1024 * 1024,    // 50MB（zip 等壓縮檔）
   };
 

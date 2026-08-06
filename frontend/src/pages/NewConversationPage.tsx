@@ -97,7 +97,9 @@ export default function NewConversationPage() {
   // ── 智慧匯入：上傳音檔或逐字稿 ──
   const handleTranscribeUpload = async (file: File) => {
     // 客戶端防呆：超過上限直接擋下並提示，避免送出後才失敗讓使用者誤以為系統故障
-    const MAX_UPLOAD_MB = 25; // 對齊後端 MAX_FILE_SIZE 與 Whisper 25MB 上限
+    // 音檔受 OpenAI Whisper 硬上限 25MB；逐字稿(.txt)不經 Whisper，可放寬到 50MB
+    const isAudioFile = file.type.startsWith('audio/') || /\.(mp3|m4a|wav|webm|ogg|flac|aac|amr|3gp)$/i.test(file.name);
+    const MAX_UPLOAD_MB = isAudioFile ? 25 : 50;
     if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
       toast.error(
         `檔案 ${(file.size / 1024 / 1024).toFixed(1)}MB 超過上限 ${MAX_UPLOAD_MB}MB，無法上傳。請壓縮或分段後再試。`
