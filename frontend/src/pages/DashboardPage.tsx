@@ -38,12 +38,13 @@ const isOverdue = (s: any) =>
   s.status !== 'completed' && new Date(`${s.schedule_date}T${hm(s.end_time)}:00`).getTime() < Date.now();
 
 // 排程清單卡片
-function SchedCard({ title, schedules, accent, onReschedule, onOpen }: {
+function SchedCard({ title, schedules, accent, onReschedule, onOpen, emptyText }: {
   title: string;
   schedules: any[];
   accent: 'red' | 'blue' | 'indigo';
   onReschedule?: (s: any) => void;
   onOpen: () => void;
+  emptyText?: string;
 }) {
   const dot = accent === 'red' ? 'bg-red-500' : accent === 'blue' ? 'bg-blue-500' : 'bg-indigo-500';
   return (
@@ -57,7 +58,7 @@ function SchedCard({ title, schedules, accent, onReschedule, onOpen }: {
         <button onClick={onOpen} className="text-xs text-primary-600 hover:text-primary-500">前往行事曆 →</button>
       </div>
       {schedules.length === 0 ? (
-        <p className="py-6 text-center text-sm text-gray-400">目前沒有排程</p>
+        <p className="py-6 text-center text-sm text-gray-400">{emptyText || '目前沒有排程'}</p>
       ) : (
         <ul className="divide-y divide-gray-100">
           {schedules.slice(0, 8).map((s) => (
@@ -308,11 +309,9 @@ export default function DashboardPage() {
 
       {/* 排程總覽：逾期 / 今日 / 明日 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {sched.overdue.length > 0 && (
-          <SchedCard title="逾期排程" schedules={sched.overdue} accent="red"
-                     onReschedule={(s) => navigate(`/calendar?reschedule=${s.id}`)}
-                     onOpen={() => navigate('/calendar')} />
-        )}
+        <SchedCard title="逾期排程" schedules={sched.overdue} accent="red" emptyText="無"
+                   onReschedule={(s) => navigate(`/calendar?reschedule=${s.id}`)}
+                   onOpen={() => navigate('/calendar')} />
         <SchedCard title="今日排程" schedules={sched.today} accent="blue" onOpen={() => navigate('/calendar')} />
         <SchedCard title="明日排程" schedules={sched.tomorrow} accent="indigo" onOpen={() => navigate('/calendar')} />
       </div>
