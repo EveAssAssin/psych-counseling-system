@@ -65,6 +65,7 @@ export default function EmployeesPage() {
   const [unit, setUnit] = useState<'all' | 'store' | 'hq'>('all');
   const [region, setRegion] = useState<string>('all');
   const [store, setStore] = useState<string>('all');
+  const [showInactive, setShowInactive] = useState(false);
 
   // 對話記錄 Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -150,9 +151,10 @@ export default function EmployeesPage() {
       if (unit === 'hq' && !(emp.person_type === 'nonstore' || emp.person_type === 'special')) return false;
       if (region !== 'all' && empRegion(emp) !== region) return false;
       if (store !== 'all' && emp.store_name !== store) return false;
+      if (!showInactive && emp.is_active === false) return false;
       return true;
     });
-  }, [employees, search, unit, region, store, storeRegion]);
+  }, [employees, search, unit, region, store, showInactive, storeRegion]);
 
   const regionDisabled = unit === 'hq';
 
@@ -254,6 +256,12 @@ export default function EmployeesPage() {
             {storeOptions.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
+
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-600">
+          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}
+                 className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+          顯示離職人員
+        </label>
 
         <button type="button" onClick={clearFilters}
                 className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">

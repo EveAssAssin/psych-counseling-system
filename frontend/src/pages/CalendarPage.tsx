@@ -144,6 +144,8 @@ export default function CalendarPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [today, setToday] = useState<Schedule[]>([]);
+  const [weekOv, setWeekOv] = useState<Schedule[]>([]);
+  const [ovRange, setOvRange] = useState<'today' | 'week'>('today');
   const [cardFilter, setCardFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Schedule | null>(null);
@@ -206,11 +208,22 @@ export default function CalendarPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const reload = () => { fetchWeek(); fetchToday(); };
+  // 本週總覽（固定當週，與週切換無關）
+  const fetchWeekOverview = useCallback(async () => {
+    try {
+      const ws = startOfWeek(new Date());
+      const res = await calendarApi.listSchedules({ start_date: fmt(ws), end_date: fmt(addDays(ws, 6)) });
+      setWeekOv(Array.isArray(res.data) ? res.data : res.data?.data ?? []);
+    } catch {
+      /* 總覽非關鍵 */
+    }
+  }, []);
+  useEffect(() => { fetchWeekOverview(); }, [fetchWeekOverview]);
 
-  // 今日統計
-  const stats = useMemo(() => {
-    const list = today;
+  const reload = () => { fetchWeek(); fetchToday(); fetchWeekOverview(); };
+
+  // 統計（今日 / 本週）
+  const computeStats = (list: Schedule[]) => {
     const total = list.length;
     const completed = list.filter((s) => s.status === 'completed').length;
     const pending = total - completed;
@@ -220,7 +233,8 @@ export default function CalendarPage() {
     const rate = total ? Math.round((completed / total) * 100) : 0;
     const cat = (k: string) => list.filter((s) => s.category_key === k).length;
     return { total, completed, pending, overdue, talk, phone, rate, newcomer: cat('newcomer'), routine: cat('routine'), urgent: cat('urgent') };
-  }, [today]);
+  };
+  const stats = useMemo(() => computeStats(ovRange === 'today' ? today : weekOv), [ovRange, today, weekOv]);
 
   const gotoWeek = (delta: number) => setWeekStart((w) => addDays(w, delta * 7));
   const gotoThisWeek = () => setWeekStart(startOfWeek(new Date()));
@@ -242,11 +256,20 @@ export default function CalendarPage() {
         {loading && <span className="text-xs text-gray-400">載入中…</span>}
       </div>
 
-      {/* 今日總覽 */}
+      {/* 總覽（今日 / 本週） */}
       <div className="mb-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">今日總覽（{todayStr}）</h2>
+        <div className="mb-2 flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-gray-700">總覽</h2>
+          <div className="inline-flex rounded-md border border-gray-300 p-0.5 text-xs">
+            <button onClick={() => setOvRange('today')}
+                    className={clsx('rounded px-2.5 py-1 font-medium', ovRange === 'today' ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-50')}>今日</button>
+            <button onClick={() => setOvRange('week')}
+                    className={clsx('rounded px-2.5 py-1 font-medium', ovRange === 'week' ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-50')}>本週</button>
+          </div>
+          <span className="text-xs text-gray-400">{ovRange === 'today' ? todayStr : '本週'}</span>
+        </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard label="今日排程" value={`${stats.total} 件`} color="blue" icon={CalendarDaysIcon}
+          <StatCard label={ovRange === 'today' ? '今日排程' : '本週排程'} value={`${stats.total} 件`} color="blue" icon={CalendarDaysIcon}
                     active={cardFilter === null} onClick={() => { gotoThisWeek(); setCardFilter(null); }} />
           <StatCard label="已完成" value={`${stats.completed} 件`} color="green" icon={CheckCircleIcon}
                     active={cardFilter === 'completed'} onClick={() => applyFilter('completed')} />
