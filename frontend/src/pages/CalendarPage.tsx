@@ -11,6 +11,12 @@ import {
   PencilSquareIcon,
   TrashIcon,
   CheckIcon,
+  CalendarDaysIcon,
+  PhoneIcon,
+  UserPlusIcon,
+  HeartIcon,
+  ChartPieIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -220,26 +226,24 @@ export default function CalendarPage() {
       {/* 今日總覽 */}
       <div className="mb-4">
         <h2 className="mb-2 text-sm font-semibold text-gray-700">今日總覽（{todayStr}）</h2>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <StatCard label="今日排程" value={`${stats.total} 件`} color="blue"
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <StatCard label="今日排程" value={`${stats.total} 件`} color="blue" icon={CalendarDaysIcon}
                     active={cardFilter === null} onClick={() => { gotoThisWeek(); setCardFilter(null); }} />
-          <StatCard label="已完成" value={`${stats.completed} 件`} color="green"
+          <StatCard label="已完成" value={`${stats.completed} 件`} color="green" icon={CheckCircleIcon}
                     active={cardFilter === 'completed'} onClick={() => applyFilter('completed')} />
-          <StatCard label="待執行" value={`${stats.pending} 件`} color="orange"
+          <StatCard label="待執行" value={`${stats.pending} 件`} color="orange" icon={ClockIcon}
                     active={cardFilter === 'pending'} onClick={() => applyFilter('pending')} />
-          <StatCard label="逾期" value={`${stats.overdue} 件`} color="red" alert={stats.overdue > 0}
+          <StatCard label="逾期" value={`${stats.overdue} 件`} color="red" icon={ExclamationTriangleIcon} alert={stats.overdue > 0}
                     active={cardFilter === 'overdue'} onClick={() => applyFilter('overdue')} />
-          <StatCard label="預計訪談時間" value={fmtMinutes(stats.talk)} color="indigo" />
-          <StatCard label="實際訪談時間" value={fmtMinutes(stats.phone)} color="purple" />
-        </div>
-        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <StatCard label="新人輔導" value={`${stats.newcomer} 件`} color="amber"
+          <StatCard label="完成率" value={`${stats.rate}%`} color="green" icon={ChartPieIcon} />
+          <StatCard label="預計訪談時間" value={fmtMinutes(stats.talk)} color="indigo" icon={ClipboardDocumentListIcon} />
+          <StatCard label="實際訪談時間" value={fmtMinutes(stats.phone)} color="purple" icon={PhoneIcon} />
+          <StatCard label="新人輔導" value={`${stats.newcomer} 件`} color="amber" icon={UserPlusIcon}
                     active={cardFilter === 'newcomer'} onClick={() => applyFilter('newcomer')} />
-          <StatCard label="例行關懷" value={`${stats.routine} 件`} color="blue"
+          <StatCard label="例行關懷" value={`${stats.routine} 件`} color="blue" icon={HeartIcon}
                     active={cardFilter === 'routine'} onClick={() => applyFilter('routine')} />
-          <StatCard label="緊急案件" value={`${stats.urgent} 件`} color="red" alert={stats.urgent > 0}
+          <StatCard label="緊急案件" value={`${stats.urgent} 件`} color="red" icon={ExclamationTriangleIcon} alert={stats.urgent > 0}
                     active={cardFilter === 'urgent'} onClick={() => applyFilter('urgent')} />
-          <StatCard label="完成率" value={`${stats.rate}%`} color="green" />
         </div>
         {cardFilter && (
           <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
@@ -875,28 +879,35 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
   );
 }
 
-// ── 今日總覽卡片 ──
-const CARD_COLORS: Record<string, string> = {
-  blue: 'bg-blue-50 text-blue-700 border-blue-200',
-  green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  orange: 'bg-orange-50 text-orange-700 border-orange-200',
-  red: 'bg-red-50 text-red-700 border-red-200',
-  indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  purple: 'bg-violet-50 text-violet-700 border-violet-200',
-  amber: 'bg-amber-50 text-amber-700 border-amber-200',
+// ── 今日總覽卡片（白底 + 圖示方塊）──
+const ICON_COLORS: Record<string, string> = {
+  blue: 'bg-blue-50 text-blue-600',
+  green: 'bg-emerald-50 text-emerald-600',
+  orange: 'bg-orange-50 text-orange-600',
+  red: 'bg-red-50 text-red-600',
+  indigo: 'bg-indigo-50 text-indigo-600',
+  purple: 'bg-violet-50 text-violet-600',
+  amber: 'bg-amber-50 text-amber-600',
 };
-function StatCard({ label, value, color, onClick, active, alert }: {
+function StatCard({ label, value, color, icon: Icon, onClick, active, alert }: {
   label: string; value: string; color: string;
+  icon: React.ComponentType<{ className?: string }>;
   onClick?: () => void; active?: boolean; alert?: boolean;
 }) {
   const clickable = !!onClick;
   return (
     <button type="button" onClick={onClick} disabled={!clickable}
-            className={clsx('rounded-lg border px-3 py-2 text-left transition', CARD_COLORS[color] || CARD_COLORS.blue,
-              clickable ? 'cursor-pointer hover:brightness-95' : 'cursor-default',
-              active && 'ring-2 ring-offset-1 ring-gray-400')}>
-      <div className="text-xs opacity-80">{label}</div>
-      <div className={clsx('text-lg font-bold', alert && 'text-red-600')}>{value}</div>
+            className={clsx(
+              'flex items-center gap-3 rounded-xl border bg-white px-4 py-3 text-left shadow-sm transition',
+              clickable ? 'cursor-pointer hover:shadow-md' : 'cursor-default',
+              active ? 'border-primary-400 ring-1 ring-primary-300' : 'border-gray-100')}>
+      <div className={clsx('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', ICON_COLORS[color] || ICON_COLORS.blue)}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <div className="truncate text-xs text-gray-500">{label}</div>
+        <div className={clsx('text-lg font-bold', alert ? 'text-red-600' : 'text-gray-900')}>{value}</div>
+      </div>
     </button>
   );
 }
