@@ -123,7 +123,7 @@ export default function EmployeeDetailPage() {
               </dd>
             </div>
             <div>
-              <dt className="text-sm text-gray-500 mb-1">職稱標籤（可多選，第一個為主要）</dt>
+              <dt className="text-sm text-gray-500 mb-1">職稱標籤（可多選）</dt>
               <dd>
                 <div className="flex flex-wrap gap-2">
                   {JOB_TAGS.map((t) => {
@@ -134,7 +134,7 @@ export default function EmployeeDetailPage() {
                         className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm ${
                           selected ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
                         }`}>
-                        {t}{jobTags[0] === t && <span className="rounded bg-primary-200 px-1 text-[10px] text-primary-800">主要</span>}
+                        {t}
                       </button>
                     );
                   })}
