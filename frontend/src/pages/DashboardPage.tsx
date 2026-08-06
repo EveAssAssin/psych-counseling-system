@@ -68,9 +68,9 @@ function SchedCard({ title, schedules, accent, onReschedule, onOpen }: {
                   <span className="ml-2 text-xs font-normal text-gray-400">{hm(s.start_time)}–{hm(s.end_time)}</span>
                 </p>
                 <p className="truncate text-xs text-gray-500">
-                  {accent === 'red' && <span className="text-gray-400">{s.schedule_date} · </span>}
-                  {catName(s.category_key)}｜{s.subcategory_name}
-                  <span className="ml-1 text-gray-400">· {SCHED_STATUS_LABEL[s.status] || s.status}</span>
+                  {accent === 'red' && <span className="text-gray-400">{s.schedule_date || '無'} · </span>}
+                  {catName(s.category_key) || '無'}｜{s.subcategory_name || '無'}
+                  <span className="ml-1 text-gray-400">· {SCHED_STATUS_LABEL[s.status] || s.status || '無'}</span>
                 </p>
               </div>
               {onReschedule && (
