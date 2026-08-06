@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   UsersIcon,
   ChatBubbleLeftRightIcon,
@@ -27,6 +27,68 @@ const fmtHM = (min: number) => {
 };
 
 interface TalkData { total: number; byCat: Record<string, number> }
+
+// 排程總覽輔助
+const hm = (t?: string) => (t ? t.slice(0, 5) : '');
+const catName = (key: string) => DASH_CATS.find((c) => c.key === key)?.name || key;
+const SCHED_STATUS_LABEL: Record<string, string> = {
+  pending: '待進行', completed: '已完成', cancelled: '已取消', no_show: '未執行', follow_up: '需後續追蹤',
+};
+const isOverdue = (s: any) =>
+  s.status !== 'completed' && new Date(`${s.schedule_date}T${hm(s.end_time)}:00`).getTime() < Date.now();
+
+// 排程清單卡片
+function SchedCard({ title, schedules, accent, onReschedule, onOpen }: {
+  title: string;
+  schedules: any[];
+  accent: 'red' | 'blue' | 'indigo';
+  onReschedule?: (s: any) => void;
+  onOpen: () => void;
+}) {
+  const dot = accent === 'red' ? 'bg-red-500' : accent === 'blue' ? 'bg-blue-500' : 'bg-indigo-500';
+  return (
+    <div className="card p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
+          <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{schedules.length}</span>
+        </div>
+        <button onClick={onOpen} className="text-xs text-primary-600 hover:text-primary-500">前往行事曆 →</button>
+      </div>
+      {schedules.length === 0 ? (
+        <p className="py-6 text-center text-sm text-gray-400">目前沒有排程</p>
+      ) : (
+        <ul className="divide-y divide-gray-100">
+          {schedules.slice(0, 8).map((s) => (
+            <li key={s.id} className="flex items-center justify-between gap-2 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-gray-900">
+                  {s.employee_name}
+                  <span className="ml-2 text-xs font-normal text-gray-400">{hm(s.start_time)}–{hm(s.end_time)}</span>
+                </p>
+                <p className="truncate text-xs text-gray-500">
+                  {accent === 'red' && <span className="text-gray-400">{s.schedule_date} · </span>}
+                  {catName(s.category_key)}｜{s.subcategory_name}
+                  <span className="ml-1 text-gray-400">· {SCHED_STATUS_LABEL[s.status] || s.status}</span>
+                </p>
+              </div>
+              {onReschedule && (
+                <button onClick={() => onReschedule(s)}
+                        className="shrink-0 rounded-md border border-primary-300 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50">
+                  重新安排
+                </button>
+              )}
+            </li>
+          ))}
+          {schedules.length > 8 && (
+            <li className="pt-2 text-center text-xs text-gray-400">還有 {schedules.length - 8} 筆…</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function TalkBar({ label, data }: { label: string; data: TalkData }) {
   return (
@@ -93,6 +155,8 @@ export default function DashboardPage() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [monthTalk, setMonthTalk] = useState<TalkData>({ total: 0, byCat: {} });
   const [todayTalk, setTodayTalk] = useState<TalkData>({ total: 0, byCat: {} });
+  const [sched, setSched] = useState<{ overdue: any[]; today: any[]; tomorrow: any[] }>({ overdue: [], today: [], tomorrow: [] });
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [syncingChannel, setSyncingChannel] = useState(false);
 
@@ -109,14 +173,19 @@ export default function DashboardPage() {
       const pad = (n: number) => String(n).padStart(2, '0');
       const first = `${y}-${pad(mo + 1)}-01`;
       const last = `${y}-${pad(mo + 1)}-${pad(new Date(y, mo + 1, 0).getDate())}`;
+      // 排程總覽用寬範圍（近一年 ~ 明天），一次抓完逾期/今日/明日
+      const fmtD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const wideStart = new Date(now); wideStart.setFullYear(now.getFullYear() - 1);
+      const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
 
-      const [empStats, convStats, riskStats, highRisk, syncStatusRes, calRes] = await Promise.all([
+      const [empStats, convStats, riskStats, highRisk, syncStatusRes, calRes, schedRes] = await Promise.all([
         employeesApi.getStats(),
         conversationsApi.getStats(),
         riskFlagsApi.getStats(),
         analysisApi.getHighRisk(5),
         syncApi.getStatus().catch(() => ({ data: null })),
         calendarApi.listSchedules({ start_date: first, end_date: last }).catch(() => ({ data: [] as any[] })),
+        calendarApi.listSchedules({ start_date: fmtD(wideStart), end_date: fmtD(tomorrow) }).catch(() => ({ data: [] as any[] })),
       ]);
 
       setStats({
@@ -147,6 +216,17 @@ export default function DashboardPage() {
       }
       setMonthTalk({ total: mTotal, byCat: mByCat });
       setTodayTalk({ total: tTotal, byCat: tByCat });
+
+      // 排程總覽：逾期（全部未完成）/ 今日 / 明日
+      const tomorrowStr = fmtD(tomorrow);
+      const allS: any[] = Array.isArray(schedRes.data) ? schedRes.data : schedRes.data?.data ?? [];
+      const byTime = (a: any, b: any) =>
+        (a.schedule_date + a.start_time > b.schedule_date + b.start_time ? 1 : -1);
+      setSched({
+        overdue: allS.filter(isOverdue).sort(byTime),
+        today: allS.filter((s) => s.schedule_date === todayStr).sort(byTime),
+        tomorrow: allS.filter((s) => s.schedule_date === tomorrowStr).sort(byTime),
+      });
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -220,6 +300,17 @@ export default function DashboardPage() {
         {todayTalk.total === 0 && monthTalk.total === 0 && (
           <p className="mt-2 text-xs text-gray-400">目前尚無填寫實際訪談時間的排程。</p>
         )}
+      </div>
+
+      {/* 排程總覽：逾期 / 今日 / 明日 */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {sched.overdue.length > 0 && (
+          <SchedCard title="逾期排程" schedules={sched.overdue} accent="red"
+                     onReschedule={(s) => navigate(`/calendar?reschedule=${s.id}`)}
+                     onOpen={() => navigate('/calendar')} />
+        )}
+        <SchedCard title="今日排程" schedules={sched.today} accent="blue" onOpen={() => navigate('/calendar')} />
+        <SchedCard title="明日排程" schedules={sched.tomorrow} accent="indigo" onOpen={() => navigate('/calendar')} />
       </div>
 
       {/* Stats cards */}

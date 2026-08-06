@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -186,6 +187,24 @@ export default function CalendarPage() {
 
   useEffect(() => { fetchWeek(); }, [fetchWeek]);
   useEffect(() => { fetchToday(); }, [fetchToday]);
+
+  // 從儀表板「重新安排」跳來：?reschedule=<id> → 開新增表單並帶入該逾期內容（日期/時間留空）
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rescheduleHandled = useRef(false);
+  useEffect(() => {
+    if (rescheduleHandled.current) return;
+    const rid = searchParams.get('reschedule');
+    if (!rid) return;
+    rescheduleHandled.current = true;
+    calendarApi.getSchedule(rid)
+      .then((r) => {
+        const s = r.data;
+        setForm({ open: true, mode: 'create', initial: { ...s, schedule_date: '', start_time: '', status: 'pending' } });
+      })
+      .catch(() => toast.error('載入逾期排程失敗'))
+      .finally(() => { searchParams.delete('reschedule'); setSearchParams(searchParams, { replace: true }); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const reload = () => { fetchWeek(); fetchToday(); };
 
