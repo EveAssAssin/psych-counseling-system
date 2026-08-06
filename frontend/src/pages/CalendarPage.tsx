@@ -34,7 +34,7 @@ import EmployeeSearchPicker from '../components/EmployeeSearchPicker';
 // ── 可調參數（需與後端 WORK_START/END 一致）──
 const WORK_START_HOUR = 11;
 const WORK_END_HOUR = 21;
-const HOUR_PX = 56;
+const HOUR_PX = 100;
 const WEEK_DAYS = ['一', '二', '三', '四', '五', '六', '日'];
 
 // ── 大分類顏色 / 標籤（純前端顯示；key 與後端一致）──
@@ -390,7 +390,7 @@ export default function CalendarPage() {
                     const startMin = toMin(hm(s.start_time));
                     const top = ((startMin - WORK_START_HOUR * 60) / 60) * HOUR_PX;
                     // 至少依時長高度，但內容較多時自動長高，避免被切掉
-                    const minH = Math.max((s.duration_minutes / 60) * HOUR_PX, 44);
+                    const minH = Math.max((s.duration_minutes / 60) * HOUR_PX, 40);
                     const cat = catOf(s.category_key);
                     const catCount = s.category_keys?.length || 1;
                     const subs = s.subcategory_names?.length ? s.subcategory_names : (s.subcategory_name ? [s.subcategory_name] : []);
