@@ -389,14 +389,15 @@ export default function CalendarPage() {
                   {daySchedules.map((s) => {
                     const startMin = toMin(hm(s.start_time));
                     const top = ((startMin - WORK_START_HOUR * 60) / 60) * HOUR_PX;
-                    const height = Math.max((s.duration_minutes / 60) * HOUR_PX, 22);
+                    // 至少依時長高度，但內容較多時自動長高，避免被切掉
+                    const minH = Math.max((s.duration_minutes / 60) * HOUR_PX, 44);
                     const cat = catOf(s.category_key);
                     const catCount = s.category_keys?.length || 1;
                     const subs = s.subcategory_names?.length ? s.subcategory_names : (s.subcategory_name ? [s.subcategory_name] : []);
                     return (
                       <button key={s.id} onClick={() => setDetail(s)}
-                              className={clsx('absolute left-1 right-1 overflow-hidden rounded border px-1.5 py-1 text-left text-xs shadow-sm', cat.block)}
-                              style={{ top, height }}>
+                              className={clsx('absolute left-1 right-1 z-10 rounded border px-1.5 py-1 text-left text-xs shadow-sm hover:z-20', cat.block)}
+                              style={{ top, minHeight: minH }}>
                         <div className="flex items-center gap-1 font-semibold">
                           {cat.urgent && <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />}
                           <span className="truncate">{s.employee_name}</span>
@@ -404,7 +405,7 @@ export default function CalendarPage() {
                             {STATUS_LABEL[s.status] || s.status}
                           </span>
                         </div>
-                        <div className="truncate opacity-90">
+                        <div className="break-words opacity-90">
                           {cat.name}{catCount > 1 ? ` +${catCount - 1}` : ''}｜{subs[0] || ''}{subs.length > 1 ? ` +${subs.length - 1}` : ''}
                         </div>
                         <div className="opacity-80">{hm(s.start_time)}－{hm(s.end_time)}</div>
