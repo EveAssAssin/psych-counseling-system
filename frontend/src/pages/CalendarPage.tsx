@@ -14,8 +14,6 @@ import {
   CheckIcon,
   CalendarDaysIcon,
   PhoneIcon,
-  UserPlusIcon,
-  HeartIcon,
   ChartPieIcon,
   ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
@@ -147,7 +145,8 @@ export default function CalendarPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [today, setToday] = useState<Schedule[]>([]);
   const [weekOv, setWeekOv] = useState<Schedule[]>([]);
-  const [ovRange, setOvRange] = useState<'today' | 'week'>('today');
+  const [monthOv, setMonthOv] = useState<Schedule[]>([]);
+  const [ovRange, setOvRange] = useState<'today' | 'week' | 'month'>('today');
   const [cardFilter, setCardFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Schedule | null>(null);
@@ -210,21 +209,29 @@ export default function CalendarPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 本週總覽（固定當週，與週切換無關）
+  // 本週 / 本月總覽（固定當週/當月，與週切換無關）
   const fetchWeekOverview = useCallback(async () => {
     try {
       const ws = startOfWeek(new Date());
       const res = await calendarApi.listSchedules({ start_date: fmt(ws), end_date: fmt(addDays(ws, 6)) });
       setWeekOv(Array.isArray(res.data) ? res.data : res.data?.data ?? []);
-    } catch {
-      /* 總覽非關鍵 */
-    }
+    } catch { /* 總覽非關鍵 */ }
+  }, []);
+  const fetchMonthOverview = useCallback(async () => {
+    try {
+      const now = new Date();
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastD = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const res = await calendarApi.listSchedules({ start_date: fmt(first), end_date: fmt(lastD) });
+      setMonthOv(Array.isArray(res.data) ? res.data : res.data?.data ?? []);
+    } catch { /* 總覽非關鍵 */ }
   }, []);
   useEffect(() => { fetchWeekOverview(); }, [fetchWeekOverview]);
+  useEffect(() => { fetchMonthOverview(); }, [fetchMonthOverview]);
 
-  const reload = () => { fetchWeek(); fetchToday(); fetchWeekOverview(); };
+  const reload = () => { fetchWeek(); fetchToday(); fetchWeekOverview(); fetchMonthOverview(); };
 
-  // 統計（今日 / 本週）
+  // 統計（今日 / 本週 / 本月）
   const computeStats = (list: Schedule[]) => {
     const total = list.length;
     const completed = list.filter((s) => s.status === 'completed').length;
@@ -233,10 +240,14 @@ export default function CalendarPage() {
     const talk = list.reduce((a, s) => a + (s.duration_minutes || 0), 0);
     const phone = list.reduce((a, s) => a + (s.actual_minutes || 0), 0);
     const rate = total ? Math.round((completed / total) * 100) : 0;
-    const cat = (k: string) => list.filter((s) => s.category_key === k).length;
-    return { total, completed, pending, overdue, talk, phone, rate, newcomer: cat('newcomer'), routine: cat('routine'), urgent: cat('urgent') };
+    const byCat: Record<string, number> = {};
+    for (const k of CAT_ORDER) byCat[k] = list.filter((s) => s.category_key === k).length;
+    return { total, completed, pending, overdue, talk, phone, rate, byCat };
   };
-  const stats = useMemo(() => computeStats(ovRange === 'today' ? today : weekOv), [ovRange, today, weekOv]);
+  const stats = useMemo(
+    () => computeStats(ovRange === 'today' ? today : ovRange === 'week' ? weekOv : monthOv),
+    [ovRange, today, weekOv, monthOv],
+  );
 
   const gotoWeek = (delta: number) => setWeekStart((w) => addDays(w, delta * 7));
   const gotoThisWeek = () => setWeekStart(startOfWeek(new Date()));
@@ -258,20 +269,25 @@ export default function CalendarPage() {
         {loading && <span className="text-xs text-gray-400">載入中…</span>}
       </div>
 
-      {/* 總覽（今日 / 本週） */}
+      {/* 總覽（今日 / 本週 / 本月） */}
       <div className="mb-4">
-        <div className="mb-2 flex items-center gap-3">
+        <div className="mb-3 flex items-center gap-3">
           <h2 className="text-sm font-semibold text-gray-700">總覽</h2>
-          <div className="inline-flex rounded-md border border-gray-300 p-0.5 text-xs">
-            <button onClick={() => setOvRange('today')}
-                    className={clsx('rounded px-2.5 py-1 font-medium', ovRange === 'today' ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-50')}>今日</button>
-            <button onClick={() => setOvRange('week')}
-                    className={clsx('rounded px-2.5 py-1 font-medium', ovRange === 'week' ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-50')}>本週</button>
+          <div className="inline-flex items-center rounded-full bg-gray-100 p-1">
+            {([['today', '今日'], ['week', '本週'], ['month', '本月']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setOvRange(v)}
+                      className={clsx('rounded-full px-4 py-1.5 text-sm font-medium transition',
+                        ovRange === v ? 'bg-primary-600 text-white shadow' : 'text-gray-600 hover:text-gray-800')}>
+                {label}
+              </button>
+            ))}
           </div>
-          <span className="text-xs text-gray-400">{ovRange === 'today' ? todayStr : '本週'}</span>
+          <span className="text-xs text-gray-400">{ovRange === 'today' ? todayStr : ovRange === 'week' ? '本週' : '本月'}</span>
         </div>
+
+        {/* 指標 + 時數（時數卡寬度不動） */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard label={ovRange === 'today' ? '今日排程' : '本週排程'} value={`${stats.total} 件`} color="blue" icon={CalendarDaysIcon}
+          <StatCard label={ovRange === 'today' ? '今日排程' : ovRange === 'week' ? '本週排程' : '本月排程'} value={`${stats.total} 件`} color="blue" icon={CalendarDaysIcon}
                     active={cardFilter === null} onClick={() => { gotoThisWeek(); setCardFilter(null); }} />
           <StatCard label="已完成" value={`${stats.completed} 件`} color="green" icon={CheckCircleIcon}
                     active={cardFilter === 'completed'} onClick={() => applyFilter('completed')} />
@@ -282,13 +298,25 @@ export default function CalendarPage() {
           <StatCard label="完成率" value={`${stats.rate}%`} color="green" icon={ChartPieIcon} />
           <StatCard label="預計訪談時間" value={fmtMinutes(stats.talk)} color="indigo" icon={ClipboardDocumentListIcon} />
           <StatCard label="實際訪談時間" value={fmtMinutes(stats.phone)} color="purple" icon={PhoneIcon} />
-          <StatCard label="新人輔導" value={`${stats.newcomer} 件`} color="amber" icon={UserPlusIcon}
-                    active={cardFilter === 'newcomer'} onClick={() => applyFilter('newcomer')} />
-          <StatCard label="例行關懷" value={`${stats.routine} 件`} color="blue" icon={HeartIcon}
-                    active={cardFilter === 'routine'} onClick={() => applyFilter('routine')} />
-          <StatCard label="緊急案件" value={`${stats.urgent} 件`} color="red" icon={ExclamationTriangleIcon} alert={stats.urgent > 0}
-                    active={cardFilter === 'urgent'} onClick={() => applyFilter('urgent')} />
         </div>
+
+        {/* 5 種訪談分類（緊湊格，寬度較小） */}
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {CAT_ORDER.map((k) => (
+            <button key={k} type="button" onClick={() => applyFilter(k)}
+                    className={clsx('flex items-center justify-between rounded-lg border bg-white px-3 py-2 shadow-sm transition hover:shadow-md',
+                      cardFilter === k ? 'border-primary-400 ring-1 ring-primary-300' : 'border-gray-100')}>
+              <span className="flex min-w-0 items-center gap-1.5 text-xs text-gray-600">
+                <span className={clsx('h-2.5 w-2.5 shrink-0 rounded-full', CAT[k].dot)} />
+                <span className="truncate">{CAT[k].name}</span>
+              </span>
+              <span className={clsx('ml-2 shrink-0 text-sm font-bold', k === 'urgent' && (stats.byCat[k] || 0) > 0 ? 'text-red-600' : 'text-gray-900')}>
+                {stats.byCat[k] || 0}
+              </span>
+            </button>
+          ))}
+        </div>
+
         {cardFilter && (
           <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
             <span>行事曆目前只顯示：<span className="font-semibold text-gray-900">{CARD_FILTER_LABEL[cardFilter] || cardFilter}</span></span>
