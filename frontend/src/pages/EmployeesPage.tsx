@@ -264,12 +264,6 @@ export default function EmployeesPage() {
           </select>
         </div>
 
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-600">
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}
-                 className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-          顯示離職人員
-        </label>
-
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">職稱</label>
           <select value={jobTag} onChange={(e) => setJobTag(e.target.value)} className="input min-w-[120px]">
@@ -283,8 +277,16 @@ export default function EmployeesPage() {
           清除篩選
         </button>
 
-        <div className="ml-auto text-sm text-gray-600">
-          符合條件：<span className="font-semibold text-gray-900">{filtered.length}</span> 人
+        {/* 右側：離職開關 + 人數 */}
+        <div className="ml-auto flex items-center gap-4">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-600">
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}
+                   className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            顯示離職人員
+          </label>
+          <span className="text-sm text-gray-600">
+            符合條件：<span className="font-semibold text-gray-900">{filtered.length}</span> 人
+          </span>
         </div>
       </div>
 
