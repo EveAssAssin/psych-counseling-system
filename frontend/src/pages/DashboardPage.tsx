@@ -7,6 +7,7 @@ import {
   ArrowTrendingUpIcon,
   ArrowPathIcon,
   ClockIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { employeesApi, conversationsApi, riskFlagsApi, analysisApi, syncApi, calendarApi } from '../services/api';
 import toast from 'react-hot-toast';
@@ -164,6 +165,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [syncingChannel, setSyncingChannel] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(true);
 
   useEffect(() => {
     loadData();
@@ -411,15 +413,23 @@ export default function DashboardPage() {
             <ClockIcon className="h-5 w-5 text-gray-400" />
             <h3 className="text-lg font-medium text-gray-900">資料同步狀態</h3>
           </div>
-          <button
-            onClick={handleSyncOfficialChannel}
-            disabled={syncingChannel}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ArrowPathIcon className={`h-4 w-4 ${syncingChannel ? 'animate-spin' : ''}`} />
-            {syncingChannel ? '同步中...' : '立即同步官方頻道'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSyncOfficialChannel}
+              disabled={syncingChannel}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ArrowPathIcon className={`h-4 w-4 ${syncingChannel ? 'animate-spin' : ''}`} />
+              {syncingChannel ? '同步中...' : '立即同步官方頻道'}
+            </button>
+            <button type="button" onClick={() => setSyncOpen((v) => !v)}
+                    className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    title={syncOpen ? '收合' : '展開'}>
+              <ChevronDownIcon className={`h-5 w-5 transition-transform ${syncOpen ? '' : '-rotate-90'}`} />
+            </button>
+          </div>
         </div>
+        {syncOpen && (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-sm font-medium text-gray-500">LINE 官方訊息</p>
@@ -472,6 +482,7 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+        </>)}
       </div>
 
       {/* High risk list */}
