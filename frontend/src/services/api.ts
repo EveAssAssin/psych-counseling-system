@@ -531,4 +531,6 @@ export const calendarApi = {
   updateSchedule: (id: string, body: any) => api.patch(`/calendar/schedules/${id}`, body),
   cancelSchedule: (id: string, cancel_reason: string, updated_by?: string) =>
     api.post(`/calendar/schedules/${id}/cancel`, { cancel_reason, updated_by }),
+  markRescheduled: (id: string, rescheduled_to_id?: string) =>
+    api.post(`/calendar/schedules/${id}/mark-rescheduled`, { rescheduled_to_id }),
 };

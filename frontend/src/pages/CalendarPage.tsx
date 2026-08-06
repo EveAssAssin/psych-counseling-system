@@ -150,7 +150,7 @@ export default function CalendarPage() {
   const [cardFilter, setCardFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Schedule | null>(null);
-  const [form, setForm] = useState<{ open: boolean; mode: 'create' | 'edit'; initial?: Schedule; prefill?: { date?: string; start?: string } }>({ open: false, mode: 'create' });
+  const [form, setForm] = useState<{ open: boolean; mode: 'create' | 'edit'; initial?: Schedule; prefill?: { date?: string; start?: string }; rescheduleOfId?: string }>({ open: false, mode: 'create' });
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const hours = useMemo(
@@ -202,7 +202,7 @@ export default function CalendarPage() {
     calendarApi.getSchedule(rid)
       .then((r) => {
         const s = r.data;
-        setForm({ open: true, mode: 'create', initial: { ...s, schedule_date: '', start_time: '', status: 'pending' } });
+        setForm({ open: true, mode: 'create', initial: { ...s, schedule_date: '', start_time: '', status: 'pending' }, rescheduleOfId: rid });
       })
       .catch(() => toast.error('載入逾期排程失敗'))
       .finally(() => { searchParams.delete('reschedule'); setSearchParams(searchParams, { replace: true }); });
@@ -428,6 +428,7 @@ export default function CalendarPage() {
           mode={form.mode}
           initial={form.initial}
           prefill={form.prefill}
+          rescheduleOfId={form.rescheduleOfId}
           onClose={() => setForm((f) => ({ ...f, open: false }))}
           onSaved={() => { setForm((f) => ({ ...f, open: false })); reload(); }}
         />
@@ -447,10 +448,11 @@ export default function CalendarPage() {
 // ═══════════════════════════════════════════
 //  排程表單 Modal（新增 / 編輯共用）
 // ═══════════════════════════════════════════
-function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
+function ScheduleFormModal({ mode, initial, prefill, rescheduleOfId, onClose, onSaved }: {
   mode: 'create' | 'edit';
   initial?: Schedule;
   prefill?: { date?: string; start?: string };
+  rescheduleOfId?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -522,7 +524,7 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
         });
         toast.success('排程已更新。');
       } else {
-        await calendarApi.createSchedule({
+        const res = await calendarApi.createSchedule({
           schedule_date: date,
           start_time: start,
           duration_minutes: duration,
@@ -534,6 +536,10 @@ function ScheduleFormModal({ mode, initial, prefill, onClose, onSaved }: {
           created_by: user?.name || user?.email,
           created_by_id: user?.id,
         });
+        // 若為逾期「重新安排」而來，標記原排程為已重新安排
+        if (rescheduleOfId) {
+          try { await calendarApi.markRescheduled(rescheduleOfId, res.data?.id); } catch { /* 非關鍵 */ }
+        }
         toast.success('排程建立成功。');
       }
       onSaved();

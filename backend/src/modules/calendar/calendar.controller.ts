@@ -86,4 +86,10 @@ export class CalendarController {
   cancel(@Param('id') id: string, @Body() dto: CancelScheduleDto) {
     return this.svc.cancel(id, dto);
   }
+
+  @Post('schedules/:id/mark-rescheduled')
+  @ApiOperation({ summary: '標記逾期排程為已重新安排' })
+  markRescheduled(@Param('id') id: string, @Body() body: { rescheduled_to_id?: string }) {
+    return this.svc.markRescheduled(id, body?.rescheduled_to_id);
+  }
 }

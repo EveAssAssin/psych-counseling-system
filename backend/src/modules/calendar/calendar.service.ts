@@ -510,6 +510,20 @@ export class CalendarService {
   }
 
   // ═══════════════════════════════════════════
+  //  標記已重新安排（逾期重排後於原排程留紀錄）
+  // ═══════════════════════════════════════════
+  async markRescheduled(id: string, toId?: string) {
+    const { data, error } = await this.db
+      .from('calendar_schedules')
+      .update({ rescheduled_at: new Date().toISOString(), rescheduled_to_id: toId || null })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  // ═══════════════════════════════════════════
   //  取消排程（不實體刪除）
   // ═══════════════════════════════════════════
   async cancel(id: string, dto: CancelScheduleDto) {
