@@ -110,9 +110,10 @@ export default function EmployeeAttendancePanel({ appNumber }: Props) {
       if (d.dayOff || r.includes('排休')) s.off++;
       // 特休（annualLeave 欄位）以實際名稱「特休」列出
       if (d.annualLeave) addLeave(s, '特休');
-      // 各類假別：直接用左手 HRM 回傳的假別名稱逐項計數，不歸類成「其他假」
+      // 各類假別：直接用左手 HRM 回傳的假別名稱逐項計數，不歸類成「其他假」。
+      // 優先取 leaveRuleTypeTitle，缺漏時退回 description，盡量顯示實際假別名稱。
       for (const l of d.leaveItems || []) {
-        addLeave(s, l.leaveRuleTypeTitle);
+        addLeave(s, l.leaveRuleTypeTitle || l.description);
       }
       s.overtimeMin += overtimeMinutes(d.overTime);
     }
