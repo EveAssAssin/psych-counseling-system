@@ -519,7 +519,6 @@ function ScheduleFormModal({ mode, initial, prefill, rescheduleOfId, onClose, on
     for (let m = WORK_START_HOUR * 60; m <= WORK_END_HOUR * 60 - 5; m += 5) arr.push(minToHHMM(m));
     return arr;
   }, []);
-  const todayStr = fmt(new Date());
 
   // 需重新檢查時，排休須為「上班」才能存；未改動時不受排休狀態影響
   const attOk = !recheckNeeded || att.status === 'work';
@@ -579,7 +578,7 @@ function ScheduleFormModal({ mode, initial, prefill, rescheduleOfId, onClose, on
 
       <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
         <Field label="排程日期" required>
-          <input type="date" value={date} min={todayStr} onChange={(e) => setDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2" />
         </Field>
 
         <Field label="選擇人員" required>

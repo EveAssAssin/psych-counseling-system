@@ -294,6 +294,7 @@ export class EmployeesService {
     onLeave: number;
     regular: number;   // 正職（門市：店長/副店長/正職）
     newcomer: number;  // 新人（門市：新人標籤）
+    risk: number;      // 風險人員（有填任一風險標記）
   }> {
     const [total, active, onLeave] = await Promise.all([
       this.supabase.count(this.TABLE, {}, { useAdmin: true }),
@@ -301,25 +302,32 @@ export class EmployeesService {
       this.supabase.count(this.TABLE, { is_leave: true }, { useAdmin: true }),
     ]);
 
-    // 依職稱標籤統計「正職 / 新人」，僅計門市人員（排除總部：person_type != 'store'）
-    // job_tags 為人工填寫，未填標籤者不列入任一計數。
+    // 統計在職員工的標籤：
+    //  - 正職 / 新人：依 job_tags，僅計門市人員（排除總部：person_type='store'）。
+    //  - 風險人員：只要有填任一 risk_tags 即計入（不限門市）。
+    // 標籤皆為人工填寫，未填者不列入。
     const client = this.supabase.getAdminClient();
     const { data: tagRows, error } = await client
       .from(this.TABLE)
-      .select('job_tags, person_type')
-      .eq('is_active', true)
-      .eq('person_type', 'store');
+      .select('job_tags, risk_tags, person_type')
+      .eq('is_active', true);
 
     let regular = 0;
     let newcomer = 0;
+    let risk = 0;
     if (error) {
-      this.logger.error('Error counting job_tags for stats:', error);
+      this.logger.error('Error counting tags for stats:', error);
     } else {
       const REGULAR_TAGS = ['店長', '副店長', '正職'];
       for (const row of tagRows || []) {
-        const tags: string[] = Array.isArray((row as any).job_tags) ? (row as any).job_tags : [];
-        if (tags.some((t) => REGULAR_TAGS.includes(t))) regular++;
-        if (tags.includes('新人')) newcomer++;
+        const r = row as any;
+        const jobTags: string[] = Array.isArray(r.job_tags) ? r.job_tags : [];
+        const riskTags: string[] = Array.isArray(r.risk_tags) ? r.risk_tags : [];
+        if (r.person_type === 'store') {
+          if (jobTags.some((t) => REGULAR_TAGS.includes(t))) regular++;
+          if (jobTags.includes('新人')) newcomer++;
+        }
+        if (riskTags.length > 0) risk++;
       }
     }
 
@@ -330,6 +338,7 @@ export class EmployeesService {
       onLeave,
       regular,
       newcomer,
+      risk,
     };
   }
 
