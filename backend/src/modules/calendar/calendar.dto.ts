@@ -4,7 +4,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 // ──────────────────────────────────────────────
 //  常數定義（與前端 CalendarPage 保持一致）
 // ──────────────────────────────────────────────
-export const CATEGORY_KEYS = ['routine', 'announce', 'project', 'newcomer', 'urgent'] as const;
+export const CATEGORY_KEYS = ['routine', 'announce', 'project', 'newcomer', 'urgent', 'unfit'] as const;
 export type CategoryKey = typeof CATEGORY_KEYS[number];
 
 export const CATEGORY_LABELS: Record<CategoryKey, string> = {
@@ -13,6 +13,7 @@ export const CATEGORY_LABELS: Record<CategoryKey, string> = {
   project: '專案焦點',
   newcomer: '新人輔導',
   urgent: '緊急案件',
+  unfit: '不適任評估',
 };
 
 export const DURATION_OPTIONS = [5, 10, 15, 30, 60] as const;

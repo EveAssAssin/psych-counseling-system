@@ -45,8 +45,9 @@ const CAT: Record<string, CatStyle> = {
   project:  { name: '專案焦點',   block: 'bg-violet-100 border-violet-300 text-violet-900',    dot: 'bg-violet-500',  chip: 'border-violet-300 bg-violet-50 text-violet-700' },
   newcomer: { name: '新人輔導',   block: 'bg-amber-100 border-amber-300 text-amber-900',       dot: 'bg-amber-500',   chip: 'border-amber-300 bg-amber-50 text-amber-700' },
   urgent:   { name: '緊急案件',   block: 'bg-red-500 border-red-700 text-white ring-2 ring-red-400', dot: 'bg-red-600', chip: 'border-red-300 bg-red-50 text-red-700', urgent: true },
+  unfit:    { name: '不適任評估', block: 'bg-slate-200 border-slate-400 text-slate-900',       dot: 'bg-slate-500',   chip: 'border-slate-300 bg-slate-50 text-slate-700' },
 };
-const CAT_ORDER = ['routine', 'announce', 'project', 'newcomer', 'urgent'];
+const CAT_ORDER = ['routine', 'announce', 'project', 'newcomer', 'urgent', 'unfit'];
 const catOf = (key: string): CatStyle => CAT[key] || CAT.routine;
 
 const DURATION_OPTIONS = [
@@ -130,7 +131,7 @@ const fmtMinutes = (min: number): string => {
 // 今日總覽卡片點擊 → 行事曆篩選比對
 const CARD_FILTER_LABEL: Record<string, string> = {
   completed: '已完成', pending: '待執行', overdue: '逾期',
-  routine: '例行性關懷', announce: '流程佈達', project: '專案焦點', newcomer: '新人輔導', urgent: '緊急案件',
+  routine: '例行性關懷', announce: '流程佈達', project: '專案焦點', newcomer: '新人輔導', urgent: '緊急案件', unfit: '不適任評估',
 };
 function matchesCardFilter(s: Schedule, f: string | null): boolean {
   if (!f) return true;

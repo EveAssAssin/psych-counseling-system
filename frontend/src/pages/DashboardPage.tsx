@@ -19,6 +19,7 @@ const DASH_CATS = [
   { key: 'project', name: '專案焦點', color: 'bg-violet-500' },
   { key: 'newcomer', name: '新人輔導', color: 'bg-amber-500' },
   { key: 'urgent', name: '緊急案件', color: 'bg-red-500' },
+  { key: 'unfit', name: '不適任評估', color: 'bg-slate-500' },
 ];
 const fmtHM = (min: number) => {
   if (!min) return '0 分';
