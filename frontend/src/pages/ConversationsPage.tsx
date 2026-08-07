@@ -101,7 +101,8 @@ export default function ConversationsPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">日期</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">紀錄時間</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">對話時間</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">員工</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">類型</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">訪談者</th>
@@ -114,8 +115,13 @@ export default function ConversationsPage() {
               {conversations.map((conv) => (
                 <tr key={conv.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {conv.created_at
+                      ? new Date(conv.created_at).toLocaleDateString('zh-TW')
+                      : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {conv.conversation_date
-                      ? new Date(conv.conversation_date).toLocaleDateString('zh-TW')
+                      ? new Date(conv.conversation_date).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
                       : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
