@@ -13,6 +13,20 @@ const FACT_CATEGORIES = ['表揚', '懲處', '事件', '貢獻', '爭議'];
 const hasData = (s: string) => /[0-9０-９]/.test(s || '');
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
+// 由入職日推算年資（無入職日時回傳 '-'）。目前資料來源尚未提供入職日，故多為 '-'。
+const tenureText = (hireDate?: string): string => {
+  if (!hireDate) return '-';
+  const start = new Date(hireDate);
+  if (isNaN(start.getTime())) return '-';
+  const now = new Date();
+  let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  if (now.getDate() < start.getDate()) months -= 1;
+  if (months < 0) return '-';
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return `${y > 0 ? `${y} 年` : ''}${m > 0 ? `${m} 個月` : ''}` || '未滿 1 個月';
+};
+
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [employee, setEmployee] = useState<any>(null);
@@ -195,6 +209,14 @@ export default function EmployeeDetailPage() {
             <div>
               <dt className="text-sm text-gray-500">職稱</dt>
               <dd className="text-sm font-medium">{employee.title || '-'}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-500">入職日</dt>
+              <dd className="text-sm font-medium">{employee.hire_date || '-'}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-500">年資</dt>
+              <dd className="text-sm font-medium">{tenureText(employee.hire_date)}</dd>
             </div>
             <div>
               <dt className="text-sm text-gray-500">狀態</dt>

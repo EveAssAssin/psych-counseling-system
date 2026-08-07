@@ -21,11 +21,7 @@ interface MonthSummary {
   label: string;      // 例如 2026年8月
   work: number;       // 出勤天數
   off: number;        // 排休
-  personal: number;   // 事假
-  sick: number;       // 病假
-  annual: number;     // 特休
-  official: number;   // 公假
-  otherLeave: number; // 其他假
+  leaves: Record<string, number>; // 各假別 → 天數（依左手 HRM 實際假別名稱，不歸類）
   overtimeMin: number; // 加班分鐘
 }
 
@@ -96,10 +92,14 @@ export default function EmployeeAttendancePanel({ appNumber }: Props) {
         const [y, m] = ym.split('-');
         map.set(ym, {
           month: ym, label: `${y}年${Number(m)}月`,
-          work: 0, off: 0, personal: 0, sick: 0, annual: 0, official: 0, otherLeave: 0, overtimeMin: 0,
+          work: 0, off: 0, leaves: {}, overtimeMin: 0,
         });
       }
       return map.get(ym)!;
+    };
+    const addLeave = (s: MonthSummary, name: string) => {
+      const key = (name || '其他假別').trim() || '其他假別';
+      s.leaves[key] = (s.leaves[key] || 0) + 1;
     };
     for (const d of days) {
       if (!d.workDate) continue;
@@ -108,14 +108,11 @@ export default function EmployeeAttendancePanel({ appNumber }: Props) {
       const r = d.attendanceResult || '';
       if (r.includes('上班')) s.work++;
       if (d.dayOff || r.includes('排休')) s.off++;
-      if (d.annualLeave) s.annual++;
+      // 特休（annualLeave 欄位）以實際名稱「特休」列出
+      if (d.annualLeave) addLeave(s, '特休');
+      // 各類假別：直接用左手 HRM 回傳的假別名稱逐項計數，不歸類成「其他假」
       for (const l of d.leaveItems || []) {
-        const t = l.leaveRuleTypeTitle || '';
-        if (t.includes('事假')) s.personal++;
-        else if (t.includes('病假')) s.sick++;
-        else if (t.includes('特休') || t.includes('年假')) s.annual++;
-        else if (t.includes('公假')) s.official++;
-        else s.otherLeave++;
+        addLeave(s, l.leaveRuleTypeTitle);
       }
       s.overtimeMin += overtimeMinutes(d.overTime);
     }
@@ -173,14 +170,14 @@ export default function EmployeeAttendancePanel({ appNumber }: Props) {
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
                       {m.off > 0 && <span>排休 <b>{m.off}</b></span>}
-                      {m.personal > 0 && <span>事假 <b>{m.personal}</b></span>}
-                      {m.sick > 0 && <span>病假 <b>{m.sick}</b></span>}
-                      {m.annual > 0 && <span>特休 <b>{m.annual}</b></span>}
-                      {m.official > 0 && <span>公假 <b>{m.official}</b></span>}
-                      {m.otherLeave > 0 && <span>其他假 <b>{m.otherLeave}</b></span>}
+                      {Object.entries(m.leaves)
+                        .filter(([, v]) => v > 0)
+                        .map(([name, v]) => (
+                          <span key={name}>{name} <b>{v}</b></span>
+                        ))}
                       {m.overtimeMin > 0 && <span>加班 <b>{fmtHM(m.overtimeMin)}</b></span>}
-                      {m.off === 0 && m.personal === 0 && m.sick === 0 && m.annual === 0 &&
-                        m.official === 0 && m.otherLeave === 0 && m.overtimeMin === 0 && (
+                      {m.off === 0 && Object.values(m.leaves).every((v) => v === 0) &&
+                        m.overtimeMin === 0 && (
                         <span className="text-gray-400">無假別 / 加班</span>
                       )}
                     </div>
