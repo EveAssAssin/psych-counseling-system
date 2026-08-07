@@ -117,7 +117,7 @@ function TalkBar({ label, data }: { label: string; data: TalkData }) {
 }
 
 interface Stats {
-  employees: { total: number; active: number };
+  employees: { total: number; active: number; regular?: number; newcomer?: number };
   conversations: { total: number; pending: number; needFollowup: number };
   riskFlags: { open: number; critical: number; high: number };
 }
@@ -295,13 +295,20 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 truncate">在職員工</dt>
-                  <dd className="flex items-baseline">
-                    <div className="text-2xl font-semibold text-gray-900">
-                      {stats?.employees.active || 0}
+                  <dd className="flex items-baseline gap-2">
+                    <div className="flex items-baseline">
+                      <span className="text-2xl font-semibold text-gray-900">
+                        {stats?.employees.regular || 0}
+                      </span>
+                      <span className="ml-1 text-sm text-gray-500">正職</span>
                     </div>
-                    <span className="ml-2 text-sm text-gray-500">
-                      / {stats?.employees.total || 0}
-                    </span>
+                    <span className="text-gray-300">｜</span>
+                    <div className="flex items-baseline">
+                      <span className="text-2xl font-semibold text-gray-900">
+                        {stats?.employees.newcomer || 0}
+                      </span>
+                      <span className="ml-1 text-sm text-gray-500">新人</span>
+                    </div>
                   </dd>
                 </dl>
               </div>

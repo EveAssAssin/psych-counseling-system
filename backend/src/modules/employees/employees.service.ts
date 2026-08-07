@@ -292,6 +292,8 @@ export class EmployeesService {
     active: number;
     inactive: number;
     onLeave: number;
+    regular: number;   // 正職（門市：店長/副店長/正職）
+    newcomer: number;  // 新人（門市：新人標籤）
   }> {
     const [total, active, onLeave] = await Promise.all([
       this.supabase.count(this.TABLE, {}, { useAdmin: true }),
@@ -299,11 +301,35 @@ export class EmployeesService {
       this.supabase.count(this.TABLE, { is_leave: true }, { useAdmin: true }),
     ]);
 
+    // 依職稱標籤統計「正職 / 新人」，僅計門市人員（排除總部：person_type != 'store'）
+    // job_tags 為人工填寫，未填標籤者不列入任一計數。
+    const client = this.supabase.getAdminClient();
+    const { data: tagRows, error } = await client
+      .from(this.TABLE)
+      .select('job_tags, person_type')
+      .eq('is_active', true)
+      .eq('person_type', 'store');
+
+    let regular = 0;
+    let newcomer = 0;
+    if (error) {
+      this.logger.error('Error counting job_tags for stats:', error);
+    } else {
+      const REGULAR_TAGS = ['店長', '副店長', '正職'];
+      for (const row of tagRows || []) {
+        const tags: string[] = Array.isArray((row as any).job_tags) ? (row as any).job_tags : [];
+        if (tags.some((t) => REGULAR_TAGS.includes(t))) regular++;
+        if (tags.includes('新人')) newcomer++;
+      }
+    }
+
     return {
       total,
       active,
       inactive: total - active,
       onLeave,
+      regular,
+      newcomer,
     };
   }
 
