@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeftIcon, ChatBubbleLeftRightIcon, TicketIcon, SparklesIcon, StarIcon } from '@heroicons/react/24/outline';
 import { employeesApi, conversationsApi, analysisApi, officialChannelApi, achievementsApi } from '../services/api';
 import { EmployeeInsightTab } from '../components/EmployeeInsightTab';
+import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel';
 import toast from 'react-hot-toast';
 
 const JOB_TAGS = ['店長', '副店長', '正職', '新人'];
@@ -309,6 +310,11 @@ export default function EmployeeDetailPage() {
           )}
         </div>
       </div>
+
+      {/* 本月出勤 / 休假摘要 */}
+      {employee.employeeappnumber && (
+        <EmployeeAttendancePanel appNumber={employee.employeeappnumber} />
+      )}
 
       {/* Tab 切換 */}
       <div className="card">
