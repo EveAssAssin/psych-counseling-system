@@ -6,6 +6,7 @@ import { EmployeeInsightTab } from '../components/EmployeeInsightTab';
 import toast from 'react-hot-toast';
 
 const JOB_TAGS = ['店長', '副店長', '正職', '新人'];
+const RISK_TAGS = ['危險', '準淘汰', '高關注'];
 const RECORD_TYPES = ['事實', '感受'];
 const FACT_CATEGORIES = ['表揚', '懲處', '事件', '貢獻', '爭議'];
 const hasData = (s: string) => /[0-9０-９]/.test(s || '');
@@ -16,6 +17,8 @@ export default function EmployeeDetailPage() {
   const [employee, setEmployee] = useState<any>(null);
   const [jobTags, setJobTags] = useState<string[]>([]);
   const [savingJob, setSavingJob] = useState(false);
+  const [riskTags, setRiskTags] = useState<string[]>([]);
+  const [savingRisk, setSavingRisk] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
   const [latestAnalysis, setLatestAnalysis] = useState<any>(null);
   const [officialMessages, setOfficialMessages] = useState<any[]>([]);
@@ -108,6 +111,7 @@ export default function EmployeeDetailPage() {
       ]);
       setEmployee(empRes.data);
       setJobTags(Array.isArray(empRes.data?.job_tags) ? empRes.data.job_tags : []);
+      setRiskTags(Array.isArray(empRes.data?.risk_tags) ? empRes.data.risk_tags : []);
       setConversations(convRes.data);
       setLatestAnalysis(analysisRes.data?.found !== false ? analysisRes.data : null);
 
@@ -231,6 +235,41 @@ export default function EmployeeDetailPage() {
                   }}
                   className="mt-2 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50">
                   {savingJob ? '儲存中…' : '儲存職稱標籤'}
+                </button>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-500 mb-1">風險標記（可多選）</dt>
+              <dd>
+                <div className="flex flex-wrap gap-2">
+                  {RISK_TAGS.map((t) => {
+                    const selected = riskTags.includes(t);
+                    return (
+                      <button key={t} type="button"
+                        onClick={() => setRiskTags((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
+                        className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm ${
+                          selected ? 'border-danger-400 bg-danger-50 text-danger-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}>
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button type="button" disabled={savingRisk}
+                  onClick={async () => {
+                    setSavingRisk(true);
+                    try {
+                      await employeesApi.update(id!, { risk_tags: riskTags });
+                      setEmployee((e: any) => ({ ...e, risk_tags: riskTags }));
+                      toast.success('風險標記已更新。');
+                    } catch (err: any) {
+                      toast.error(err.response?.data?.message || '更新失敗（後端需已部署並執行 migration 025）');
+                    } finally {
+                      setSavingRisk(false);
+                    }
+                  }}
+                  className="mt-2 rounded-md bg-danger-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-700 disabled:opacity-50">
+                  {savingRisk ? '儲存中…' : '儲存風險標記'}
                 </button>
               </dd>
             </div>

@@ -21,6 +21,8 @@ export interface Employee {
   name: string;
   role?: string;
   title?: string;
+  job_tags?: string[];
+  risk_tags?: string[];
   store_id?: string;
   store_name?: string;
   department?: string;
@@ -77,6 +79,12 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsString({ each: true })
   job_tags?: string[];
+
+  @ApiPropertyOptional({ description: '風險標記（人工，可多選）：危險/準淘汰/高關注', isArray: true })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  risk_tags?: string[];
 
   @ApiPropertyOptional({ description: '門市 ID' })
   @IsUUID()
@@ -145,6 +153,12 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsString({ each: true })
   job_tags?: string[];
+
+  @ApiPropertyOptional({ description: '風險標記（人工，可多選）：危險/準淘汰/高關注', isArray: true })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  risk_tags?: string[];
 
   @ApiPropertyOptional({ description: '門市 ID' })
   @IsUUID()
