@@ -137,7 +137,7 @@ export default function EmployeeAttendancePanel({ appNumber }: Props) {
           <span className="font-medium text-gray-900">員工出勤 / 休假（月統計）</span>
           {!loading && !err && latest && (
             <span className="text-xs text-gray-500">
-              {latest.label}：出勤 {latest.work} 天 · 排休 {latest.off}
+              {latest.label}：出勤 {latest.work} 天{latest.off > 0 ? ` · 排休 ${latest.off}` : ''}
             </span>
           )}
           {loading && <span className="text-xs text-gray-400">載入中...</span>}
@@ -172,13 +172,17 @@ export default function EmployeeAttendancePanel({ appNumber }: Props) {
                       <span className="text-xs text-gray-500">出勤 {m.work} 天</span>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
-                      <span>排休 <b>{m.off}</b></span>
-                      <span>事假 <b>{m.personal}</b></span>
-                      <span>病假 <b>{m.sick}</b></span>
-                      <span>特休 <b>{m.annual}</b></span>
-                      <span>公假 <b>{m.official}</b></span>
+                      {m.off > 0 && <span>排休 <b>{m.off}</b></span>}
+                      {m.personal > 0 && <span>事假 <b>{m.personal}</b></span>}
+                      {m.sick > 0 && <span>病假 <b>{m.sick}</b></span>}
+                      {m.annual > 0 && <span>特休 <b>{m.annual}</b></span>}
+                      {m.official > 0 && <span>公假 <b>{m.official}</b></span>}
                       {m.otherLeave > 0 && <span>其他假 <b>{m.otherLeave}</b></span>}
-                      <span>加班 <b>{fmtHM(m.overtimeMin)}</b></span>
+                      {m.overtimeMin > 0 && <span>加班 <b>{fmtHM(m.overtimeMin)}</b></span>}
+                      {m.off === 0 && m.personal === 0 && m.sick === 0 && m.annual === 0 &&
+                        m.official === 0 && m.otherLeave === 0 && m.overtimeMin === 0 && (
+                        <span className="text-gray-400">無假別 / 加班</span>
+                      )}
                     </div>
                   </div>
                 ))}
