@@ -6,7 +6,9 @@ import { EmployeeInsightTab } from '../components/EmployeeInsightTab';
 import toast from 'react-hot-toast';
 
 const JOB_TAGS = ['店長', '副店長', '正職', '新人'];
-const ACH_CATEGORIES = ['表揚', '懲處', '事件', '貢獻'];
+const RECORD_TYPES = ['事實', '感受'];
+const FACT_CATEGORIES = ['表揚', '懲處', '事件', '貢獻', '爭議'];
+const hasData = (s: string) => /[0-9０-９]/.test(s || '');
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 export default function EmployeeDetailPage() {
@@ -20,8 +22,10 @@ export default function EmployeeDetailPage() {
   const [activeTab, setActiveTab] = useState<'insight' | 'conversations' | 'achievements' | 'official'>('insight');
   const [achievements, setAchievements] = useState<any[]>([]);
   const [showAchForm, setShowAchForm] = useState(false);
-  const [achForm, setAchForm] = useState({ title: '', content: '', record_date: todayStr(), category: '' });
+  const [achForm, setAchForm] = useState({ record_type: '事實', title: '', content: '', record_date: todayStr(), category: '' });
   const [savingAch, setSavingAch] = useState(false);
+  const [feelingTags, setFeelingTags] = useState<any[]>([]);
+  const [newFeeling, setNewFeeling] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,29 +38,52 @@ export default function EmployeeDetailPage() {
       const r = await achievementsApi.listByEmployee(id);
       setAchievements(Array.isArray(r.data) ? r.data : r.data?.data ?? []);
     } catch { setAchievements([]); }
+    try {
+      const r = await achievementsApi.listFeelingTags();
+      setFeelingTags(Array.isArray(r.data) ? r.data : r.data?.data ?? []);
+    } catch { /* 字典非關鍵 */ }
   };
   useEffect(() => { loadAchievements(); }, [id]);
+
+  const addFeelingTag = async () => {
+    const name = newFeeling.trim();
+    if (!name) return;
+    try {
+      const r = await achievementsApi.createFeelingTag(name);
+      setFeelingTags((prev) => (prev.some((t) => t.id === r.data.id) ? prev : [...prev, r.data]));
+      setAchForm((f) => ({ ...f, category: r.data.name }));
+      setNewFeeling('');
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || '新增標籤失敗');
+    }
+  };
 
   const saveAchievement = async () => {
     if (!achForm.title.trim() || !achForm.content.trim() || !achForm.record_date) {
       toast.error('請填標題、內容與日期');
       return;
     }
+    // 事實防呆：內容需含數據
+    if (achForm.record_type === '事實' && !hasData(achForm.content)) {
+      toast.error('「事實」需要數據佐證：內容必須包含具體數據（數字）。');
+      return;
+    }
     setSavingAch(true);
     try {
       await achievementsApi.create({
         employee_id: id!,
+        record_type: achForm.record_type,
         title: achForm.title.trim(),
         content: achForm.content.trim(),
         record_date: achForm.record_date,
         category: achForm.category || undefined,
       });
       toast.success('事蹟已新增。');
-      setAchForm({ title: '', content: '', record_date: todayStr(), category: '' });
+      setAchForm({ record_type: '事實', title: '', content: '', record_date: todayStr(), category: '' });
       setShowAchForm(false);
       loadAchievements();
     } catch (e: any) {
-      toast.error(e.response?.data?.message || '新增失敗（後端需部署並執行 migration 022）');
+      toast.error(e.response?.data?.message || '新增失敗（後端需部署並執行 migration 022/023）');
     } finally {
       setSavingAch(false);
     }
@@ -357,22 +384,64 @@ export default function EmployeeDetailPage() {
 
             {showAchForm && (
               <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
+                {/* 大分類：事實 / 感受 */}
+                <div>
+                  <p className="mb-1 text-xs font-medium text-gray-500">大分類</p>
+                  <div className="flex gap-2">
+                    {RECORD_TYPES.map((rt) => (
+                      <button key={rt} type="button" onClick={() => setAchForm({ ...achForm, record_type: rt, category: '' })}
+                              className={`rounded-full border px-4 py-1.5 text-sm ${achForm.record_type === rt ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                        {rt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <input value={achForm.title} onChange={(e) => setAchForm({ ...achForm, title: e.target.value })}
                          placeholder="標題" className="input sm:col-span-2 px-4 py-3" />
                   <input type="date" value={achForm.record_date} onChange={(e) => setAchForm({ ...achForm, record_date: e.target.value })}
                          className="input px-4 py-3" />
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {ACH_CATEGORIES.map((c) => (
-                    <button key={c} type="button" onClick={() => setAchForm({ ...achForm, category: achForm.category === c ? '' : c })}
-                            className={`rounded-full border px-3 py-1 text-sm ${achForm.category === c ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-                      {c}
-                    </button>
-                  ))}
-                </div>
+
+                {/* 子標籤 */}
+                {achForm.record_type === '事實' ? (
+                  <div className="flex flex-wrap gap-2">
+                    {FACT_CATEGORIES.map((c) => (
+                      <button key={c} type="button" onClick={() => setAchForm({ ...achForm, category: achForm.category === c ? '' : c })}
+                              className={`rounded-full border px-3 py-1 text-sm ${achForm.category === c ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex flex-wrap gap-2">
+                      {feelingTags.length === 0 && <span className="text-xs text-gray-400">尚無感受標籤，於下方新增</span>}
+                      {feelingTags.map((t) => (
+                        <button key={t.id} type="button" onClick={() => setAchForm({ ...achForm, category: achForm.category === t.name ? '' : t.name })}
+                                className={`rounded-full border px-3 py-1 text-sm ${achForm.category === t.name ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <input value={newFeeling} onChange={(e) => setNewFeeling(e.target.value)} maxLength={20}
+                             placeholder="新增感受標籤（可重用）" className="input flex-1 px-3 py-2" />
+                      <button type="button" onClick={addFeelingTag} className="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50">新增標籤</button>
+                    </div>
+                  </div>
+                )}
+
                 <textarea value={achForm.content} onChange={(e) => setAchForm({ ...achForm, content: e.target.value })}
-                          rows={5} placeholder="內容…" className="input w-full p-3 leading-relaxed" />
+                          rows={5} placeholder={achForm.record_type === '事實' ? '內容（需包含具體數據，例如：遲到 3 次、業績 120%）…' : '內容…'}
+                          className="input w-full p-3 leading-relaxed" />
+                {achForm.record_type === '事實' && (
+                  <p className={`text-xs ${hasData(achForm.content) ? 'text-gray-400' : 'text-amber-600'}`}>
+                    「事實」內容需包含具體數據（數字）才能儲存。
+                  </p>
+                )}
+
                 <div className="flex justify-end">
                   <button onClick={saveAchievement} disabled={savingAch} className="btn-primary text-sm disabled:opacity-50">
                     {savingAch ? '儲存中…' : '儲存'}
@@ -391,7 +460,8 @@ export default function EmployeeDetailPage() {
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900">
                           {a.title}
-                          {a.category && <span className="ml-2 rounded bg-primary-50 px-1.5 py-0.5 text-xs text-primary-700">{a.category}</span>}
+                          {a.record_type && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">{a.record_type}</span>}
+                          {a.category && <span className="ml-1 rounded bg-primary-50 px-1.5 py-0.5 text-xs text-primary-700">{a.category}</span>}
                         </p>
                         <p className="text-xs text-gray-500">
                           {a.record_date ? new Date(a.record_date).toLocaleDateString('zh-TW') : ''}

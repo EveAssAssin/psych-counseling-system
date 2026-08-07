@@ -132,10 +132,13 @@ export const storesApi = {
 // ============================================
 export const achievementsApi = {
   listByEmployee: (employeeId: string) => api.get('/achievements', { params: { employee_id: employeeId } }),
-  create: (body: { employee_id: string; title: string; content: string; record_date: string; category?: string; created_by?: string }) =>
+  create: (body: { employee_id: string; record_type: string; title: string; content: string; record_date: string; category?: string; created_by?: string }) =>
     api.post('/achievements', body),
   update: (id: string, body: any) => api.patch(`/achievements/${id}`, body),
   delete: (id: string) => api.delete(`/achievements/${id}`),
+  // 感受標籤字典
+  listFeelingTags: () => api.get('/achievements/feeling-tags'),
+  createFeelingTag: (name: string) => api.post('/achievements/feeling-tags', { name }),
 };
 
 // ============================================

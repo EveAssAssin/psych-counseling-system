@@ -1,12 +1,25 @@
 import { Controller, Get, Post, Patch, Delete, Param, Query, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { AchievementsService } from './achievements.service';
-import { CreateAchievementDto, UpdateAchievementDto } from './achievements.dto';
+import { CreateAchievementDto, UpdateAchievementDto, CreateFeelingTagDto } from './achievements.dto';
 
 @ApiTags('achievements')
 @Controller('achievements')
 export class AchievementsController {
   constructor(private readonly svc: AchievementsService) {}
+
+  // ── 感受標籤字典 ──
+  @Get('feeling-tags')
+  @ApiOperation({ summary: '列出感受自訂標籤' })
+  listFeelingTags() {
+    return this.svc.listFeelingTags();
+  }
+
+  @Post('feeling-tags')
+  @ApiOperation({ summary: '新增感受自訂標籤（可重用）' })
+  createFeelingTag(@Body() dto: CreateFeelingTagDto) {
+    return this.svc.createFeelingTag(dto.name);
+  }
 
   @Get()
   @ApiOperation({ summary: '列出某員工的事蹟紀錄' })

@@ -629,11 +629,11 @@ export class EmployeeInsightService {
       events.push({
         date: a.record_date,
         type: 'achievement',
-        category: `事蹟${a.category ? `[${a.category}]` : ''}`,
+        category: `事蹟${a.record_type ? `[${a.record_type}${a.category ? '/' + a.category : ''}]` : (a.category ? `[${a.category}]` : '')}`,
         content: `${a.title}${a.content ? `：${String(a.content).substring(0, 120)}` : ''}`,
         sentiment: a.category === '表揚' || a.category === '貢獻' ? 'positive'
-          : a.category === '懲處' ? 'negative' : 'neutral',
-        metadata: { category: a.category },
+          : a.category === '懲處' || a.category === '爭議' ? 'negative' : 'neutral',
+        metadata: { category: a.category, record_type: a.record_type },
       });
     }
 
@@ -915,8 +915,10 @@ ${analysisInput}
       input += `【事蹟紀錄（共 ${data.achievements.length} 筆）】\n`;
       for (const a of data.achievements.slice(0, 30)) {
         const d = a.record_date ? new Date(a.record_date).toLocaleDateString('zh-TW') : '';
-        input += `- ${d}${a.category ? ` [${a.category}]` : ''} ${a.title}：${String(a.content || '').substring(0, 150)}\n`;
+        const tag = `${a.record_type || ''}${a.category ? '/' + a.category : ''}`;
+        input += `- ${d}${tag ? ` [${tag}]` : ''} ${a.title}：${String(a.content || '').substring(0, 150)}\n`;
       }
+      input += `（提示：「事實」類為有數據佐證的客觀紀錄；「感受」類為主觀觀察，判讀時請區分權重）\n`;
       input += '\n';
     }
 
