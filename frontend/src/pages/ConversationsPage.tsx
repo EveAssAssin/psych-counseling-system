@@ -102,7 +102,7 @@ export default function ConversationsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">紀錄時間</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">對話時間</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">對話日期</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">員工</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">類型</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">訪談者</th>
@@ -121,7 +121,7 @@ export default function ConversationsPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {conv.conversation_date
-                      ? new Date(conv.conversation_date).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
+                      ? new Date(conv.conversation_date).toLocaleDateString('zh-TW')
                       : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
