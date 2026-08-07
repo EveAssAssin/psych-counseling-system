@@ -460,7 +460,7 @@ export default function DashboardPage() {
 
       {/* Sync Status */}
       <div className="card p-5">
-        <div className="flex items-center justify-between mb-4">
+        <div className={`flex items-center justify-between ${syncOpen ? 'mb-4' : ''}`}>
           <div className="flex items-center gap-2">
             <ClockIcon className="h-5 w-5 text-gray-400" />
             <h3 className="text-lg font-medium text-gray-900">資料同步狀態</h3>
