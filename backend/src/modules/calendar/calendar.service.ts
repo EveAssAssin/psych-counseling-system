@@ -321,11 +321,9 @@ export class CalendarService {
       throw new BadRequestException(`排程時間需落在 ${minToHHMM(WORK_START_MIN)}–${minToHHMM(WORK_END_MIN)} 之間`);
     }
 
-    // 2. 不可為過去
+    // 2. 過去日期：開放補登（放寬限制）。isPast 供後續排休檢查略過使用。
     const now = this.nowTaipei();
-    if (dto.schedule_date < now.date || (dto.schedule_date === now.date && startMin < now.min)) {
-      throw new BadRequestException('不可選擇已經過的日期或時間。');
-    }
+    const isPast = dto.schedule_date < now.date;
 
     // 3. 員工存在且在職
     const { data: emp } = await this.db
@@ -336,9 +334,9 @@ export class CalendarService {
     if (!emp) throw new NotFoundException(`找不到員工 ${dto.employee_app_number}`);
     if (emp.is_active === false) throw new BadRequestException('該員工已離職或停用，無法建立排程。');
 
-    // 4. 排休檢查（保守：非上班一律擋）
+    // 4. 排休檢查（保守：非上班一律擋）；過去日期為補登，略過排休阻擋。
     const att = await this.checkAttendance(dto.employee_app_number, dto.schedule_date);
-    if (att.status !== 'work') {
+    if (!isPast && att.status !== 'work') {
       throw new BadRequestException(att.message);
     }
 

@@ -520,8 +520,9 @@ function ScheduleFormModal({ mode, initial, prefill, rescheduleOfId, onClose, on
     return arr;
   }, []);
 
-  // 需重新檢查時，排休須為「上班」才能存；未改動時不受排休狀態影響
-  const attOk = !recheckNeeded || att.status === 'work';
+  // 過去日期為補登：略過排休阻擋。需重新檢查時，非過去日期的排休須為「上班」才能存。
+  const isPastDate = Boolean(date) && date < fmt(new Date());
+  const attOk = !recheckNeeded || att.status === 'work' || isPastDate;
   const primaryCat = categories[0] || '';
   const canSave = Boolean(date && appNumber && attOk && categories.length && subNames.length && note.trim() && start && !submitting);
 
@@ -593,6 +594,13 @@ function ScheduleFormModal({ mode, initial, prefill, rescheduleOfId, onClose, on
           )}>
             {att.status === 'work' ? <CheckCircleIcon className="h-5 w-5 shrink-0" /> : <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />}
             <span>{att.message}</span>
+          </div>
+        )}
+
+        {isPastDate && (
+          <div className="flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+            <span>此為過去日期的補登，將略過排休限制，仍可建立排程。</span>
           </div>
         )}
 
