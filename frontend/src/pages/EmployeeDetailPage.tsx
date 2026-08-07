@@ -359,9 +359,9 @@ export default function EmployeeDetailPage() {
               <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <input value={achForm.title} onChange={(e) => setAchForm({ ...achForm, title: e.target.value })}
-                         placeholder="標題" className="input sm:col-span-2" />
+                         placeholder="標題" className="input sm:col-span-2 py-3" />
                   <input type="date" value={achForm.record_date} onChange={(e) => setAchForm({ ...achForm, record_date: e.target.value })}
-                         className="input" />
+                         className="input py-3" />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {ACH_CATEGORIES.map((c) => (
@@ -372,7 +372,7 @@ export default function EmployeeDetailPage() {
                   ))}
                 </div>
                 <textarea value={achForm.content} onChange={(e) => setAchForm({ ...achForm, content: e.target.value })}
-                          rows={3} placeholder="內容…" className="input w-full" />
+                          rows={5} placeholder="內容…" className="input w-full p-3 leading-relaxed" />
                 <div className="flex justify-end">
                   <button onClick={saveAchievement} disabled={savingAch} className="btn-primary text-sm disabled:opacity-50">
                     {savingAch ? '儲存中…' : '儲存'}
