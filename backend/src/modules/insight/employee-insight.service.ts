@@ -13,7 +13,7 @@ import { EmployeeContextService } from '../conversations/employee-context.servic
 // ============================================
 export interface TimelineEvent {
   date: string;
-  type: 'line_message' | 'ticket_comment' | 'conversation' | 'attendance' | 'score' | 'review' | 'ticket_created' | 'ticket_event';
+  type: 'line_message' | 'ticket_comment' | 'conversation' | 'attendance' | 'score' | 'review' | 'ticket_created' | 'ticket_event' | 'achievement';
   category: string;
   content: string;
   sentiment?: 'positive' | 'neutral' | 'negative';
@@ -42,9 +42,11 @@ export interface EmployeeInsight {
     has_scores: boolean;
     has_reviews: boolean;
     has_ticket_history: boolean;
+    has_achievements: boolean;
     conversation_count: number;
     official_message_count: number;
     ticket_count: number;
+    achievement_count: number;
     date_range: { from: string; to: string };
   };
 
@@ -117,6 +119,7 @@ const INSIGHT_SYSTEM_PROMPT = `你是一位專業的職場心理分析師與人�
 - 官方頻道訊息（LINE 對話）
 - 工單回報歷史（員工提報的問題工單、類別、處理狀態、對話內容）
 - 對話記錄（主管面談）
+- 事蹟紀錄（主管登錄的表揚／懲處／事件／貢獻等重要事蹟）
 - 出勤紀錄
 - 加扣分紀錄
 - 客戶評價/客訴（含評價回覆對話、處理速度、緊急程度）
@@ -232,9 +235,11 @@ export class EmployeeInsightService {
         has_scores: collectedData.scores.length > 0,
         has_reviews: collectedData.reviews.length > 0,
         has_ticket_history: collectedData.tickets.length > 0,
+        has_achievements: (collectedData.achievements?.length || 0) > 0,
         conversation_count: collectedData.conversations.length,
         official_message_count: collectedData.officialMessages.length,
         ticket_count: collectedData.tickets.length,
+        achievement_count: collectedData.achievements?.length || 0,
         date_range: this.getDateRange(timeline),
       },
       timeline,
@@ -386,6 +391,14 @@ export class EmployeeInsightService {
       useAdmin: true,
     });
 
+    // 事蹟紀錄（所有時間，長期重要資料）
+    const achievements = await this.supabase.findMany('achievement_records', {
+      filters: { employee_id: employeeId },
+      orderBy: { column: 'record_date', ascending: false },
+      limit: 100,
+      useAdmin: true,
+    }).catch(() => []);
+
     // 評價/客訴紀錄（所有時間，客訴是長期重要資料；略過軟刪除的評價）
     const allReviewsRaw = await this.reviewsService.findByEmployee(employeeId, 200);
     const allReviews = allReviewsRaw.filter((r: any) => !r.deleted_at);
@@ -464,6 +477,7 @@ export class EmployeeInsightService {
       officialMessages: filteredMessages,
       conversations: filteredConversations,
       analyses,
+      achievements,
       attendance: [],   // 待實作
       scores: [],       // 待實作
       reviews,
@@ -607,6 +621,19 @@ export class EmployeeInsightService {
           interviewer: conv.interviewer_name,
           priority: conv.priority,
         },
+      });
+    }
+
+    // 4.5 事蹟紀錄
+    for (const a of (data.achievements || [])) {
+      events.push({
+        date: a.record_date,
+        type: 'achievement',
+        category: `事蹟${a.category ? `[${a.category}]` : ''}`,
+        content: `${a.title}${a.content ? `：${String(a.content).substring(0, 120)}` : ''}`,
+        sentiment: a.category === '表揚' || a.category === '貢獻' ? 'positive'
+          : a.category === '懲處' ? 'negative' : 'neutral',
+        metadata: { category: a.category },
       });
     }
 
@@ -881,6 +908,16 @@ ${analysisInput}
       }
     } else {
       input += `【工單回報統計】\n無工單資料\n\n`;
+    }
+
+    // ── 事蹟紀錄 ──
+    if (data.achievements && data.achievements.length > 0) {
+      input += `【事蹟紀錄（共 ${data.achievements.length} 筆）】\n`;
+      for (const a of data.achievements.slice(0, 30)) {
+        const d = a.record_date ? new Date(a.record_date).toLocaleDateString('zh-TW') : '';
+        input += `- ${d}${a.category ? ` [${a.category}]` : ''} ${a.title}：${String(a.content || '').substring(0, 150)}\n`;
+      }
+      input += '\n';
     }
 
     // ── 時間軸 ──

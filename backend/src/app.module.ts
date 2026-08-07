@@ -32,6 +32,7 @@ import { LineAssistantModule } from './modules/line-assistant/line-assistant.mod
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { CounselingCasesModule } from './modules/counseling-cases/counseling-cases.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
+import { AchievementsModule } from './modules/achievements/achievements.module';
 
 // Health check
 import { HealthController } from './health.controller';
@@ -74,6 +75,7 @@ import { HealthController } from './health.controller';
     PermissionsModule,
     CounselingCasesModule,
     CalendarModule,
+    AchievementsModule,
   ],
   controllers: [HealthController],
 })

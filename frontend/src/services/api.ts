@@ -128,6 +128,17 @@ export const storesApi = {
 };
 
 // ============================================
+// Achievements API（事蹟紀錄）
+// ============================================
+export const achievementsApi = {
+  listByEmployee: (employeeId: string) => api.get('/achievements', { params: { employee_id: employeeId } }),
+  create: (body: { employee_id: string; title: string; content: string; record_date: string; category?: string; created_by?: string }) =>
+    api.post('/achievements', body),
+  update: (id: string, body: any) => api.patch(`/achievements/${id}`, body),
+  delete: (id: string) => api.delete(`/achievements/${id}`),
+};
+
+// ============================================
 // Conversations API
 // ============================================
 export const conversationsApi = {

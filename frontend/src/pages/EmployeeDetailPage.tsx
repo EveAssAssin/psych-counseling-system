@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeftIcon, ChatBubbleLeftRightIcon, TicketIcon, SparklesIcon } from '@heroicons/react/24/outline';
-import { employeesApi, conversationsApi, analysisApi, officialChannelApi } from '../services/api';
+import { ArrowLeftIcon, ChatBubbleLeftRightIcon, TicketIcon, SparklesIcon, StarIcon } from '@heroicons/react/24/outline';
+import { employeesApi, conversationsApi, analysisApi, officialChannelApi, achievementsApi } from '../services/api';
 import { EmployeeInsightTab } from '../components/EmployeeInsightTab';
 import toast from 'react-hot-toast';
 
 const JOB_TAGS = ['店長', '副店長', '正職', '新人'];
+const ACH_CATEGORIES = ['表揚', '懲處', '事件', '貢獻'];
+const todayStr = () => new Date().toISOString().slice(0, 10);
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,12 +17,60 @@ export default function EmployeeDetailPage() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [latestAnalysis, setLatestAnalysis] = useState<any>(null);
   const [officialMessages, setOfficialMessages] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'insight' | 'conversations' | 'official'>('insight');
+  const [activeTab, setActiveTab] = useState<'insight' | 'conversations' | 'achievements' | 'official'>('insight');
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [showAchForm, setShowAchForm] = useState(false);
+  const [achForm, setAchForm] = useState({ title: '', content: '', record_date: todayStr(), category: '' });
+  const [savingAch, setSavingAch] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (id) loadData();
   }, [id]);
+
+  const loadAchievements = async () => {
+    if (!id) return;
+    try {
+      const r = await achievementsApi.listByEmployee(id);
+      setAchievements(Array.isArray(r.data) ? r.data : r.data?.data ?? []);
+    } catch { setAchievements([]); }
+  };
+  useEffect(() => { loadAchievements(); }, [id]);
+
+  const saveAchievement = async () => {
+    if (!achForm.title.trim() || !achForm.content.trim() || !achForm.record_date) {
+      toast.error('請填標題、內容與日期');
+      return;
+    }
+    setSavingAch(true);
+    try {
+      await achievementsApi.create({
+        employee_id: id!,
+        title: achForm.title.trim(),
+        content: achForm.content.trim(),
+        record_date: achForm.record_date,
+        category: achForm.category || undefined,
+      });
+      toast.success('事蹟已新增。');
+      setAchForm({ title: '', content: '', record_date: todayStr(), category: '' });
+      setShowAchForm(false);
+      loadAchievements();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || '新增失敗（後端需部署並執行 migration 022）');
+    } finally {
+      setSavingAch(false);
+    }
+  };
+  const removeAchievement = async (aid: string) => {
+    if (!window.confirm('確定刪除這筆事蹟？')) return;
+    try {
+      await achievementsApi.delete(aid);
+      setAchievements((prev) => prev.filter((x) => x.id !== aid));
+      toast.success('已刪除。');
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || '刪除失敗');
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -221,6 +271,17 @@ export default function EmployeeDetailPage() {
               對話記錄 ({conversations.length})
             </button>
             <button
+              onClick={() => setActiveTab('achievements')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 ${
+                activeTab === 'achievements'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <StarIcon className="h-4 w-4 inline mr-2" />
+              事蹟紀錄 ({achievements.length})
+            </button>
+            <button
               onClick={() => setActiveTab('official')}
               className={`px-6 py-3 text-sm font-medium border-b-2 ${
                 activeTab === 'official'
@@ -274,6 +335,72 @@ export default function EmployeeDetailPage() {
                         </span>
                       </div>
                     </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
+        {/* 事蹟紀錄 Tab */}
+        {activeTab === 'achievements' && (
+          <>
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-medium text-gray-900">事蹟紀錄</h2>
+                <p className="text-xs text-gray-500 mt-1">表揚／懲處／事件／貢獻等，會作為 AI 分析的資料來源</p>
+              </div>
+              <button onClick={() => setShowAchForm((v) => !v)} className="btn-primary text-sm">
+                {showAchForm ? '取消' : '新增一筆'}
+              </button>
+            </div>
+
+            {showAchForm && (
+              <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <input value={achForm.title} onChange={(e) => setAchForm({ ...achForm, title: e.target.value })}
+                         placeholder="標題" className="input sm:col-span-2" />
+                  <input type="date" value={achForm.record_date} onChange={(e) => setAchForm({ ...achForm, record_date: e.target.value })}
+                         className="input" />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {ACH_CATEGORIES.map((c) => (
+                    <button key={c} type="button" onClick={() => setAchForm({ ...achForm, category: achForm.category === c ? '' : c })}
+                            className={`rounded-full border px-3 py-1 text-sm ${achForm.category === c ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                      {c}
+                    </button>
+                  ))}
+                </div>
+                <textarea value={achForm.content} onChange={(e) => setAchForm({ ...achForm, content: e.target.value })}
+                          rows={3} placeholder="內容…" className="input w-full" />
+                <div className="flex justify-end">
+                  <button onClick={saveAchievement} disabled={savingAch} className="btn-primary text-sm disabled:opacity-50">
+                    {savingAch ? '儲存中…' : '儲存'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {achievements.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">尚無事蹟紀錄</div>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {achievements.map((a) => (
+                  <li key={a.id} className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          {a.title}
+                          {a.category && <span className="ml-2 rounded bg-primary-50 px-1.5 py-0.5 text-xs text-primary-700">{a.category}</span>}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {a.record_date ? new Date(a.record_date).toLocaleDateString('zh-TW') : ''}
+                          {a.created_by ? ` · ${a.created_by}` : ''}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{a.content}</p>
+                      </div>
+                      <button onClick={() => removeAchievement(a.id)} className="shrink-0 text-xs text-gray-400 hover:text-red-600">刪除</button>
+                    </div>
                   </li>
                 ))}
               </ul>
