@@ -78,7 +78,7 @@ function SchedCard({ title, schedules, accent, onReschedule, onOpen, emptyText }
               </div>
               {onReschedule && (
                 s.rescheduled_at ? (
-                  <span className="shrink-0 rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">已重新安排</span>
+                  <span className="shrink-0 rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">已安排</span>
                 ) : (
                   <button onClick={() => onReschedule(s)}
                           className="shrink-0 rounded-md border border-primary-300 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50">
