@@ -44,9 +44,10 @@ export default function ConversationDetailPage() {
     setAnalysisError(null);
     try {
       setAnalyzing(true);
-      const response = await analysisApi.run(id!, false);
+      // 已有分析 → 這是「重新分析」，強制重跑（force=true）；首次分析則 false
+      const response = await analysisApi.run(id!, Boolean(analysis));
       setAnalysis(response.data);
-      toast.success('分析完成！');
+      toast.success(analysis ? '已重新分析！' : '分析完成！');
     } catch (error: any) {
       // 露出真正錯誤訊息
       const msg = error?.response?.data?.message
