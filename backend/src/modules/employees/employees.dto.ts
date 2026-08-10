@@ -29,6 +29,7 @@ export interface Employee {
   email?: string;
   phone?: string;
   hire_date?: string;
+  expected_resignation_date?: string;
   is_active: boolean;
   is_leave: boolean;
   leave_type?: string;
@@ -116,6 +117,11 @@ export class CreateEmployeeDto {
   @IsOptional()
   hire_date?: string;
 
+  @ApiPropertyOptional({ description: '預計離職日' })
+  @IsDateString()
+  @IsOptional()
+  expected_resignation_date?: string;
+
   @ApiPropertyOptional({ description: '是否在職', default: true })
   @IsBoolean()
   @IsOptional()
@@ -184,6 +190,16 @@ export class UpdateEmployeeDto {
   @IsString()
   @IsOptional()
   phone?: string;
+
+  @ApiPropertyOptional({ description: '到職日（人工維護）' })
+  @IsDateString()
+  @IsOptional()
+  hire_date?: string;
+
+  @ApiPropertyOptional({ description: '預計離職日（人工維護）' })
+  @IsDateString()
+  @IsOptional()
+  expected_resignation_date?: string;
 
   @ApiPropertyOptional({ description: '是否在職' })
   @IsBoolean()

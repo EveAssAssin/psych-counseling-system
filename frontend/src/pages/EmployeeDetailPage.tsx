@@ -34,6 +34,9 @@ export default function EmployeeDetailPage() {
   const [savingJob, setSavingJob] = useState(false);
   const [riskTags, setRiskTags] = useState<string[]>([]);
   const [savingRisk, setSavingRisk] = useState(false);
+  const [hireDate, setHireDate] = useState('');
+  const [expectedResignDate, setExpectedResignDate] = useState('');
+  const [savingDates, setSavingDates] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
   const [latestAnalysis, setLatestAnalysis] = useState<any>(null);
   const [officialMessages, setOfficialMessages] = useState<any[]>([]);
@@ -127,6 +130,8 @@ export default function EmployeeDetailPage() {
       setEmployee(empRes.data);
       setJobTags(Array.isArray(empRes.data?.job_tags) ? empRes.data.job_tags : []);
       setRiskTags(Array.isArray(empRes.data?.risk_tags) ? empRes.data.risk_tags : []);
+      setHireDate(empRes.data?.hire_date ? String(empRes.data.hire_date).slice(0, 10) : '');
+      setExpectedResignDate(empRes.data?.expected_resignation_date ? String(empRes.data.expected_resignation_date).slice(0, 10) : '');
       setConversations(convRes.data);
       setLatestAnalysis(analysisRes.data?.found !== false ? analysisRes.data : null);
 
@@ -211,12 +216,39 @@ export default function EmployeeDetailPage() {
               <dd className="text-sm font-medium">{employee.title || '-'}</dd>
             </div>
             <div>
-              <dt className="text-sm text-gray-500">入職日</dt>
-              <dd className="text-sm font-medium">{employee.hire_date || '-'}</dd>
+              <dt className="text-sm text-gray-500 mb-1">到職日</dt>
+              <dd>
+                <input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)}
+                       className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+                <p className="mt-1 text-xs text-gray-500">年資：{tenureText(hireDate)}</p>
+              </dd>
             </div>
             <div>
-              <dt className="text-sm text-gray-500">年資</dt>
-              <dd className="text-sm font-medium">{tenureText(employee.hire_date)}</dd>
+              <dt className="text-sm text-gray-500 mb-1">預計離職日</dt>
+              <dd>
+                <input type="date" value={expectedResignDate} onChange={(e) => setExpectedResignDate(e.target.value)}
+                       className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+                <button type="button" disabled={savingDates}
+                  onClick={async () => {
+                    setSavingDates(true);
+                    try {
+                      const patch = {
+                        hire_date: hireDate || null,
+                        expected_resignation_date: expectedResignDate || null,
+                      };
+                      await employeesApi.update(id!, patch as any);
+                      setEmployee((e: any) => ({ ...e, ...patch }));
+                      toast.success('日期已更新。');
+                    } catch (err: any) {
+                      toast.error(err.response?.data?.message || '更新失敗（後端需已部署並執行 migration 026）');
+                    } finally {
+                      setSavingDates(false);
+                    }
+                  }}
+                  className="mt-2 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50">
+                  {savingDates ? '儲存中…' : '儲存到職日／預計離職日'}
+                </button>
+              </dd>
             </div>
             <div>
               <dt className="text-sm text-gray-500">狀態</dt>
