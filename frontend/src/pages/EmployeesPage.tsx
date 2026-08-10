@@ -16,11 +16,14 @@ interface Employee {
   store_id?: string;
   person_type?: string; // store / nonstore / special / excluded
   job_tags?: string[];  // 店長/副店長/正職/新人（人工）
+  risk_tags?: string[]; // 危險/準淘汰/高關注（人工）
   is_active: boolean;
 }
 
 // 職稱標籤選項
 const JOB_TAGS = ['店長', '副店長', '正職', '新人'];
+// 風險標記選項
+const RISK_TAGS = ['危險', '準淘汰', '高關注'];
 
 interface ChannelMessage {
   id: string;
@@ -70,6 +73,7 @@ export default function EmployeesPage() {
   const [region, setRegion] = useState<string>('all');
   const [store, setStore] = useState<string>('all');
   const [jobTag, setJobTag] = useState<string>('all');
+  const [riskTag, setRiskTag] = useState<string>('all'); // all / any / 危險 / 準淘汰 / 高關注
   const [showInactive, setShowInactive] = useState(false);
 
   // 對話記錄 Modal
@@ -141,6 +145,7 @@ export default function EmployeesPage() {
     setRegion('all');
     setStore('all');
     setJobTag('all');
+    setRiskTag('all');
   };
 
   // 即時篩選（搜尋 + 單位 + 區域 同時生效，全部條件皆須符合）
@@ -160,10 +165,12 @@ export default function EmployeesPage() {
       if (region !== 'all' && empRegion(emp) !== region) return false;
       if (store !== 'all' && emp.store_name !== store) return false;
       if (jobTag !== 'all' && !(emp.job_tags || []).includes(jobTag)) return false;
+      if (riskTag === 'any' && (emp.risk_tags || []).length === 0) return false;
+      if (riskTag !== 'all' && riskTag !== 'any' && !(emp.risk_tags || []).includes(riskTag)) return false;
       if (!showInactive && emp.is_active === false) return false;
       return true;
     });
-  }, [employees, search, unit, region, store, jobTag, showInactive, storeRegion]);
+  }, [employees, search, unit, region, store, jobTag, riskTag, showInactive, storeRegion]);
 
   const regionDisabled = unit === 'hq';
 
@@ -271,6 +278,15 @@ export default function EmployeesPage() {
           <select value={jobTag} onChange={(e) => setJobTag(e.target.value)} className="input min-w-[120px]">
             <option value="all">全部職稱</option>
             {JOB_TAGS.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">風險</label>
+          <select value={riskTag} onChange={(e) => setRiskTag(e.target.value)} className="input min-w-[120px]">
+            <option value="all">全部風險</option>
+            <option value="any">有任一風險標記</option>
+            {RISK_TAGS.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
 
