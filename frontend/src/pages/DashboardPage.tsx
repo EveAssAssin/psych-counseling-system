@@ -427,8 +427,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Quick actions */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Quick actions（含資料同步狀態，共 4 格） */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             to="/conversations/new"
             className="rounded-lg border border-gray-100 bg-gray-50 p-4 hover:shadow-md transition-shadow"
@@ -473,86 +473,70 @@ export default function DashboardPage() {
               </div>
             </div>
           </Link>
-        </div>
-      </div>
 
-      {/* 資料同步狀態（移到快速操作下方） */}
-      <div className="card p-5">
-        <div className={`flex items-center justify-between ${syncOpen ? 'mb-4' : ''}`}>
-          <div className="flex items-center gap-2">
-            <ClockIcon className="h-5 w-5 text-gray-400" />
-            <h3 className="text-lg font-medium text-gray-900">資料同步狀態</h3>
-          </div>
-          <div className="flex items-center gap-2">
+          {/* 第 4 格：資料同步狀態 */}
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex-shrink-0 bg-blue-100 rounded-lg p-3">
+                  <ClockIcon className="h-6 w-6 text-blue-600" />
+                </div>
+                <p className="text-sm font-medium text-gray-900">資料同步狀態</p>
+              </div>
+              <button type="button" onClick={() => setSyncOpen((v) => !v)}
+                      className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                      title={syncOpen ? '收合' : '展開'}>
+                <ChevronDownIcon className={`h-5 w-5 transition-transform ${syncOpen ? '' : '-rotate-90'}`} />
+              </button>
+            </div>
             <button
               onClick={handleSyncOfficialChannel}
               disabled={syncingChannel}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="mt-3 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowPathIcon className={`h-4 w-4 ${syncingChannel ? 'animate-spin' : ''}`} />
               {syncingChannel ? '同步中...' : '立即同步官方頻道'}
             </button>
-            <button type="button" onClick={() => setSyncOpen((v) => !v)}
-                    className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                    title={syncOpen ? '收合' : '展開'}>
-              <ChevronDownIcon className={`h-5 w-5 transition-transform ${syncOpen ? '' : '-rotate-90'}`} />
-            </button>
-          </div>
-        </div>
-        {syncOpen && (<>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-sm font-medium text-gray-500">LINE 官方訊息</p>
-            <p className="text-sm text-gray-900 mt-1">
-              最後同步：{formatSyncTime(syncStatus?.cursors?.['official-channel-line']?.last_synced_at ?? null)}
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              累計同步 {syncStatus?.cursors?.['official-channel-line']?.total_synced ?? 0} 筆
-            </p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-sm font-medium text-gray-500">工單留言</p>
-            <p className="text-sm text-gray-900 mt-1">
-              最後同步：{formatSyncTime(syncStatus?.cursors?.['official-channel-comments']?.last_synced_at ?? null)}
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              累計同步 {syncStatus?.cursors?.['official-channel-comments']?.total_synced ?? 0} 筆
-            </p>
-          </div>
-        </div>
-        {syncStatus?.recentLogs && syncStatus.recentLogs.length > 0 && (
-          <div className="mt-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">最近同步紀錄</p>
-            <div className="space-y-1">
-              {syncStatus.recentLogs.slice(0, 3).map((log: any) => (
-                <div key={log.id} className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">
-                    {log.sync_type === 'official_channel' ? '官方頻道' :
-                     log.sync_type === 'employee_full' ? '員工同步' :
-                     log.sync_type === 'external_daily' ? '每日同步' : log.sync_type}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${
-                      log.status === 'completed' ? 'bg-green-100 text-green-700' :
-                      log.status === 'partial' ? 'bg-yellow-100 text-yellow-700' :
-                      log.status === 'failed' ? 'bg-red-100 text-red-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {log.status === 'completed' ? '成功' :
-                       log.status === 'partial' ? '部分成功' :
-                       log.status === 'failed' ? '失敗' :
-                       log.status === 'running' ? '執行中' : log.status}
-                    </span>
-                    <span className="text-gray-400">
-                      {new Date(log.started_at).toLocaleString('zh-TW')}
-                    </span>
-                  </div>
+            {syncOpen && (
+              <div className="mt-3 space-y-2 text-xs">
+                <div className="rounded-md bg-white p-2">
+                  <p className="font-medium text-gray-500">LINE 官方訊息</p>
+                  <p className="text-gray-900">最後同步：{formatSyncTime(syncStatus?.cursors?.['official-channel-line']?.last_synced_at ?? null)}</p>
+                  <p className="text-gray-500">累計 {syncStatus?.cursors?.['official-channel-line']?.total_synced ?? 0} 筆</p>
                 </div>
-              ))}
-            </div>
+                <div className="rounded-md bg-white p-2">
+                  <p className="font-medium text-gray-500">工單留言</p>
+                  <p className="text-gray-900">最後同步：{formatSyncTime(syncStatus?.cursors?.['official-channel-comments']?.last_synced_at ?? null)}</p>
+                  <p className="text-gray-500">累計 {syncStatus?.cursors?.['official-channel-comments']?.total_synced ?? 0} 筆</p>
+                </div>
+                {syncStatus?.recentLogs && syncStatus.recentLogs.length > 0 && (
+                  <div className="space-y-1">
+                    {syncStatus.recentLogs.slice(0, 3).map((log: any) => (
+                      <div key={log.id} className="flex items-center justify-between">
+                        <span className="text-gray-600">
+                          {log.sync_type === 'official_channel' ? '官方頻道' :
+                           log.sync_type === 'employee_full' ? '員工同步' :
+                           log.sync_type === 'external_daily' ? '每日同步' : log.sync_type}
+                        </span>
+                        <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${
+                          log.status === 'completed' ? 'bg-green-100 text-green-700' :
+                          log.status === 'partial' ? 'bg-yellow-100 text-yellow-700' :
+                          log.status === 'failed' ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {log.status === 'completed' ? '成功' :
+                           log.status === 'partial' ? '部分成功' :
+                           log.status === 'failed' ? '失敗' :
+                           log.status === 'running' ? '執行中' : log.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
-        </>)}
+        </div>
       </div>
 
       {/* 訪談時數（實際）— 今日 / 本月 */}
