@@ -77,6 +77,80 @@ export class RiskFlagsService {
   }
 
   /**
+   * 以「員工」為單位彙整風險：
+   *   - AI 標記：risk_flags（開放中）依 employee_id 聚合
+   *   - 輔導員標記：employees.risk_tags（危險/準淘汰/高關注，人工填寫）
+   * 回傳每位有任一種標記的員工，並標示 has_ai / has_counselor 供前端篩選
+   *   （全部 / AI / 輔導員 / 兩者皆有）。
+   */
+  async getRiskEmployees(): Promise<{ data: any[] }> {
+    const client = this.supabase.getAdminClient();
+
+    // 1. 開放中的 AI 風險標記，依員工聚合
+    const { data: flags, error: fErr } = await client
+      .from(this.TABLE)
+      .select('employee_id, severity, risk_type, title, status, created_at')
+      .in('status', ['open', 'acknowledged', 'in_progress'])
+      .order('created_at', { ascending: false });
+    if (fErr) throw fErr;
+
+    const aiMap = new Map<string, any[]>();
+    for (const f of flags || []) {
+      if (!f.employee_id) continue;
+      if (!aiMap.has(f.employee_id)) aiMap.set(f.employee_id, []);
+      aiMap.get(f.employee_id)!.push(f);
+    }
+
+    // 2. 有輔導員手動風險標記（risk_tags 非空）的員工
+    const { data: tagged, error: tErr } = await client
+      .from('employees')
+      .select('id, name, store_name, department, risk_tags, is_active, employeeappnumber')
+      .not('risk_tags', 'is', null);
+    if (tErr) throw tErr;
+    const counselorEmps = (tagged || []).filter(
+      (e: any) => Array.isArray(e.risk_tags) && e.risk_tags.length > 0,
+    );
+
+    // 3. 補抓「只有 AI 標記、但不在上面清單」的員工基本資料
+    const byId = new Map<string, any>();
+    for (const e of counselorEmps) byId.set(e.id, e);
+    const missingAiIds = [...aiMap.keys()].filter((id) => !byId.has(id));
+    if (missingAiIds.length) {
+      const { data: aiEmps } = await client
+        .from('employees')
+        .select('id, name, store_name, department, risk_tags, is_active, employeeappnumber')
+        .in('id', missingAiIds);
+      for (const e of aiEmps || []) byId.set(e.id, e);
+    }
+
+    // 4. 組裝結果
+    const result = [] as any[];
+    for (const [id, emp] of byId) {
+      const aiFlags = aiMap.get(id) || [];
+      const riskTags = Array.isArray(emp.risk_tags) ? emp.risk_tags : [];
+      result.push({
+        employee_id: id,
+        name: emp.name,
+        store_name: emp.store_name || emp.department || null,
+        app_number: emp.employeeappnumber,
+        is_active: emp.is_active,
+        ai_flags: aiFlags,
+        ai_count: aiFlags.length,
+        risk_tags: riskTags,
+        has_ai: aiFlags.length > 0,
+        has_counselor: riskTags.length > 0,
+      });
+    }
+    // 兩者皆有的排前面，其次依姓名
+    result.sort((a, b) =>
+      (Number(b.has_ai && b.has_counselor) - Number(a.has_ai && a.has_counselor)) ||
+      (a.name || '').localeCompare(b.name || '', 'zh-Hant'),
+    );
+
+    return { data: result };
+  }
+
+  /**
    * 取得高風險標記（critical + high）
    */
   async getHighRiskFlags(limit: number = 20): Promise<RiskFlag[]> {

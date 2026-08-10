@@ -48,6 +48,13 @@ export class RiskFlagsController {
     return this.riskFlagsService.getStats();
   }
 
+  @Get('employees')
+  @ApiOperation({ summary: '以員工為單位彙整風險（AI / 輔導員標記）' })
+  @ApiResponse({ status: 200, description: '員工風險列表' })
+  async getRiskEmployees() {
+    return this.riskFlagsService.getRiskEmployees();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '取得單一風險標記' })
   @ApiResponse({ status: 200, description: '風險標記' })

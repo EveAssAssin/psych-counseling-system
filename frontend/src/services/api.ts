@@ -246,6 +246,8 @@ export const riskFlagsApi = {
   }) => api.get('/risk-flags', { params }),
   
   getHighRisk: (limit?: number) => api.get('/risk-flags/high-risk', { params: { limit } }),
+
+  getEmployees: () => api.get('/risk-flags/employees'),
   
   getById: (id: string) => api.get(`/risk-flags/${id}`),
   
