@@ -174,6 +174,7 @@ interface SyncStatus {
 
 interface HighRiskItem {
   id: string;
+  conversation_intake_id?: string;
   employee_id: string;
   employee_name?: string;
   risk_level: string;
@@ -614,7 +615,9 @@ export default function DashboardPage() {
             highRiskItems.map((item) => (
               <li key={item.id}>
                 <Link
-                  to={`/conversations/${item.id}`}
+                  to={item.conversation_intake_id
+                    ? `/conversations/${item.conversation_intake_id}`
+                    : `/employees/${item.employee_id}`}
                   className="block hover:bg-gray-50"
                 >
                   <div className="px-4 py-4 sm:px-6">
