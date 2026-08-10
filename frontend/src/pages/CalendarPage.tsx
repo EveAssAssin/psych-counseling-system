@@ -436,6 +436,7 @@ export default function CalendarPage() {
           onClose={() => setDetail(null)}
           onEdit={(s) => { setDetail(null); setForm({ open: true, mode: 'edit', initial: s }); }}
           onChanged={() => { setDetail(null); reload(); }}
+          onUpdated={(patch) => { setDetail((d) => (d ? { ...d, ...patch } : d)); reload(); }}
         />
       )}
 
@@ -818,11 +819,12 @@ function SubcategoryField({ categoryKey, value, onChange, createdBy }: {
 // ═══════════════════════════════════════════
 //  排程詳情 Modal（含取消）
 // ═══════════════════════════════════════════
-function DetailModal({ schedule, onClose, onEdit, onChanged }: {
+function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
   schedule: Schedule;
   onClose: () => void;
   onEdit: (s: Schedule) => void;
-  onChanged: () => void;
+  onChanged: () => void;                       // 關閉視窗並刷新（狀態變更 / 取消）
+  onUpdated: (patch: Partial<Schedule>) => void; // 刷新但保持視窗開啟（實際用時 / 訪談方式）
 }) {
   const user = useAuthStore((s) => s.user);
   const [cancelling, setCancelling] = useState(false);
@@ -839,7 +841,7 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
     try {
       await calendarApi.updateSchedule(schedule.id, { actual_minutes: val, updated_by: user?.name || user?.email });
       toast.success('已更新實際用時。');
-      onChanged();
+      onUpdated({ actual_minutes: val }); // 保持視窗開啟，續填狀態
     } catch (e: any) {
       toast.error(e.response?.data?.message || '更新失敗');
     } finally {
@@ -896,7 +898,7 @@ function DetailModal({ schedule, onClose, onEdit, onChanged }: {
     try {
       await calendarApi.updateSchedule(schedule.id, { contact_method: val, updated_by: user?.name || user?.email });
       toast.success('訪談方式已更新。');
-      onChanged();
+      onUpdated({ contact_method: val }); // 保持視窗開啟
     } catch (e: any) {
       toast.error(e.response?.data?.message || '更新失敗');
     } finally {
