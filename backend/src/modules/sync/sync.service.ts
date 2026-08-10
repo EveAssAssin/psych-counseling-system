@@ -50,6 +50,11 @@ export class SyncService {
     '不指定店員', '不指定人員', '測試', 'test', 'mock', '系統'
   ];
 
+  // 排除的 app 編號（多建 / 錯誤資料，指定隱藏；同步時標為 excluded、停用）
+  private readonly EXCLUDED_APP_NUMBERS = [
+    '1756234492', // 多建資料 吳泫澄
+  ];
+
   /**
    * 執行員工主檔全量同步（從左手系統 API）
    * 依照「人員資料一致性規則」執行
@@ -111,14 +116,16 @@ export class SyncService {
       this.logger.log('Step 3: Marking excluded/special accounts...');
       const processedEmployees = validEmployees.map((emp: EmployeeApiData) => {
         const name = emp.employeename || '';
-        const isExcluded = this.EXCLUDED_KEYWORDS.some(keyword => 
+        const byKeyword = this.EXCLUDED_KEYWORDS.some(keyword =>
           name.toLowerCase().includes(keyword.toLowerCase())
         );
+        const byAppNumber = this.EXCLUDED_APP_NUMBERS.includes(emp.employeeappnumber);
+        const isExcluded = byKeyword || byAppNumber;
 
         return {
           ...emp,
           _isExcluded: isExcluded,
-          _excludeReason: isExcluded ? '符合排除關鍵字' : null,
+          _excludeReason: isExcluded ? (byAppNumber ? '指定排除的 app 編號' : '符合排除關鍵字') : null,
         };
       });
 

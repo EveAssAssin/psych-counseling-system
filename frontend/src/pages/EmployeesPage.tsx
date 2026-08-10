@@ -147,6 +147,8 @@ export default function EmployeesPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return employees.filter((emp) => {
+      // 排除帳號（多建/測試/系統）：完全隱藏，連「顯示離職」也不顯示
+      if (emp.person_type === 'excluded') return false;
       if (q) {
         const hit =
           emp.name?.toLowerCase().includes(q) ||
