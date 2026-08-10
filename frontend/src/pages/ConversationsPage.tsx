@@ -12,12 +12,17 @@ export default function ConversationsPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [showInactive, setShowInactive] = useState(false);
 
   const loadConversations = useCallback(async () => {
     setLoading(true);
     try {
       const offset = (page - 1) * pageSize;
-      const response = await conversationsApi.search({ limit: pageSize, offset });
+      const response = await conversationsApi.search({
+        limit: pageSize,
+        offset,
+        include_inactive: showInactive,
+      });
       setConversations(response.data.data);
       setTotal(response.data.total);
     } catch (error) {
@@ -25,7 +30,7 @@ export default function ConversationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize]);
+  }, [page, pageSize, showInactive]);
 
   useEffect(() => {
     loadConversations();
@@ -72,10 +77,21 @@ export default function ConversationsPage() {
           <h1 className="text-2xl font-bold text-gray-900">對話記錄</h1>
           <p className="mt-1 text-sm text-gray-500">共 {total} 筆對話</p>
         </div>
-        <Link to="/conversations/new" className="btn-primary">
-          <PlusIcon className="h-5 w-5 mr-2" />
-          新增對話
-        </Link>
+        <div className="flex items-center gap-4">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }}
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            顯示離職人員
+          </label>
+          <Link to="/conversations/new" className="btn-primary">
+            <PlusIcon className="h-5 w-5 mr-2" />
+            新增對話
+          </Link>
+        </div>
       </div>
 
       <div className="card">

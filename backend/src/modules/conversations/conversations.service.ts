@@ -238,6 +238,20 @@ export class ConversationsService {
       query = query.lte('conversation_date', dto.date_to);
     }
 
+    // 預設隱藏離職人員的對話（include_inactive 未帶或非 'true' 時）。
+    // 保留無關聯員工（employee_id 為 null）的對話。
+    const includeInactive = String(dto.include_inactive) === 'true';
+    if (!includeInactive) {
+      const { data: inactive } = await client
+        .from('employees')
+        .select('id')
+        .eq('is_active', false);
+      const inactiveIds = (inactive || []).map((e: any) => e.id);
+      if (inactiveIds.length > 0) {
+        query = query.not('employee_id', 'in', `(${inactiveIds.join(',')})`);
+      }
+    }
+
     // 排序與分頁
     query = query
       .order('conversation_date', { ascending: false })

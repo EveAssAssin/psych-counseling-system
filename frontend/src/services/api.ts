@@ -152,6 +152,7 @@ export const conversationsApi = {
     need_followup?: boolean;
     date_from?: string;
     date_to?: string;
+    include_inactive?: boolean;
     limit?: number;
     offset?: number;
   }) => api.get('/conversations', { params }),

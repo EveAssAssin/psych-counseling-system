@@ -262,6 +262,10 @@ export class SearchConversationDto {
   @IsOptional()
   date_to?: string;
 
+  @ApiPropertyOptional({ description: '是否包含離職人員的對話，預設 false（隱藏離職）' })
+  @IsOptional()
+  include_inactive?: string;
+
   @ApiPropertyOptional({ default: 20 })
   @IsOptional()
   limit?: number;
