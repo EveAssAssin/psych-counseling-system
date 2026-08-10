@@ -295,6 +295,8 @@ export class EmployeesService {
     regular: number;   // 正職（門市：店長/副店長/正職）
     newcomer: number;  // 新人（門市：新人標籤）
     risk: number;      // 風險人員（有填任一風險標記）
+    newcomerList: { name: string; store_name?: string }[];
+    riskList: { name: string; store_name?: string; tags: string[] }[];
   }> {
     const [total, active, onLeave] = await Promise.all([
       this.supabase.count(this.TABLE, {}, { useAdmin: true }),
@@ -309,12 +311,14 @@ export class EmployeesService {
     const client = this.supabase.getAdminClient();
     const { data: tagRows, error } = await client
       .from(this.TABLE)
-      .select('job_tags, risk_tags, person_type')
+      .select('name, store_name, job_tags, risk_tags, person_type')
       .eq('is_active', true);
 
     let regular = 0;
     let newcomer = 0;
     let risk = 0;
+    const newcomerList: { name: string; store_name?: string }[] = [];
+    const riskList: { name: string; store_name?: string; tags: string[] }[] = [];
     if (error) {
       this.logger.error('Error counting tags for stats:', error);
     } else {
@@ -325,10 +329,18 @@ export class EmployeesService {
         const riskTags: string[] = Array.isArray(r.risk_tags) ? r.risk_tags : [];
         if (r.person_type === 'store') {
           if (jobTags.some((t) => REGULAR_TAGS.includes(t))) regular++;
-          if (jobTags.includes('新人')) newcomer++;
+          if (jobTags.includes('新人')) {
+            newcomer++;
+            newcomerList.push({ name: r.name, store_name: r.store_name });
+          }
         }
-        if (riskTags.length > 0) risk++;
+        if (riskTags.length > 0) {
+          risk++;
+          riskList.push({ name: r.name, store_name: r.store_name, tags: riskTags });
+        }
       }
+      newcomerList.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-Hant'));
+      riskList.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-Hant'));
     }
 
     return {
@@ -339,6 +351,8 @@ export class EmployeesService {
       regular,
       newcomer,
       risk,
+      newcomerList,
+      riskList,
     };
   }
 

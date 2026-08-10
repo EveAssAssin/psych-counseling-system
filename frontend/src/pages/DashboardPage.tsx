@@ -40,6 +40,41 @@ const isOverdue = (s: any) =>
   s.status !== 'completed' && new Date(`${s.schedule_date}T${hm(s.end_time)}:00`).getTime() < Date.now();
 
 // 排程清單卡片
+// 在職員工卡：新人 / 風險 數字，滑鼠移上顯示名單浮動視窗
+function NamePopover({ label, count, list, danger }: {
+  label: string;
+  count: number;
+  list: { name: string; store_name?: string; tags?: string[] }[];
+  danger?: boolean;
+}) {
+  const has = list && list.length > 0;
+  return (
+    <div className="relative group flex items-baseline">
+      <span className={`text-2xl font-semibold ${danger ? 'text-danger-600' : 'text-gray-900'} ${
+        has ? 'cursor-help underline decoration-dotted decoration-gray-300 underline-offset-4' : ''
+      }`}>
+        {count}
+      </span>
+      <span className="ml-1 text-sm text-gray-500">{label}</span>
+      {has && (
+        <div className="absolute left-0 top-full z-30 mt-1 hidden w-56 rounded-lg border border-gray-200 bg-white p-2 text-left shadow-lg group-hover:block">
+          <p className="mb-1 px-1 text-xs font-medium text-gray-500">{label}（{count}）</p>
+          <ul className="max-h-60 overflow-auto text-sm text-gray-700">
+            {list.map((p, i) => (
+              <li key={i} className="flex items-baseline justify-between gap-2 px-1 py-0.5">
+                <span className="truncate">{p.name}</span>
+                <span className="shrink-0 text-xs text-gray-400">
+                  {danger && p.tags && p.tags.length ? p.tags.join('、') : (p.store_name || '')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SchedCard({ title, schedules, accent, onReschedule, onOpen, emptyText }: {
   title: string;
   schedules: any[];
@@ -49,8 +84,14 @@ function SchedCard({ title, schedules, accent, onReschedule, onOpen, emptyText }
   emptyText?: string;
 }) {
   const dot = accent === 'red' ? 'bg-red-500' : accent === 'blue' ? 'bg-blue-500' : 'bg-indigo-500';
+  // 低調底色強調（不鮮豔）：逾期偏紅、今日偏藍、明日偏靛
+  const tint = accent === 'red'
+    ? 'bg-red-50/60 border-red-100'
+    : accent === 'blue'
+    ? 'bg-blue-50/60 border-blue-100'
+    : 'bg-indigo-50/60 border-indigo-100';
   return (
-    <div className="card p-5">
+    <div className={`card p-5 border ${tint}`}>
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
@@ -117,7 +158,11 @@ function TalkBar({ label, data }: { label: string; data: TalkData }) {
 }
 
 interface Stats {
-  employees: { total: number; active: number; regular?: number; newcomer?: number; risk?: number };
+  employees: {
+    total: number; active: number; regular?: number; newcomer?: number; risk?: number;
+    newcomerList?: { name: string; store_name?: string }[];
+    riskList?: { name: string; store_name?: string; tags?: string[] }[];
+  };
   conversations: { total: number; pending: number; needFollowup: number };
   riskFlags: { open: number; critical: number; high: number };
 }
@@ -303,19 +348,11 @@ export default function DashboardPage() {
                       <span className="ml-1 text-sm text-gray-500">正職</span>
                     </div>
                     <span className="text-gray-300">｜</span>
-                    <div className="flex items-baseline">
-                      <span className="text-2xl font-semibold text-gray-900">
-                        {stats?.employees.newcomer || 0}
-                      </span>
-                      <span className="ml-1 text-sm text-gray-500">新人</span>
-                    </div>
+                    <NamePopover label="新人" count={stats?.employees.newcomer || 0}
+                                 list={stats?.employees.newcomerList || []} />
                     <span className="text-gray-300">｜</span>
-                    <div className="flex items-baseline">
-                      <span className="text-2xl font-semibold text-danger-600">
-                        {stats?.employees.risk || 0}
-                      </span>
-                      <span className="ml-1 text-sm text-gray-500">風險</span>
-                    </div>
+                    <NamePopover label="風險" count={stats?.employees.risk || 0}
+                                 list={stats?.employees.riskList || []} danger />
                   </dd>
                 </dl>
               </div>
@@ -434,6 +471,18 @@ export default function DashboardPage() {
             </div>
           </Link>
         </div>
+
+        {/* 官方頻道同步按鈕（移到快速操作旁） */}
+        <div className="flex justify-end">
+          <button
+            onClick={handleSyncOfficialChannel}
+            disabled={syncingChannel}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ArrowPathIcon className={`h-4 w-4 ${syncingChannel ? 'animate-spin' : ''}`} />
+            {syncingChannel ? '同步中...' : '立即同步官方頻道'}
+          </button>
+        </div>
       </div>
 
       {/* 訪談時數（實際）— 今日 / 本月 */}
@@ -479,21 +528,11 @@ export default function DashboardPage() {
             <ClockIcon className="h-5 w-5 text-gray-400" />
             <h3 className="text-lg font-medium text-gray-900">資料同步狀態</h3>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSyncOfficialChannel}
-              disabled={syncingChannel}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <ArrowPathIcon className={`h-4 w-4 ${syncingChannel ? 'animate-spin' : ''}`} />
-              {syncingChannel ? '同步中...' : '立即同步官方頻道'}
-            </button>
-            <button type="button" onClick={() => setSyncOpen((v) => !v)}
-                    className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                    title={syncOpen ? '收合' : '展開'}>
-              <ChevronDownIcon className={`h-5 w-5 transition-transform ${syncOpen ? '' : '-rotate-90'}`} />
-            </button>
-          </div>
+          <button type="button" onClick={() => setSyncOpen((v) => !v)}
+                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                  title={syncOpen ? '收合' : '展開'}>
+            <ChevronDownIcon className={`h-5 w-5 transition-transform ${syncOpen ? '' : '-rotate-90'}`} />
+          </button>
         </div>
         {syncOpen && (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
