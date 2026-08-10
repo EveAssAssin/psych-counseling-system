@@ -160,8 +160,8 @@ function TalkBar({ label, data }: { label: string; data: TalkData }) {
 interface Stats {
   employees: {
     total: number; active: number; regular?: number; newcomer?: number; risk?: number;
-    newcomerList?: { name: string; store_name?: string }[];
-    riskList?: { name: string; store_name?: string; tags?: string[] }[];
+    newcomerList?: { id?: string; name: string; store_name?: string }[];
+    riskList?: { id?: string; name: string; store_name?: string; tags?: string[] }[];
   };
   conversations: { total: number; pending: number; needFollowup: number };
   riskFlags: { open: number; critical: number; high: number };
@@ -589,60 +589,113 @@ export default function DashboardPage() {
         <SchedCard title="明日排程" schedules={sched.tomorrow} accent="indigo" onOpen={() => navigate('/calendar')} />
       </div>
 
-      {/* High risk list */}
-      <div className="card">
-        <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
-              近期高風險分析
-            </h3>
-            <Link
-              to="/risk-flags"
-              className="text-sm text-primary-600 hover:text-primary-500"
-            >
-              查看全部 →
-            </Link>
+      {/* 風險 / 追蹤 三欄：AI 標記風險 / 輔導員標記風險 / 新人追蹤 */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* 左：AI 標記風險 */}
+        <div className="card flex flex-col">
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-gray-900">AI 標記風險</h3>
+            <Link to="/risk-flags" className="text-xs text-primary-600 hover:text-primary-500">查看全部 →</Link>
           </div>
+          <ul className="max-h-96 divide-y divide-gray-100 overflow-auto">
+            {highRiskItems.length === 0 ? (
+              <li className="px-4 py-8 text-center text-sm text-gray-400">目前沒有高風險項目</li>
+            ) : (
+              highRiskItems.map((item) => (
+                <li key={item.id}>
+                  <Link
+                    to={item.conversation_intake_id
+                      ? `/conversations/${item.conversation_intake_id}`
+                      : `/employees/${item.employee_id}`}
+                    className="block px-4 py-3 hover:bg-gray-50"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-primary-600">{item.employee_name || '未知員工'}</p>
+                      <span className={`shrink-0 ${getRiskLevelBadge(item.risk_level)}`}>
+                        {getRiskLevelText(item.risk_level)}
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs text-gray-600">{item.summary || '無摘要'}</p>
+                    <p className="mt-1 text-xs text-gray-400">{new Date(item.created_at).toLocaleString('zh-TW')}</p>
+                  </Link>
+                </li>
+              ))
+            )}
+          </ul>
         </div>
-        <ul role="list" className="divide-y divide-gray-200">
-          {highRiskItems.length === 0 ? (
-            <li className="px-4 py-8 text-center text-gray-500">
-              目前沒有高風險項目
-            </li>
-          ) : (
-            highRiskItems.map((item) => (
-              <li key={item.id}>
-                <Link
-                  to={item.conversation_intake_id
-                    ? `/conversations/${item.conversation_intake_id}`
-                    : `/employees/${item.employee_id}`}
-                  className="block hover:bg-gray-50"
-                >
-                  <div className="px-4 py-4 sm:px-6">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-primary-600 truncate">
-                        {item.employee_name || '未知員工'}
-                      </p>
-                      <div className="ml-2 flex-shrink-0 flex">
-                        <span className={getRiskLevelBadge(item.risk_level)}>
-                          風險: {getRiskLevelText(item.risk_level)}
-                        </span>
-                      </div>
+
+        {/* 中：輔導員標記風險（員工 risk_tags） */}
+        <div className="card flex flex-col">
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-gray-900">輔導員標記風險</h3>
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+              {stats?.employees.riskList?.length || 0}
+            </span>
+          </div>
+          <ul className="max-h-96 divide-y divide-gray-100 overflow-auto">
+            {(stats?.employees.riskList?.length || 0) === 0 ? (
+              <li className="px-4 py-8 text-center text-sm text-gray-400">目前沒有輔導員標記</li>
+            ) : (
+              stats!.employees.riskList!.map((r, i) => {
+                const inner = (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-gray-900">{r.name}</p>
+                      {r.store_name && <span className="shrink-0 text-xs text-gray-400">{r.store_name}</span>}
                     </div>
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-600 line-clamp-2">
-                        {item.summary || '無摘要'}
-                      </p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {(r.tags || []).map((t) => (
+                        <span key={t} className="rounded-full border border-danger-200 bg-danger-50 px-2 py-0.5 text-xs text-danger-700">{t}</span>
+                      ))}
                     </div>
-                    <div className="mt-2 text-xs text-gray-400">
-                      {new Date(item.created_at).toLocaleString('zh-TW')}
-                    </div>
+                  </>
+                );
+                return (
+                  <li key={r.id || i}>
+                    {r.id ? (
+                      <Link to={`/employees/${r.id}`} className="block px-4 py-3 hover:bg-gray-50">{inner}</Link>
+                    ) : (
+                      <div className="px-4 py-3">{inner}</div>
+                    )}
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
+
+        {/* 右：新人追蹤 */}
+        <div className="card flex flex-col">
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-gray-900">新人追蹤</h3>
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+              {stats?.employees.newcomerList?.length || 0}
+            </span>
+          </div>
+          <ul className="max-h-96 divide-y divide-gray-100 overflow-auto">
+            {(stats?.employees.newcomerList?.length || 0) === 0 ? (
+              <li className="px-4 py-8 text-center text-sm text-gray-400">目前沒有新人</li>
+            ) : (
+              stats!.employees.newcomerList!.map((r, i) => {
+                const inner = (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-medium text-gray-900">{r.name}</p>
+                    {r.store_name && <span className="shrink-0 text-xs text-gray-400">{r.store_name}</span>}
                   </div>
-                </Link>
-              </li>
-            ))
-          )}
-        </ul>
+                );
+                return (
+                  <li key={r.id || i}>
+                    {r.id ? (
+                      <Link to={`/employees/${r.id}`} className="block px-4 py-3 hover:bg-gray-50">{inner}</Link>
+                    ) : (
+                      <div className="px-4 py-3">{inner}</div>
+                    )}
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
       </div>
 
     </div>
