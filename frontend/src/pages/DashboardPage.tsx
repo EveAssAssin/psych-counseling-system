@@ -57,7 +57,7 @@ function NamePopover({ label, count, list, danger }: {
       </span>
       <span className="ml-1 text-sm text-gray-500">{label}</span>
       {has && (
-        <div className="absolute left-0 top-full z-30 mt-1 hidden w-56 rounded-lg border border-gray-200 bg-white p-2 text-left shadow-lg group-hover:block">
+        <div className="absolute left-0 top-full z-50 mt-1 hidden w-56 rounded-lg border border-gray-200 bg-white p-2 text-left shadow-xl group-hover:block">
           <p className="mb-1 px-1 text-xs font-medium text-gray-500">{label}（{count}）</p>
           <ul className="max-h-60 overflow-auto text-sm text-gray-700">
             {list.map((p, i) => (
@@ -330,7 +330,8 @@ export default function DashboardPage() {
       </div>
 
       {/* 重要指標 + 快速操作（合併區塊，置頂） */}
-      <div className="card p-5 space-y-5">
+      {/* overflow-visible：避免新人/風險浮動視窗被卡片裁切 */}
+      <div className="card p-5 space-y-5 overflow-visible relative z-20">
         {/* Stats cards */}
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
