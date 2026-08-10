@@ -48,6 +48,7 @@ function NamePopover({ label, count, list, danger }: {
   danger?: boolean;
 }) {
   const has = list && list.length > 0;
+  const twoCol = list.length > 8; // 一欄寫不下時分兩欄，避免出現捲軸
   return (
     <div className="relative group flex items-baseline">
       <span className={`text-2xl font-semibold ${danger ? 'text-danger-600' : 'text-gray-900'} ${
@@ -57,9 +58,9 @@ function NamePopover({ label, count, list, danger }: {
       </span>
       <span className="ml-1 text-sm text-gray-500">{label}</span>
       {has && (
-        <div className="absolute left-0 top-full z-50 mt-1 hidden w-56 rounded-lg border border-gray-200 bg-white p-2 text-left shadow-xl group-hover:block">
+        <div className={`absolute left-0 top-full z-50 mt-1 hidden rounded-lg border border-gray-200 bg-white p-2 text-left shadow-xl group-hover:block ${twoCol ? 'w-[26rem]' : 'w-56'}`}>
           <p className="mb-1 px-1 text-xs font-medium text-gray-500">{label}（{count}）</p>
-          <ul className="max-h-60 overflow-auto text-sm text-gray-700">
+          <ul className={`grid gap-x-4 text-sm text-gray-700 ${twoCol ? 'grid-cols-2' : 'grid-cols-1'}`}>
             {list.map((p, i) => (
               <li key={i} className="flex items-baseline justify-between gap-2 px-1 py-0.5">
                 <span className="truncate">{p.name}</span>
