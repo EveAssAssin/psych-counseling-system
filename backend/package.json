@@ -18,8 +18,11 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "db:migrate": "ts-node src/database/migrate.ts",
-    "scheduler:start": "ts-node src/scheduler/runner.ts"
+    "db:migrate": "ts-node src/scripts/migrate.ts up",
+    "scheduler:start": "ts-node src/scheduler/runner.ts",
+    "db:migrate:up": "ts-node src/scripts/migrate.ts up",
+    "db:migrate:status": "ts-node src/scripts/migrate.ts status",
+    "db:migrate:baseline": "ts-node src/scripts/migrate.ts baseline"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.26.0",
@@ -47,7 +50,9 @@
     "rxjs": "^7.8.1",
     "sharp": "^0.33.2",
     "tesseract.js": "^5.0.4",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "pg": "^8.11.3",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.0",
@@ -73,16 +78,23 @@
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "@types/pg": "^8.11.0"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }
