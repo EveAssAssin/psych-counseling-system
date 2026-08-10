@@ -472,68 +472,30 @@ export default function DashboardPage() {
             </div>
           </Link>
         </div>
-
-        {/* 官方頻道同步按鈕（移到快速操作旁） */}
-        <div className="flex justify-end">
-          <button
-            onClick={handleSyncOfficialChannel}
-            disabled={syncingChannel}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ArrowPathIcon className={`h-4 w-4 ${syncingChannel ? 'animate-spin' : ''}`} />
-            {syncingChannel ? '同步中...' : '立即同步官方頻道'}
-          </button>
-        </div>
       </div>
 
-      {/* 訪談時數（實際）— 今日 / 本月 */}
-      <div className="card p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-medium text-gray-500">訪談時數（實際）</p>
-          <p className="text-xs text-gray-400">全部訪談方式</p>
-        </div>
-
-        <div className="space-y-3">
-          <TalkBar label="今日" data={todayTalk} />
-          <TalkBar label={`本月（${new Date().getMonth() + 1} 月）`} data={monthTalk} />
-        </div>
-
-        {/* 圖例 */}
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-          {DASH_CATS.map((c) => (
-            <div key={c.key} className="flex items-center gap-1.5 text-xs text-gray-600">
-              <span className={`h-2.5 w-2.5 rounded-full ${c.color}`} />
-              {c.name}
-            </div>
-          ))}
-        </div>
-
-        {todayTalk.total === 0 && monthTalk.total === 0 && (
-          <p className="mt-2 text-xs text-gray-400">目前尚無填寫實際訪談時間的排程。</p>
-        )}
-      </div>
-
-      {/* 排程總覽：逾期 / 今日 / 明日 */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <SchedCard title="逾期排程" schedules={sched.overdue} accent="red" emptyText="無"
-                   onReschedule={(s) => navigate(`/calendar?reschedule=${s.id}`)}
-                   onOpen={() => navigate('/calendar')} />
-        <SchedCard title="今日排程" schedules={sched.today} accent="blue" onOpen={() => navigate('/calendar')} />
-        <SchedCard title="明日排程" schedules={sched.tomorrow} accent="indigo" onOpen={() => navigate('/calendar')} />
-      </div>
-
-      {/* Sync Status */}
+      {/* 資料同步狀態（移到快速操作下方） */}
       <div className="card p-5">
         <div className={`flex items-center justify-between ${syncOpen ? 'mb-4' : ''}`}>
           <div className="flex items-center gap-2">
             <ClockIcon className="h-5 w-5 text-gray-400" />
             <h3 className="text-lg font-medium text-gray-900">資料同步狀態</h3>
           </div>
-          <button type="button" onClick={() => setSyncOpen((v) => !v)}
-                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                  title={syncOpen ? '收合' : '展開'}>
-            <ChevronDownIcon className={`h-5 w-5 transition-transform ${syncOpen ? '' : '-rotate-90'}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSyncOfficialChannel}
+              disabled={syncingChannel}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ArrowPathIcon className={`h-4 w-4 ${syncingChannel ? 'animate-spin' : ''}`} />
+              {syncingChannel ? '同步中...' : '立即同步官方頻道'}
+            </button>
+            <button type="button" onClick={() => setSyncOpen((v) => !v)}
+                    className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    title={syncOpen ? '收合' : '展開'}>
+              <ChevronDownIcon className={`h-5 w-5 transition-transform ${syncOpen ? '' : '-rotate-90'}`} />
+            </button>
+          </div>
         </div>
         {syncOpen && (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -589,6 +551,42 @@ export default function DashboardPage() {
           </div>
         )}
         </>)}
+      </div>
+
+      {/* 訪談時數（實際）— 今日 / 本月 */}
+      <div className="card p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-medium text-gray-500">訪談時數（實際）</p>
+          <p className="text-xs text-gray-400">全部訪談方式</p>
+        </div>
+
+        <div className="space-y-3">
+          <TalkBar label="今日" data={todayTalk} />
+          <TalkBar label={`本月（${new Date().getMonth() + 1} 月）`} data={monthTalk} />
+        </div>
+
+        {/* 圖例 */}
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+          {DASH_CATS.map((c) => (
+            <div key={c.key} className="flex items-center gap-1.5 text-xs text-gray-600">
+              <span className={`h-2.5 w-2.5 rounded-full ${c.color}`} />
+              {c.name}
+            </div>
+          ))}
+        </div>
+
+        {todayTalk.total === 0 && monthTalk.total === 0 && (
+          <p className="mt-2 text-xs text-gray-400">目前尚無填寫實際訪談時間的排程。</p>
+        )}
+      </div>
+
+      {/* 排程總覽：逾期 / 今日 / 明日 */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <SchedCard title="逾期排程" schedules={sched.overdue} accent="red" emptyText="無"
+                   onReschedule={(s) => navigate(`/calendar?reschedule=${s.id}`)}
+                   onOpen={() => navigate('/calendar')} />
+        <SchedCard title="今日排程" schedules={sched.today} accent="blue" onOpen={() => navigate('/calendar')} />
+        <SchedCard title="明日排程" schedules={sched.tomorrow} accent="indigo" onOpen={() => navigate('/calendar')} />
       </div>
 
       {/* High risk list */}
