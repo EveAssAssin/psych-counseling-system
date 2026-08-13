@@ -154,6 +154,11 @@ export default function CalendarPage() {
   const [detail, setDetail] = useState<Schedule | null>(null);
   const [form, setForm] = useState<{ open: boolean; mode: 'create' | 'edit'; initial?: Schedule; prefill?: { date?: string; start?: string }; rescheduleOfId?: string }>({ open: false, mode: 'create' });
 
+  // 檢視模式：本週 / 整月
+  const [calView, setCalView] = useState<'week' | 'month'>('week');
+  const [monthCursor, setMonthCursor] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); });
+  const [monthSchedules, setMonthSchedules] = useState<Schedule[]>([]);
+
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const hours = useMemo(
     () => Array.from({ length: WORK_END_HOUR - WORK_START_HOUR + 1 }, (_, i) => WORK_START_HOUR + i),
@@ -231,7 +236,46 @@ export default function CalendarPage() {
   useEffect(() => { fetchWeekOverview(); }, [fetchWeekOverview]);
   useEffect(() => { fetchMonthOverview(); }, [fetchMonthOverview]);
 
-  const reload = () => { fetchWeek(); fetchToday(); fetchWeekOverview(); fetchMonthOverview(); };
+  // 整月檢視資料（依 monthCursor 抓當月排程）
+  const fetchMonthGrid = useCallback(async () => {
+    if (calView !== 'month') return;
+    try {
+      const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
+      const first = new Date(y, m, 1), last = new Date(y, m + 1, 0);
+      const res = await calendarApi.listSchedules({ start_date: fmt(first), end_date: fmt(last) });
+      setMonthSchedules(Array.isArray(res.data) ? res.data : res.data?.data ?? []);
+    } catch { setMonthSchedules([]); }
+  }, [calView, monthCursor]);
+  useEffect(() => { fetchMonthGrid(); }, [fetchMonthGrid]);
+
+  const reload = () => { fetchWeek(); fetchToday(); fetchWeekOverview(); fetchMonthOverview(); fetchMonthGrid(); };
+
+  // 每天 × 分類 的人數統計（依主要 category_key）
+  const monthCountsByDay = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    for (const s of monthSchedules) {
+      const d = s.schedule_date;
+      if (!d) continue;
+      if (!map[d]) map[d] = {};
+      const k = s.category_key || 'unknown';
+      map[d][k] = (map[d][k] || 0) + 1;
+    }
+    return map;
+  }, [monthSchedules]);
+
+  // 月曆格子（週一起始，補滿整週）
+  const monthCells = useMemo(() => {
+    const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
+    const gridStart = startOfWeek(new Date(y, m, 1));
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const firstDow = ((new Date(y, m, 1).getDay() + 6) % 7);
+    const totalCells = Math.ceil((firstDow + daysInMonth) / 7) * 7;
+    return Array.from({ length: totalCells }, (_, i) => addDays(gridStart, i));
+  }, [monthCursor]);
+
+  const gotoMonth = (delta: number) => setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth() + delta, 1));
+  const gotoThisMonth = () => { const n = new Date(); setMonthCursor(new Date(n.getFullYear(), n.getMonth(), 1)); };
+  const monthLabel = `${monthCursor.getFullYear()}年${monthCursor.getMonth() + 1}月`;
 
   // 統計（今日 / 本週 / 本月）
   const computeStats = (list: Schedule[]) => {
@@ -329,17 +373,42 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {/* 週切換列 */}
+      {/* 檢視切換 + 導覽列 */}
       <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <button onClick={() => gotoWeek(-1)} className="rounded-md border border-gray-300 p-2 hover:bg-gray-50" title="上一週">
-            <ChevronLeftIcon className="h-4 w-4" />
-          </button>
-          <button onClick={gotoThisWeek} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50">本週</button>
-          <button onClick={() => gotoWeek(1)} className="rounded-md border border-gray-300 p-2 hover:bg-gray-50" title="下一週">
-            <ChevronRightIcon className="h-4 w-4" />
-          </button>
-          <span className="ml-3 text-sm font-semibold text-gray-700">{rangeLabel}</span>
+        <div className="flex items-center gap-3">
+          {/* 本週 / 整月 切換 */}
+          <div className="inline-flex items-center rounded-full bg-gray-100 p-1">
+            {([['week', '本週'], ['month', '整月']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setCalView(v)}
+                      className={clsx('rounded-full px-3 py-1 text-sm font-medium transition',
+                        calView === v ? 'bg-primary-600 text-white shadow' : 'text-gray-600 hover:text-gray-800')}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {calView === 'week' ? (
+            <div className="flex items-center gap-1">
+              <button onClick={() => gotoWeek(-1)} className="rounded-md border border-gray-300 p-2 hover:bg-gray-50" title="上一週">
+                <ChevronLeftIcon className="h-4 w-4" />
+              </button>
+              <button onClick={gotoThisWeek} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50">本週</button>
+              <button onClick={() => gotoWeek(1)} className="rounded-md border border-gray-300 p-2 hover:bg-gray-50" title="下一週">
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+              <span className="ml-2 text-sm font-semibold text-gray-700">{rangeLabel}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <button onClick={() => gotoMonth(-1)} className="rounded-md border border-gray-300 p-2 hover:bg-gray-50" title="上個月">
+                <ChevronLeftIcon className="h-4 w-4" />
+              </button>
+              <button onClick={gotoThisMonth} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50">本月</button>
+              <button onClick={() => gotoMonth(1)} className="rounded-md border border-gray-300 p-2 hover:bg-gray-50" title="下個月">
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+              <span className="ml-2 text-sm font-semibold text-gray-700">{monthLabel}</span>
+            </div>
+          )}
         </div>
         <div className="hidden items-center gap-3 md:flex">
           {CAT_ORDER.map((k) => (
@@ -350,7 +419,8 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* 行事曆網格 */}
+      {/* 行事曆網格（本週檢視） */}
+      {calView === 'week' && (
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <div className="min-w-[900px]">
           <div className="grid grid-cols-[64px_repeat(7,1fr)] border-b border-gray-200">
@@ -414,6 +484,51 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* 整月檢視：只顯示每天各分類人數（0 不顯示） */}
+      {calView === 'month' && (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <div className="min-w-[840px]">
+            <div className="grid grid-cols-7 border-b border-gray-200">
+              {WEEK_DAYS.map((w, i) => (
+                <div key={i} className="border-l border-gray-200 py-2 text-center text-xs font-medium text-gray-500 first:border-l-0">
+                  星期{w}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {monthCells.map((d, i) => {
+                const ds = fmt(d);
+                const inMonth = d.getMonth() === monthCursor.getMonth();
+                const isToday = ds === todayStr;
+                const counts = monthCountsByDay[ds] || {};
+                const shown = CAT_ORDER.filter((k) => (counts[k] || 0) > 0);
+                return (
+                  <button key={i} type="button"
+                          onClick={() => { setWeekStart(startOfWeek(d)); setCalView('week'); }}
+                          className={clsx('min-h-[104px] border-l border-t border-gray-100 p-1.5 text-left align-top hover:bg-primary-50/40 [&:nth-child(7n+1)]:border-l-0',
+                            !inMonth && 'bg-gray-50/60')}>
+                    <div className={clsx('mb-1 text-xs font-semibold',
+                      isToday ? 'text-primary-600' : inMonth ? 'text-gray-900' : 'text-gray-400')}>
+                      {d.getDate()}
+                    </div>
+                    <div className="space-y-0.5">
+                      {shown.map((k) => (
+                        <div key={k} className="flex items-center gap-1 text-[11px] leading-tight text-gray-600">
+                          <span className={clsx('h-2 w-2 shrink-0 rounded-full', CAT[k].dot)} />
+                          <span className="truncate">{CAT[k].name}</span>
+                          <span className={clsx('ml-auto font-semibold', k === 'urgent' ? 'text-red-600' : 'text-gray-900')}>{counts[k]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <button onClick={() => setForm({ open: true, mode: 'create', prefill: {} })}
               className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-full bg-primary-600 px-5 py-3 text-sm font-semibold text-white shadow-lg hover:bg-primary-700">
