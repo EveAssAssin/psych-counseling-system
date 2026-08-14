@@ -1137,7 +1137,7 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><XMarkIcon className="h-5 w-5" /></button>
       </div>
 
-      <div className="space-y-3 px-5 py-4">
+      <div className="max-h-[70vh] space-y-3 overflow-y-auto px-5 py-4">
         {rows.map(([k, v]) => (
           <div key={k} className="grid grid-cols-[110px_1fr] gap-2 text-sm">
             <span className="text-gray-500">{k}</span>
