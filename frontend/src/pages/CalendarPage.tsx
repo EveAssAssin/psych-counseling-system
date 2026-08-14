@@ -147,7 +147,7 @@ const CARD_FILTER_LABEL: Record<string, string> = {
 function matchesCardFilter(s: Schedule, f: string | null): boolean {
   if (!f) return true;
   if (f === 'completed') return s.status === 'completed';
-  if (f === 'pending') return s.status !== 'completed';
+  if (f === 'pending') return s.status !== 'completed' && s.status !== 'cancelled';
   if (f === 'overdue') return isOverdue(s);
   return s.category_key === f;
 }
@@ -184,6 +184,7 @@ export default function CalendarPage() {
       const res = await calendarApi.listSchedules({
         start_date: fmt(weekStart),
         end_date: fmt(addDays(weekStart, 6)),
+        include_cancelled: 'true', // 取消的排程保留在行事曆（淡化顯示）
       });
       const list = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
       setSchedules(list);
@@ -480,13 +481,15 @@ export default function CalendarPage() {
                               onMouseEnter={(e) => setHover({ s, x: e.clientX, y: e.clientY })}
                               onMouseMove={(e) => setHover((h) => (h && h.s.id === s.id ? { s, x: e.clientX, y: e.clientY } : h))}
                               onMouseLeave={() => setHover((h) => (h && h.s.id === s.id ? null : h))}
-                              className={clsx('absolute left-1 right-1 z-10 overflow-hidden rounded border px-1.5 py-0.5 text-left text-xs shadow-sm hover:z-20', cat.block)}
-                              style={{ top, minHeight: minH }}>
+                              className={clsx('absolute left-1 right-1 z-10 overflow-hidden rounded border px-1.5 py-0.5 text-left text-xs shadow-sm hover:z-20', cat.block,
+                                s.status === 'cancelled' && 'line-through')}
+                              style={{ top, minHeight: minH, opacity: s.status === 'cancelled' ? 0.3 : 1 }}>
                         <div className="flex items-center gap-1 font-semibold leading-tight">
                           {cat.urgent && <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />}
                           <span className="truncate">{s.employee_name}</span>
-                          {isOverdue(s) && <span className="ml-auto shrink-0 rounded bg-red-600 px-1 text-[9px] font-bold text-white">逾期</span>}
-                          {s.status === 'awaiting_followup' && <span className="ml-auto shrink-0 rounded bg-amber-500 px-1 text-[9px] font-bold text-white">待追蹤</span>}
+                          {s.status === 'cancelled' && <span className="ml-auto shrink-0 rounded bg-gray-500 px-1 text-[9px] font-bold text-white">已取消</span>}
+                          {s.status !== 'cancelled' && isOverdue(s) && <span className="ml-auto shrink-0 rounded bg-red-600 px-1 text-[9px] font-bold text-white">逾期</span>}
+                          {s.status !== 'cancelled' && s.status === 'awaiting_followup' && <span className="ml-auto shrink-0 rounded bg-amber-500 px-1 text-[9px] font-bold text-white">待追蹤</span>}
                         </div>
                       </button>
                     );
