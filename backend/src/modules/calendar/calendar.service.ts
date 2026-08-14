@@ -1,9 +1,11 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { LefthandApiService } from '../sync/lefthand-api.service';
+import { UploadService } from '../upload/upload.service';
 import {
   CreateScheduleDto, UpdateScheduleDto, CancelScheduleDto,
   CreateSubcategoryDto, ListSchedulesQueryDto,
+  OverdueHandleDto, MonitorPhotoDto,
   CATEGORY_KEYS, CategoryKey,
 } from './calendar.dto';
 
@@ -55,6 +57,7 @@ export class CalendarService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly lefthand: LefthandApiService,
+    private readonly upload: UploadService,
   ) {}
 
   private get db() {
@@ -428,6 +431,16 @@ export class CalendarService {
       (dto.duration_minutes !== undefined && dto.duration_minutes !== current.duration_minutes) ||
       (dto.employee_app_number !== undefined && dto.employee_app_number !== current.employee_app_number);
 
+    // 逾期不得直接改時間：必須走「逾期處理」流程（填原因＋上傳監控證明＋設定下次時間）
+    const curEnd = new Date(`${current.schedule_date}T${curStart}:00`);
+    curEnd.setMinutes(curEnd.getMinutes() + current.duration_minutes);
+    const isOverdueNow =
+      !['completed', 'closed', 'cancelled'].includes(current.status) &&
+      curEnd.getTime() < Date.now();
+    if (isOverdueNow && timeOrPersonChanged) {
+      throw new BadRequestException('逾期案件不得直接修改時間，請改用「逾期處理」：先填逾期原因、上傳監控證明，再設定下次時間。');
+    }
+
     if (timeOrPersonChanged) {
       if (startMin < WORK_START_MIN || endMin > WORK_END_MIN) {
         throw new BadRequestException(`排程時間需落在 ${minToHHMM(WORK_START_MIN)}–${minToHHMM(WORK_END_MIN)} 之間`);
@@ -519,6 +532,135 @@ export class CalendarService {
       .single();
     if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data;
+  }
+
+  // ═══════════════════════════════════════════
+  //  逾期處理：填原因 + 設定下次時間 → 建立新排程、保留原始、寫改期歷史
+  //  規則：需先上傳至少一張監控證明；逾期不得直接改時間
+  // ═══════════════════════════════════════════
+  async handleOverdue(id: string, dto: OverdueHandleDto) {
+    const current = await this.getOne(id);
+    if (['completed', 'closed', 'cancelled'].includes(current.status)) {
+      throw new BadRequestException('此排程已結束，無法進行逾期處理。');
+    }
+    if (!dto.overdue_reason?.trim()) throw new BadRequestException('請填寫逾期原因。');
+
+    // 需至少一張監控證明
+    const { data: photos } = await this.db
+      .from('schedule_monitor_photos').select('id').eq('schedule_id', id).limit(1);
+    if (!photos || photos.length === 0) {
+      throw new BadRequestException('請先上傳至少一張監控證明，才能進行逾期改期。');
+    }
+
+    // 下次時間驗證
+    const startMin = toMin(dto.next_start_time);
+    const endMin = startMin + dto.next_duration_minutes;
+    if (startMin < WORK_START_MIN || endMin > WORK_END_MIN) {
+      throw new BadRequestException(`排程時間需落在 ${minToHHMM(WORK_START_MIN)}–${minToHHMM(WORK_END_MIN)} 之間`);
+    }
+    const now = this.nowTaipei();
+    if (dto.next_date < now.date || (dto.next_date === now.date && startMin < now.min)) {
+      throw new BadRequestException('下次時間不可為已經過的日期或時間。');
+    }
+
+    // 建立新排程（複製原內容，套用新時間）
+    const { data: newSched, error: insErr } = await this.db
+      .from('calendar_schedules')
+      .insert({
+        schedule_date: dto.next_date,
+        start_time: dto.next_start_time,
+        duration_minutes: dto.next_duration_minutes,
+        end_time: minToHHMM(endMin),
+        employee_id: current.employee_id,
+        employee_app_number: current.employee_app_number,
+        employee_name: current.employee_name,
+        store_name: current.store_name || null,
+        category_key: current.category_key,
+        category_keys: current.category_keys,
+        subcategory_id: current.subcategory_id,
+        subcategory_name: current.subcategory_name,
+        subcategory_names: current.subcategory_names,
+        note: current.note,
+        contact_method: current.contact_method || null,
+        status: 'pending',
+        created_by: dto.changed_by || current.created_by || null,
+        created_by_id: dto.changed_by_id || current.created_by_id || null,
+      })
+      .select().single();
+    if (insErr) throw new BadRequestException(insErr.message || '建立新排程失敗');
+
+    // 改期歷史（原始不覆蓋）
+    await this.db.from('schedule_reschedules').insert({
+      schedule_id: id,
+      new_schedule_id: newSched.id,
+      original_date: current.schedule_date,
+      original_start_time: String(current.start_time).slice(0, 5),
+      original_duration_minutes: current.duration_minutes,
+      new_date: dto.next_date,
+      new_start_time: dto.next_start_time,
+      new_duration_minutes: dto.next_duration_minutes,
+      reason: dto.overdue_reason.trim(),
+      changed_by: dto.changed_by || null,
+    });
+
+    // 原排程：記逾期原因、標記已改期、狀態→待追蹤（保留原始日期時間）
+    const { data: updated, error: updErr } = await this.db
+      .from('calendar_schedules')
+      .update({
+        overdue_reason: dto.overdue_reason.trim(),
+        rescheduled_at: new Date().toISOString(),
+        rescheduled_to_id: newSched.id,
+        status: 'awaiting_followup',
+        updated_by: dto.changed_by || null,
+      })
+      .eq('id', id).select().single();
+    if (updErr) throw new BadRequestException(updErr.message || '更新原排程失敗');
+
+    return { original: updated, new_schedule: newSched };
+  }
+
+  // ── 監控證明照片 ──
+  async addMonitorPhoto(id: string, file: Express.Multer.File, dto: MonitorPhotoDto) {
+    await this.getOne(id);
+    if (!file) throw new BadRequestException('請選擇要上傳的照片。');
+    const up = await this.upload.uploadFile(file, 'calendar' as any, id);
+    if (!up.success) throw new BadRequestException(up.error || '照片上傳失敗');
+    const { data, error } = await this.db.from('schedule_monitor_photos').insert({
+      schedule_id: id,
+      image_url: up.url,
+      image_path: up.path,
+      note: dto.note || null,
+      uploaded_by: dto.uploaded_by || null,
+    }).select().single();
+    if (error) throw new BadRequestException(error.message || '照片紀錄建立失敗');
+    return data;
+  }
+
+  async listMonitorPhotos(id: string) {
+    const { data, error } = await this.db.from('schedule_monitor_photos')
+      .select('*').eq('schedule_id', id).order('uploaded_at', { ascending: true });
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
+    return data || [];
+  }
+
+  async deleteMonitorPhoto(photoId: string) {
+    const { data: photo } = await this.db.from('schedule_monitor_photos').select('*').eq('id', photoId).single();
+    if (!photo) throw new NotFoundException('找不到該監控證明。');
+    const { data: sched } = await this.db.from('calendar_schedules').select('status').eq('id', photo.schedule_id).single();
+    if (sched && ['completed', 'closed'].includes(sched.status)) {
+      throw new BadRequestException('已完成／已結案的紀錄，監控證明不可刪除。');
+    }
+    if (photo.image_path) { try { await this.upload.deleteFile(photo.image_path); } catch { /* 忽略 storage 刪除失敗 */ } }
+    const { error } = await this.db.from('schedule_monitor_photos').delete().eq('id', photoId);
+    if (error) throw new BadRequestException(error.message || '刪除失敗');
+    return { success: true };
+  }
+
+  async listReschedules(id: string) {
+    const { data, error } = await this.db.from('schedule_reschedules')
+      .select('*').eq('schedule_id', id).order('changed_at', { ascending: false });
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
+    return data || [];
   }
 
   // ═══════════════════════════════════════════

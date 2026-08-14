@@ -26,12 +26,19 @@ export const CONTACT_METHOD_LABELS: Record<ContactMethod, string> = {
   line_text: 'LINE文字',
 };
 
-export const SCHEDULE_STATUSES = ['pending', 'completed', 'cancelled', 'no_show', 'follow_up'] as const;
+export const SCHEDULE_STATUSES = [
+  'pending', 'in_progress', 'awaiting_followup', 'overdue',
+  'completed', 'closed', 'cancelled', 'no_show', 'follow_up',
+] as const;
 export type ScheduleStatus = typeof SCHEDULE_STATUSES[number];
 
 export const STATUS_LABELS: Record<ScheduleStatus, string> = {
-  pending: '待進行',
+  pending: '待處理',
+  in_progress: '處理中',
+  awaiting_followup: '待追蹤',
+  overdue: '已逾期',
   completed: '已完成',
+  closed: '已結案',
   cancelled: '已取消',
   no_show: '未執行',
   follow_up: '需後續追蹤',
@@ -102,6 +109,40 @@ export class UpdateScheduleDto {
   @ApiPropertyOptional({ description: '實際談話用時（分鐘），可傳 null 清除' })
   @IsOptional() @IsInt() @Min(0) actual_minutes?: number | null;
   @ApiPropertyOptional() @IsOptional() @IsString() updated_by?: string;
+}
+
+// ──────────────────────────────────────────────
+//  逾期處理（填原因 + 設定下次時間；照片另以上傳端點處理）
+// ──────────────────────────────────────────────
+export class OverdueHandleDto {
+  @ApiProperty({ description: '逾期原因（必填，上限 500 字）' })
+  @IsString() @MaxLength(500) overdue_reason: string;
+
+  @ApiProperty({ description: '下次日期 YYYY-MM-DD' })
+  @IsDateString() next_date: string;
+
+  @ApiProperty({ description: '下次開始時間 HH:mm' })
+  @Matches(HHMM, { message: 'next_start_time 必須為 HH:mm' }) next_start_time: string;
+
+  @ApiProperty({ description: '預計談話時間（分鐘）', enum: DURATION_OPTIONS })
+  @IsInt() @IsIn(DURATION_OPTIONS as any) next_duration_minutes: number;
+
+  @ApiPropertyOptional({ description: '異動人顯示名' })
+  @IsOptional() @IsString() changed_by?: string;
+
+  @ApiPropertyOptional({ description: '異動人識別' })
+  @IsOptional() @IsString() changed_by_id?: string;
+}
+
+// ──────────────────────────────────────────────
+//  監控證明照片 — 建立紀錄（檔案由 multipart 上傳）
+// ──────────────────────────────────────────────
+export class MonitorPhotoDto {
+  @ApiPropertyOptional({ description: '備註' })
+  @IsOptional() @IsString() @MaxLength(200) note?: string;
+
+  @ApiPropertyOptional({ description: '上傳人顯示名' })
+  @IsOptional() @IsString() uploaded_by?: string;
 }
 
 // ──────────────────────────────────────────────
