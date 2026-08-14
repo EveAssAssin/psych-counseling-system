@@ -483,7 +483,7 @@ export default function CalendarPage() {
                               onMouseLeave={() => setHover((h) => (h && h.s.id === s.id ? null : h))}
                               className={clsx('absolute left-1 right-1 z-10 overflow-hidden rounded border px-1.5 py-0.5 text-left text-xs shadow-sm hover:z-20', cat.block,
                                 s.status === 'cancelled' && 'line-through')}
-                              style={{ top, minHeight: minH, opacity: s.status === 'cancelled' ? 0.3 : 1 }}>
+                              style={{ top, minHeight: minH, opacity: s.status === 'cancelled' ? 0.6 : 1 }}>
                         <div className="flex items-center gap-1 font-semibold leading-tight">
                           {cat.urgent && <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />}
                           <span className="truncate">{s.employee_name}</span>
