@@ -974,6 +974,16 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
   const [odDate, setOdDate] = useState('');
   const [odStart, setOdStart] = useState('11:00');
   const [odDur, setOdDur] = useState(schedule.duration_minutes || 15);
+  const [odAtt, setOdAtt] = useState<{ status: string; message: string }>({ status: 'idle', message: '' });
+  useEffect(() => {
+    if (!odDate || !schedule.employee_app_number) { setOdAtt({ status: 'idle', message: '' }); return; }
+    let cancelled = false;
+    setOdAtt({ status: 'loading', message: '確認排班中…' });
+    calendarApi.checkAttendance(schedule.employee_app_number, odDate)
+      .then((r) => { if (!cancelled) setOdAtt({ status: r.data.status, message: r.data.message }); })
+      .catch(() => { if (!cancelled) setOdAtt({ status: 'unknown', message: '目前無法確認該人員的出勤狀態。' }); });
+    return () => { cancelled = true; };
+  }, [odDate, schedule.employee_app_number]);
 
   // 事件後續
   const [followups, setFollowups] = useState<any[]>([]);
@@ -1187,7 +1197,17 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
               </select>
             </div>
 
-            <button type="button" onClick={submitOverdue} disabled={busy}
+            {odAtt.status !== 'idle' && (
+              <div className={clsx('mb-2 flex items-start gap-2 rounded-md border px-3 py-2 text-xs',
+                odAtt.status === 'work' && 'border-emerald-200 bg-emerald-50 text-emerald-800',
+                odAtt.status === 'off' && 'border-red-200 bg-red-50 text-red-800',
+                (odAtt.status === 'unknown' || odAtt.status === 'loading') && 'border-amber-200 bg-amber-50 text-amber-800')}>
+                {odAtt.status === 'work' ? <CheckCircleIcon className="h-4 w-4 shrink-0" /> : <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />}
+                <span>{odAtt.message}</span>
+              </div>
+            )}
+
+            <button type="button" onClick={submitOverdue} disabled={busy || (!!odDate && odAtt.status !== 'work')}
                     className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
               {busy ? '處理中…' : '完成逾期處理（建立下次追蹤）'}
             </button>

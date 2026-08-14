@@ -564,6 +564,10 @@ export class CalendarService {
       throw new BadRequestException('下次時間不可為已經過的日期或時間。');
     }
 
+    // 下次日期需為該員工上班日（與一般建立一致）
+    const att = await this.checkAttendance(current.employee_app_number, dto.next_date);
+    if (att.status !== 'work') throw new BadRequestException(att.message);
+
     // 建立新排程（複製原內容，套用新時間）
     const { data: newSched, error: insErr } = await this.db
       .from('calendar_schedules')
@@ -583,6 +587,7 @@ export class CalendarService {
         subcategory_names: current.subcategory_names,
         note: current.note,
         contact_method: current.contact_method || null,
+        attendance_check: att.raw,
         status: 'pending',
         created_by: dto.changed_by || current.created_by || null,
         created_by_id: dto.changed_by_id || current.created_by_id || null,
