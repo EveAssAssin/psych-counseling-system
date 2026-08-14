@@ -550,4 +550,22 @@ export const calendarApi = {
     api.post(`/calendar/schedules/${id}/cancel`, { cancel_reason, updated_by }),
   markRescheduled: (id: string, rescheduled_to_id?: string) =>
     api.post(`/calendar/schedules/${id}/mark-rescheduled`, { rescheduled_to_id }),
+
+  // 逾期處理
+  handleOverdue: (id: string, body: {
+    overdue_reason: string; next_date: string; next_start_time: string;
+    next_duration_minutes: number; changed_by?: string; changed_by_id?: string;
+  }) => api.post(`/calendar/schedules/${id}/overdue-handle`, body),
+  listReschedules: (id: string) => api.get(`/calendar/schedules/${id}/reschedules`),
+
+  // 監控證明照片
+  listPhotos: (id: string) => api.get(`/calendar/schedules/${id}/photos`),
+  addPhoto: (id: string, file: File, opts?: { note?: string; uploaded_by?: string }) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (opts?.note) fd.append('note', opts.note);
+    if (opts?.uploaded_by) fd.append('uploaded_by', opts.uploaded_by);
+    return api.post(`/calendar/schedules/${id}/photos`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  deletePhoto: (photoId: string) => api.delete(`/calendar/photos/${photoId}`),
 };

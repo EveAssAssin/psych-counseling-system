@@ -59,8 +59,11 @@ const DURATION_OPTIONS = [
 ];
 
 const STATUS_LABEL: Record<string, string> = {
-  pending: '待進行', completed: '已完成', cancelled: '已取消', no_show: '未執行', follow_up: '需後續追蹤',
+  pending: '待處理', in_progress: '處理中', awaiting_followup: '待追蹤', overdue: '已逾期',
+  completed: '已完成', closed: '已結案', cancelled: '已取消', no_show: '未執行', follow_up: '需後續追蹤',
 };
+// 逾期原因固定選項（可另填其他）
+const OVERDUE_REASONS = ['人員臨時休假', '門市工作繁忙無法進行', '聯絡未接', '原訂時間臨時異動', '緊急工作插入'];
 // 訪談方式
 const CONTACT_METHODS = [
   { value: 'phone', label: '電話' },
@@ -69,7 +72,7 @@ const CONTACT_METHODS = [
 ];
 const METHOD_LABEL: Record<string, string> = { phone: '電話', face: '面談', line_text: 'LINE文字' };
 // 可手動切換的狀態（取消另走取消流程）
-const STATUS_FLOW = ['pending', 'completed', 'no_show', 'follow_up'];
+const STATUS_FLOW = ['pending', 'in_progress', 'completed', 'closed', 'no_show'];
 
 // ── 後端排程資料型別 ──
 interface Schedule {
@@ -95,6 +98,9 @@ interface Schedule {
   updated_by?: string;
   updated_at?: string;
   cancel_reason?: string;
+  overdue_reason?: string;
+  rescheduled_at?: string | null;
+  rescheduled_to_id?: string | null;
 }
 
 // 日期工具 ---------------------------------------------------
@@ -115,10 +121,12 @@ const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.get
 const toMin = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
 const minToHHMM = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 const hm = (t?: string) => (t ? t.slice(0, 5) : '');
+const START_OPTIONS: string[] = (() => { const a: string[] = []; for (let m = WORK_START_HOUR * 60; m <= WORK_END_HOUR * 60 - 5; m += 5) a.push(minToHHMM(m)); return a; })();
 
-// 逾期：已過預計結束時間但未完成（且非取消——列表預設已排除取消）
+// 逾期：已過預計結束時間但未結束（非完成/結案/取消/待追蹤）
 const isOverdue = (s: Schedule): boolean =>
-  s.status !== 'completed' && new Date(`${s.schedule_date}T${hm(s.end_time)}:00`).getTime() < Date.now();
+  !['completed', 'closed', 'cancelled', 'awaiting_followup'].includes(s.status) &&
+  new Date(`${s.schedule_date}T${hm(s.end_time)}:00`).getTime() < Date.now();
 
 // 分鐘 → 「X 小時 Y 分鐘」
 const fmtMinutes = (min: number): string => {
@@ -474,6 +482,8 @@ export default function CalendarPage() {
                         <div className="flex items-center gap-1 font-semibold leading-tight">
                           {cat.urgent && <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />}
                           <span className="truncate">{s.employee_name}</span>
+                          {isOverdue(s) && <span className="ml-auto shrink-0 rounded bg-red-600 px-1 text-[9px] font-bold text-white">逾期</span>}
+                          {s.status === 'awaiting_followup' && <span className="ml-auto shrink-0 rounded bg-amber-500 px-1 text-[9px] font-bold text-white">待追蹤</span>}
                         </div>
                       </button>
                     );
@@ -948,6 +958,54 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
   const [actual, setActual] = useState(schedule.actual_minutes != null ? String(schedule.actual_minutes) : '');
   const cat = catOf(schedule.category_key);
 
+  // 逾期處理相關
+  const overdue = isOverdue(schedule);
+  const [photos, setPhotos] = useState<any[]>([]);
+  const [reschedules, setReschedules] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [viewImg, setViewImg] = useState<string | null>(null);
+  const [odReason, setOdReason] = useState('');
+  const [odDate, setOdDate] = useState('');
+  const [odStart, setOdStart] = useState('11:00');
+  const [odDur, setOdDur] = useState(schedule.duration_minutes || 15);
+
+  const loadPhotos = async () => { try { const r = await calendarApi.listPhotos(schedule.id); setPhotos(Array.isArray(r.data) ? r.data : []); } catch { /* 靜默 */ } };
+  const loadReschedules = async () => { try { const r = await calendarApi.listReschedules(schedule.id); setReschedules(Array.isArray(r.data) ? r.data : []); } catch { /* 靜默 */ } };
+  useEffect(() => { loadPhotos(); loadReschedules(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [schedule.id]);
+
+  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      await calendarApi.addPhoto(schedule.id, file, { uploaded_by: user?.name || user?.email });
+      toast.success('監控證明已上傳。');
+      loadPhotos();
+    } catch (err: any) { toast.error(err.response?.data?.message || '上傳失敗'); }
+    finally { setUploading(false); }
+  };
+  const removePhoto = async (pid: string) => {
+    if (!window.confirm('確定刪除這張監控證明？')) return;
+    try { await calendarApi.deletePhoto(pid); toast.success('已刪除。'); loadPhotos(); }
+    catch (err: any) { toast.error(err.response?.data?.message || '刪除失敗'); }
+  };
+  const submitOverdue = async () => {
+    const reasonText = odReason.trim();
+    if (!reasonText) { toast.error('請填寫逾期原因'); return; }
+    if (photos.length === 0) { toast.error('請先上傳至少一張監控證明'); return; }
+    if (!odDate) { toast.error('請選擇下次日期'); return; }
+    setBusy(true);
+    try {
+      await calendarApi.handleOverdue(schedule.id, {
+        overdue_reason: reasonText, next_date: odDate, next_start_time: odStart,
+        next_duration_minutes: odDur, changed_by: user?.name || user?.email, changed_by_id: user?.id,
+      });
+      toast.success('逾期處理完成，已建立下次追蹤排程。');
+      onChanged();
+    } catch (err: any) { toast.error(err.response?.data?.message || '逾期處理失敗'); }
+    finally { setBusy(false); }
+  };
+
   const saveActual = async () => {
     const raw = actual.trim();
     const val = raw === '' ? null : Number(raw);
@@ -1039,6 +1097,104 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
           </div>
         ))}
 
+        {schedule.overdue_reason && (
+          <div className="grid grid-cols-[110px_1fr] gap-2 text-sm">
+            <span className="text-gray-500">逾期原因</span>
+            <span className="text-gray-900">{schedule.overdue_reason}</span>
+          </div>
+        )}
+
+        {/* 逾期處理 */}
+        {overdue && !cancelling && (
+          <div className="rounded-md border border-red-300 bg-red-50 p-3">
+            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-red-700">
+              <ExclamationTriangleIcon className="h-5 w-5" />逾期案件 — 請完成逾期處理
+            </div>
+            <p className="mb-2 text-xs text-red-600">逾期不得直接改時間。需填寫逾期原因、上傳監控證明，並設定下次時間。</p>
+
+            <div className="mb-2">
+              <div className="mb-1 text-xs font-medium text-gray-600">逾期原因（必填）</div>
+              <div className="mb-1 flex flex-wrap gap-1">
+                {OVERDUE_REASONS.map((r) => (
+                  <button key={r} type="button" onClick={() => setOdReason(r)}
+                          className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">{r}</button>
+                ))}
+              </div>
+              <textarea value={odReason} onChange={(e) => setOdReason(e.target.value)} rows={2} maxLength={500}
+                        placeholder="點上方快速填入，或自行輸入原因…"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            </div>
+
+            <div className="mb-1 text-xs font-medium text-gray-600">下次預計處理時間</div>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <input type="date" value={odDate} onChange={(e) => setOdDate(e.target.value)}
+                     className="rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+              <select value={odStart} onChange={(e) => setOdStart(e.target.value)}
+                      className="rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+                {START_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select value={odDur} onChange={(e) => setOdDur(Number(e.target.value))}
+                      className="rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+                {DURATION_OPTIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+            </div>
+
+            <button type="button" onClick={submitOverdue} disabled={busy}
+                    className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+              {busy ? '處理中…' : '完成逾期處理（建立下次追蹤）'}
+            </button>
+          </div>
+        )}
+
+        {/* 監控證明 */}
+        {(overdue || photos.length > 0) && !cancelling && (
+          <div className="pt-1">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-sm text-gray-500">監控證明{photos.length > 0 ? `（${photos.length}）` : ''}</span>
+              <label className="cursor-pointer rounded-md border border-primary-300 px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50">
+                {uploading ? '上傳中…' : '＋ 上傳／拍照'}
+                <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading} onChange={onPickPhoto} />
+              </label>
+            </div>
+            {photos.length === 0 ? (
+              <p className="text-xs text-gray-400">尚無監控證明（逾期改期前需至少一張）。</p>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {photos.map((p) => (
+                  <div key={p.id} className="relative w-16">
+                    <img src={p.image_url} alt="監控證明" onClick={() => setViewImg(p.image_url)}
+                         className="h-16 w-16 cursor-pointer rounded object-cover ring-1 ring-gray-200" />
+                    {!['completed', 'closed'].includes(schedule.status) && (
+                      <button type="button" onClick={() => removePhoto(p.id)}
+                              className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-red-600 text-[10px] leading-4 text-white">×</button>
+                    )}
+                    <div className="mt-0.5 truncate text-[10px] text-gray-400"
+                         title={`${p.uploaded_by || ''} ${p.uploaded_at ? new Date(p.uploaded_at).toLocaleString('zh-TW') : ''}`}>
+                      {p.uploaded_by || '—'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 改期歷史 */}
+        {reschedules.length > 0 && !cancelling && (
+          <div className="pt-1">
+            <div className="mb-1 text-sm text-gray-500">改期歷史</div>
+            <div className="space-y-2">
+              {reschedules.map((r) => (
+                <div key={r.id} className="rounded-md border border-gray-200 bg-gray-50 p-2 text-xs text-gray-600">
+                  <div>原：{r.original_date} {hm(r.original_start_time)}（{r.original_duration_minutes} 分）→ 新：{r.new_date} {hm(r.new_start_time)}（{r.new_duration_minutes} 分）</div>
+                  {r.reason && <div className="mt-0.5">原因：{r.reason}</div>}
+                  <div className="mt-0.5 text-gray-400">{r.changed_by || '—'}・{r.changed_at ? new Date(r.changed_at).toLocaleString('zh-TW') : ''}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {schedule.status !== 'cancelled' && !cancelling && (
           <div className="pt-1">
             <div className="mb-1 text-sm text-gray-500">實際用時（分鐘）</div>
@@ -1100,7 +1256,7 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
             個人頁面
           </button>
         )}
-        {schedule.status !== 'cancelled' && !cancelling && (
+        {schedule.status !== 'cancelled' && !cancelling && !overdue && (
           <button onClick={() => onEdit(schedule)} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">編輯</button>
         )}
         {schedule.status !== 'cancelled' && !cancelling && (
@@ -1114,6 +1270,12 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
         )}
         <button onClick={onClose} className="rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">關閉</button>
       </div>
+
+      {viewImg && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={() => setViewImg(null)}>
+          <img src={viewImg} alt="監控證明大圖" className="max-h-full max-w-full rounded" />
+        </div>
+      )}
     </Overlay>
   );
 }
