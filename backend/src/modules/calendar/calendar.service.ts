@@ -6,6 +6,7 @@ import {
   CreateScheduleDto, UpdateScheduleDto, CancelScheduleDto,
   CreateSubcategoryDto, ListSchedulesQueryDto,
   OverdueHandleDto, MonitorPhotoDto,
+  CreateFollowupDto, FOLLOWUP_NEEDS_SCHEDULE,
   CATEGORY_KEYS, CategoryKey,
 } from './calendar.dto';
 
@@ -659,6 +660,72 @@ export class CalendarService {
   async listReschedules(id: string) {
     const { data, error } = await this.db.from('schedule_reschedules')
       .select('*').eq('schedule_id', id).order('changed_at', { ascending: false });
+    if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
+    return data || [];
+  }
+
+  // ═══════════════════════════════════════════
+  //  事件後續（多次新增；歷史不覆蓋）＋ 需追蹤時可自動建立行事曆排程
+  // ═══════════════════════════════════════════
+  async addFollowup(scheduleId: string, dto: CreateFollowupDto) {
+    const sched = await this.getOne(scheduleId);
+    let createdScheduleId: string | null = null;
+
+    // 需追蹤狀態 + 有下次時間 + 要求建立 → 自動建立行事曆排程（略過排休/衝突檢查）
+    const wantsSchedule = !!dto.create_schedule
+      && FOLLOWUP_NEEDS_SCHEDULE.includes(dto.followup_status)
+      && !!dto.next_followup_date && !!dto.next_followup_time;
+    if (wantsSchedule) {
+      const dur = dto.next_duration_minutes || sched.duration_minutes || 15;
+      const startMin = toMin(dto.next_followup_time!);
+      const endMin = startMin + dur;
+      if (startMin >= WORK_START_MIN && endMin <= WORK_END_MIN) {
+        const sub = await this.ensureSubcategory('routine', '事件後續', dto.recorded_by);
+        const { data: newSched } = await this.db.from('calendar_schedules').insert({
+          schedule_date: dto.next_followup_date,
+          start_time: dto.next_followup_time,
+          duration_minutes: dur,
+          end_time: minToHHMM(endMin),
+          employee_id: sched.employee_id,
+          employee_app_number: sched.employee_app_number,
+          employee_name: sched.employee_name,
+          store_name: sched.store_name || null,
+          category_key: 'routine',
+          category_keys: ['routine'],
+          subcategory_id: sub.id,
+          subcategory_name: sub.name,
+          subcategory_names: [sub.name],
+          note: `事件後續：${dto.followup_status}${dto.content ? '｜' + dto.content : ''}`,
+          status: 'pending',
+          created_by: dto.recorded_by || null,
+          created_by_id: dto.recorded_by_id || null,
+        }).select().single();
+        createdScheduleId = newSched?.id || null;
+        if (createdScheduleId) { try { await this.bumpSubcategoryUsage(sub.id); } catch { /* 忽略 */ } }
+      }
+    }
+
+    const { data, error } = await this.db.from('event_followups').insert({
+      schedule_id: scheduleId,
+      employee_id: sched.employee_id,
+      employee_app_number: sched.employee_app_number,
+      followup_status: dto.followup_status,
+      content: dto.content || null,
+      result: dto.result || null,
+      need_next: dto.need_next ?? false,
+      next_followup_date: dto.next_followup_date || null,
+      next_followup_time: dto.next_followup_time || null,
+      created_schedule_id: createdScheduleId,
+      recorded_by: dto.recorded_by || null,
+      recorded_by_id: dto.recorded_by_id || null,
+    }).select().single();
+    if (error) throw new BadRequestException(error.message || '建立後續紀錄失敗');
+    return { followup: data, created_schedule_id: createdScheduleId };
+  }
+
+  async listFollowups(scheduleId: string) {
+    const { data, error } = await this.db.from('event_followups')
+      .select('*').eq('schedule_id', scheduleId).order('recorded_at', { ascending: true });
     if (error) throw new BadRequestException(error.message || '資料庫操作失敗');
     return data || [];
   }

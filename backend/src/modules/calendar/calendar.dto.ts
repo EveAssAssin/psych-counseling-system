@@ -112,6 +112,48 @@ export class UpdateScheduleDto {
 }
 
 // ──────────────────────────────────────────────
+//  事件後續（Phase 2）
+// ──────────────────────────────────────────────
+export const FOLLOWUP_STATUSES = [
+  '無需後續', '持續關懷', '需再次聯繫', '需安排面談', '需主管追蹤', '轉其他單位處理', '其他',
+] as const;
+export type FollowupStatus = typeof FOLLOWUP_STATUSES[number];
+// 需要追蹤（可自動建立行事曆排程）的狀態
+export const FOLLOWUP_NEEDS_SCHEDULE = ['持續關懷', '需再次聯繫', '需安排面談', '需主管追蹤'];
+
+export class CreateFollowupDto {
+  @ApiProperty({ description: '後續狀態', enum: FOLLOWUP_STATUSES })
+  @IsIn(FOLLOWUP_STATUSES as any) followup_status: FollowupStatus;
+
+  @ApiPropertyOptional({ description: '後續內容' })
+  @IsOptional() @IsString() @MaxLength(1000) content?: string;
+
+  @ApiPropertyOptional({ description: '處理結果' })
+  @IsOptional() @IsString() @MaxLength(1000) result?: string;
+
+  @ApiPropertyOptional({ description: '是否需要再次追蹤' })
+  @IsOptional() need_next?: boolean;
+
+  @ApiPropertyOptional({ description: '下次追蹤日期 YYYY-MM-DD' })
+  @IsOptional() @IsDateString() next_followup_date?: string;
+
+  @ApiPropertyOptional({ description: '下次追蹤時間 HH:mm' })
+  @IsOptional() @Matches(HHMM, { message: 'next_followup_time 必須為 HH:mm' }) next_followup_time?: string;
+
+  @ApiPropertyOptional({ description: '下次談話時長（分鐘）', enum: DURATION_OPTIONS })
+  @IsOptional() @IsInt() @IsIn(DURATION_OPTIONS as any) next_duration_minutes?: number;
+
+  @ApiPropertyOptional({ description: '是否同時建立行事曆排程' })
+  @IsOptional() create_schedule?: boolean;
+
+  @ApiPropertyOptional({ description: '紀錄人顯示名' })
+  @IsOptional() @IsString() recorded_by?: string;
+
+  @ApiPropertyOptional({ description: '紀錄人識別' })
+  @IsOptional() @IsString() recorded_by_id?: string;
+}
+
+// ──────────────────────────────────────────────
 //  逾期處理（填原因 + 設定下次時間；照片另以上傳端點處理）
 // ──────────────────────────────────────────────
 export class OverdueHandleDto {

@@ -8,8 +8,8 @@ import { CalendarService } from './calendar.service';
 import {
   CreateScheduleDto, UpdateScheduleDto, CancelScheduleDto,
   CreateSubcategoryDto, RenameSubcategoryDto, ListSchedulesQueryDto,
-  OverdueHandleDto, MonitorPhotoDto,
-  CATEGORY_KEYS, CATEGORY_LABELS, STATUS_LABELS, DURATION_OPTIONS,
+  OverdueHandleDto, MonitorPhotoDto, CreateFollowupDto,
+  CATEGORY_KEYS, CATEGORY_LABELS, STATUS_LABELS, DURATION_OPTIONS, FOLLOWUP_STATUSES,
 } from './calendar.dto';
 
 @ApiTags('calendar')
@@ -25,6 +25,7 @@ export class CalendarController {
       categories: CATEGORY_KEYS.map((k) => ({ key: k, label: CATEGORY_LABELS[k] })),
       statuses: Object.entries(STATUS_LABELS).map(([key, label]) => ({ key, label })),
       durations: DURATION_OPTIONS,
+      followup_statuses: FOLLOWUP_STATUSES,
       work_hours: { start: '11:00', end: '21:00' },
     };
   }
@@ -133,5 +134,18 @@ export class CalendarController {
   @ApiOperation({ summary: '刪除監控證明（已完成/已結案不可刪）' })
   deletePhoto(@Param('photoId') photoId: string) {
     return this.svc.deleteMonitorPhoto(photoId);
+  }
+
+  // ── 事件後續 ──
+  @Get('schedules/:id/followups')
+  @ApiOperation({ summary: '列出事件後續（時間軸）' })
+  listFollowups(@Param('id') id: string) {
+    return this.svc.listFollowups(id);
+  }
+
+  @Post('schedules/:id/followups')
+  @ApiOperation({ summary: '新增事件後續（可同時建立行事曆排程）' })
+  addFollowup(@Param('id') id: string, @Body() dto: CreateFollowupDto) {
+    return this.svc.addFollowup(id, dto);
   }
 }

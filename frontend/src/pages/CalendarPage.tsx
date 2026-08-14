@@ -64,6 +64,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 // 逾期原因固定選項（可另填其他）
 const OVERDUE_REASONS = ['人員臨時休假', '門市工作繁忙無法進行', '聯絡未接', '原訂時間臨時異動', '緊急工作插入'];
+// 事件後續狀態
+const FOLLOWUP_STATUSES = ['無需後續', '持續關懷', '需再次聯繫', '需安排面談', '需主管追蹤', '轉其他單位處理', '其他'];
+const FOLLOWUP_NEEDS_SCHEDULE = ['持續關懷', '需再次聯繫', '需安排面談', '需主管追蹤'];
 // 訪談方式
 const CONTACT_METHODS = [
   { value: 'phone', label: '電話' },
@@ -969,9 +972,51 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
   const [odStart, setOdStart] = useState('11:00');
   const [odDur, setOdDur] = useState(schedule.duration_minutes || 15);
 
+  // 事件後續
+  const [followups, setFollowups] = useState<any[]>([]);
+  const [showFuForm, setShowFuForm] = useState(false);
+  const [fuStatus, setFuStatus] = useState('');
+  const [fuContent, setFuContent] = useState('');
+  const [fuResult, setFuResult] = useState('');
+  const [fuNeedNext, setFuNeedNext] = useState(false);
+  const [fuDate, setFuDate] = useState('');
+  const [fuTime, setFuTime] = useState('11:00');
+  const [fuDur, setFuDur] = useState(schedule.duration_minutes || 15);
+  const [fuCreateSched, setFuCreateSched] = useState(true);
+
   const loadPhotos = async () => { try { const r = await calendarApi.listPhotos(schedule.id); setPhotos(Array.isArray(r.data) ? r.data : []); } catch { /* 靜默 */ } };
   const loadReschedules = async () => { try { const r = await calendarApi.listReschedules(schedule.id); setReschedules(Array.isArray(r.data) ? r.data : []); } catch { /* 靜默 */ } };
-  useEffect(() => { loadPhotos(); loadReschedules(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [schedule.id]);
+  const loadFollowups = async () => { try { const r = await calendarApi.listFollowups(schedule.id); setFollowups(Array.isArray(r.data) ? r.data : []); } catch { /* 靜默 */ } };
+  useEffect(() => { loadPhotos(); loadReschedules(); loadFollowups(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [schedule.id]);
+
+  const fuNeedsNext = FOLLOWUP_NEEDS_SCHEDULE.includes(fuStatus) || fuNeedNext;
+  const submitFollowup = async () => {
+    if (!fuStatus) { toast.error('請選擇後續狀態'); return; }
+    if (fuStatus !== '無需後續' && !fuContent.trim()) { toast.error('請填寫後續內容'); return; }
+    setBusy(true);
+    try {
+      const body: any = {
+        followup_status: fuStatus,
+        content: fuContent.trim() || undefined,
+        result: fuResult.trim() || undefined,
+        need_next: fuNeedsNext,
+        recorded_by: user?.name || user?.email, recorded_by_id: user?.id,
+      };
+      if (fuNeedsNext && fuDate) {
+        body.next_followup_date = fuDate;
+        body.next_followup_time = fuTime;
+        body.next_duration_minutes = fuDur;
+        body.create_schedule = fuCreateSched;
+      }
+      const r = await calendarApi.addFollowup(schedule.id, body);
+      toast.success(r.data?.created_schedule_id ? '已新增後續，並建立下次追蹤排程。' : '已新增事件後續。');
+      setShowFuForm(false);
+      setFuStatus(''); setFuContent(''); setFuResult(''); setFuNeedNext(false); setFuDate('');
+      loadFollowups();
+      if (r.data?.created_schedule_id) onUpdated({}); // 刷新行事曆、視窗保持開啟
+    } catch (err: any) { toast.error(err.response?.data?.message || '新增失敗'); }
+    finally { setBusy(false); }
+  };
 
   const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; e.target.value = '';
@@ -1237,6 +1282,95 @@ function DetailModal({ schedule, onClose, onEdit, onChanged, onUpdated }: {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* 事件後續（時間軸；可多次新增，歷史不覆蓋） */}
+        {schedule.status !== 'cancelled' && !cancelling && (
+          <div className="pt-1">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">事件後續{followups.length > 0 ? `（${followups.length}）` : ''}</span>
+              {!showFuForm && (
+                <button type="button" onClick={() => setShowFuForm(true)}
+                        className="rounded-md border border-primary-300 px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50">＋ 新增後續</button>
+              )}
+            </div>
+
+            {/* 時間軸 */}
+            {followups.length > 0 && (
+              <ol className="mb-2 space-y-2 border-l-2 border-gray-200 pl-3">
+                {followups.map((f) => (
+                  <li key={f.id} className="relative">
+                    <span className="absolute -left-[17px] top-1 h-2.5 w-2.5 rounded-full bg-primary-400" />
+                    <div className="text-xs text-gray-400">
+                      {f.recorded_at ? new Date(f.recorded_at).toLocaleString('zh-TW') : ''}・{f.recorded_by || '—'}
+                    </div>
+                    <div className="text-sm font-medium text-gray-900">{f.followup_status}</div>
+                    {f.content && <div className="text-sm text-gray-700">{f.content}</div>}
+                    {f.result && <div className="text-xs text-gray-500">處理結果：{f.result}</div>}
+                    {f.next_followup_date && (
+                      <div className="text-xs text-amber-700">下次追蹤：{f.next_followup_date} {hm(f.next_followup_time)}{f.created_schedule_id ? '（已建立排程）' : ''}</div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+
+            {/* 新增表單 */}
+            {showFuForm && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                <div className="mb-1 text-xs font-medium text-gray-600">後續狀態</div>
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {FOLLOWUP_STATUSES.map((s) => (
+                    <button key={s} type="button" onClick={() => setFuStatus(s)}
+                            className={clsx('rounded-full border px-2 py-0.5 text-xs',
+                              fuStatus === s ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50')}>{s}</button>
+                  ))}
+                </div>
+                {fuStatus && fuStatus !== '無需後續' && (
+                  <>
+                    <textarea value={fuContent} onChange={(e) => setFuContent(e.target.value)} rows={2}
+                              placeholder="後續內容…" className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+                    <input value={fuResult} onChange={(e) => setFuResult(e.target.value)}
+                           placeholder="處理結果（可留空）" className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+                    <label className="mb-2 flex items-center gap-2 text-sm text-gray-600">
+                      <input type="checkbox" checked={fuNeedsNext} onChange={(e) => setFuNeedNext(e.target.checked)}
+                             disabled={FOLLOWUP_NEEDS_SCHEDULE.includes(fuStatus)} className="h-4 w-4 rounded border-gray-300" />
+                      需要再次追蹤
+                    </label>
+                    {fuNeedsNext && (
+                      <div className="mb-2 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input type="date" value={fuDate} onChange={(e) => setFuDate(e.target.value)}
+                                 className="rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+                          <select value={fuTime} onChange={(e) => setFuTime(e.target.value)}
+                                  className="rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+                            {START_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <select value={fuDur} onChange={(e) => setFuDur(Number(e.target.value))}
+                                  className="rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+                            {DURATION_OPTIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                          </select>
+                        </div>
+                        <label className="flex items-center gap-2 text-sm text-gray-600">
+                          <input type="checkbox" checked={fuCreateSched} onChange={(e) => setFuCreateSched(e.target.checked)}
+                                 className="h-4 w-4 rounded border-gray-300" />
+                          同時建立行事曆排程（例行性關懷｜事件後續）
+                        </label>
+                      </div>
+                    )}
+                  </>
+                )}
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={submitFollowup} disabled={busy}
+                          className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
+                    {busy ? '儲存中…' : '儲存後續'}
+                  </button>
+                  <button type="button" onClick={() => setShowFuForm(false)}
+                          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">取消</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

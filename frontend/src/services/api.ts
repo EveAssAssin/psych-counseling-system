@@ -568,4 +568,13 @@ export const calendarApi = {
     return api.post(`/calendar/schedules/${id}/photos`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   deletePhoto: (photoId: string) => api.delete(`/calendar/photos/${photoId}`),
+
+  // 事件後續
+  listFollowups: (id: string) => api.get(`/calendar/schedules/${id}/followups`),
+  addFollowup: (id: string, body: {
+    followup_status: string; content?: string; result?: string;
+    need_next?: boolean; next_followup_date?: string; next_followup_time?: string;
+    next_duration_minutes?: number; create_schedule?: boolean;
+    recorded_by?: string; recorded_by_id?: string;
+  }) => api.post(`/calendar/schedules/${id}/followups`, body),
 };
