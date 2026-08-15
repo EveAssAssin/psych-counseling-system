@@ -47,6 +47,11 @@ export const configuration = () => ({
       url: process.env.REVIEW_SYSTEM_API_URL,
       apiKey: process.env.REVIEW_SYSTEM_API_KEY,
     },
+    // 教育訓練 / 學習進度系統
+    learningProgress: {
+      url: process.env.LEARNING_PROGRESS_API_URL,
+      apiKey: process.env.LEARNING_PROGRESS_API_KEY,
+    },
   },
 
   upload: {
