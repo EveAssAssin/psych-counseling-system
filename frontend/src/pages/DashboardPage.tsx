@@ -14,12 +14,12 @@ import toast from 'react-hot-toast';
 
 // 本月訪談時數 — 大分類（顏色與行事曆一致）
 const DASH_CATS = [
-  { key: 'routine', name: '例行性關懷', color: 'bg-blue-500' },
-  { key: 'announce', name: '流程佈達', color: 'bg-emerald-500' },
-  { key: 'project', name: '專案焦點', color: 'bg-violet-500' },
-  { key: 'newcomer', name: '新人輔導', color: 'bg-amber-500' },
-  { key: 'urgent', name: '緊急案件', color: 'bg-red-500' },
-  { key: 'unfit', name: '不適任評估', color: 'bg-slate-500' },
+  { key: 'routine', name: '例行性關懷', color: 'bg-blue-500', hex: '#3b82f6' },
+  { key: 'announce', name: '流程佈達', color: 'bg-emerald-500', hex: '#10b981' },
+  { key: 'project', name: '專案焦點', color: 'bg-violet-500', hex: '#8b5cf6' },
+  { key: 'newcomer', name: '新人輔導', color: 'bg-amber-500', hex: '#f59e0b' },
+  { key: 'urgent', name: '緊急案件', color: 'bg-red-500', hex: '#ef4444' },
+  { key: 'unfit', name: '不適任評估', color: 'bg-slate-500', hex: '#64748b' },
 ];
 const fmtHM = (min: number) => {
   if (!min) return '0 分';
@@ -139,20 +139,48 @@ function SchedCard({ title, schedules, accent, onReschedule, onOpen, emptyText }
   );
 }
 
-function TalkBar({ label, data }: { label: string; data: TalkData }) {
+// 訪談時數甜甜圈圖：中央顯示總時數，圖例顯示各分類時數與百分比
+function TalkDonut({ label, data }: { label: string; data: TalkData }) {
+  const size = 168, stroke = 20, r = (size - stroke) / 2, circ = 2 * Math.PI * r;
+  const cx = size / 2, cy = size / 2;
+  const total = data.total;
+  let acc = 0;
+  const segs = DASH_CATS.map((cat) => {
+    const m = data.byCat[cat.key] || 0;
+    const frac = total > 0 ? m / total : 0;
+    const seg = { cat, m, frac, offset: acc };
+    acc += frac;
+    return seg;
+  }).filter((s) => s.m > 0);
+
   return (
-    <div>
-      <div className="mb-1 flex items-baseline justify-between">
-        <span className="text-xs font-medium text-gray-500">{label}</span>
-        <span className="text-sm font-semibold text-gray-900">{fmtHM(data.total)}</span>
+    <div className="flex flex-col items-center">
+      <div className="mb-2 text-xs font-medium text-gray-500">{label}</div>
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f3f4f6" strokeWidth={stroke} />
+          {segs.map((s) => (
+            <circle key={s.cat.key} cx={cx} cy={cy} r={r} fill="none" stroke={s.cat.hex} strokeWidth={stroke}
+                    strokeDasharray={`${s.frac * circ} ${circ - s.frac * circ}`}
+                    strokeDashoffset={-s.offset * circ} />
+          ))}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className="text-lg font-bold text-gray-900">{fmtHM(total)}</div>
+          <div className="text-[11px] text-gray-400">訪談時數</div>
+        </div>
       </div>
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
-        {data.total > 0 &&
-          DASH_CATS.map((c) => {
-            const m = data.byCat[c.key] || 0;
-            if (!m) return null;
-            return <div key={c.key} className={c.color} style={{ width: `${(m / data.total) * 100}%` }} title={`${c.name}：${fmtHM(m)}`} />;
-          })}
+      <div className="mt-3 w-full space-y-1">
+        {segs.length === 0 ? (
+          <div className="text-center text-xs text-gray-400">無資料</div>
+        ) : segs.map((s) => (
+          <div key={s.cat.key} className="flex items-center gap-1.5 text-xs">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.cat.hex }} />
+            <span className="truncate text-gray-600">{s.cat.name}</span>
+            <span className="ml-auto shrink-0 font-medium text-gray-900">{fmtHM(s.m)}</span>
+            <span className="w-10 shrink-0 text-right text-gray-400">{Math.round(s.frac * 100)}%</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -546,23 +574,13 @@ export default function DashboardPage() {
           <p className="text-xs text-gray-400">全部訪談方式</p>
         </div>
 
-        <div className="space-y-3">
-          <TalkBar label="今日" data={todayTalk} />
-          <TalkBar label={`本月（${new Date().getMonth() + 1} 月）`} data={monthTalk} />
-        </div>
-
-        {/* 圖例 */}
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-          {DASH_CATS.map((c) => (
-            <div key={c.key} className="flex items-center gap-1.5 text-xs text-gray-600">
-              <span className={`h-2.5 w-2.5 rounded-full ${c.color}`} />
-              {c.name}
-            </div>
-          ))}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <TalkDonut label="今日" data={todayTalk} />
+          <TalkDonut label={`本月（${new Date().getMonth() + 1} 月）`} data={monthTalk} />
         </div>
 
         {todayTalk.total === 0 && monthTalk.total === 0 && (
-          <p className="mt-2 text-xs text-gray-400">目前尚無填寫實際訪談時間的排程。</p>
+          <p className="mt-3 text-center text-xs text-gray-400">目前尚無填寫實際訪談時間的排程。</p>
         )}
       </div>
 
