@@ -19,6 +19,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { EmployeesService } from './employees.service';
+import { LearningProgressService } from './learning-progress.service';
 import {
   CreateEmployeeDto,
   UpdateEmployeeDto,
@@ -31,7 +32,10 @@ import {
 @Controller('employees')
 // @ApiBearerAuth() // 暫時註解，待 Auth 模組完成後啟用
 export class EmployeesController {
-  constructor(private readonly employeesService: EmployeesService) {}
+  constructor(
+    private readonly employeesService: EmployeesService,
+    private readonly learningProgressService: LearningProgressService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: '建立員工' })
@@ -79,6 +83,14 @@ export class EmployeesController {
       return { found: false, message: `Employee not found: ${appnumber}` };
     }
     return employee;
+  }
+
+  @Get('learning-progress/:appnumber')
+  @ApiOperation({ summary: '取得員工教育訓練學習進度（代理 LMS）' })
+  @ApiParam({ name: 'appnumber', description: 'APP 員工編號' })
+  @ApiResponse({ status: 200, description: '學習層級與進度' })
+  async getLearningProgress(@Param('appnumber') appnumber: string) {
+    return this.learningProgressService.getByAppNumber(appnumber);
   }
 
   @Put(':id')

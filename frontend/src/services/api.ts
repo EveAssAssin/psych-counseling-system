@@ -104,6 +104,8 @@ export const employeesApi = {
   
   getByAppNumber: (appnumber: string) => api.get(`/employees/by-appnumber/${appnumber}`),
   
+  getLearningProgress: (appnumber: string) => api.get(`/employees/learning-progress/${appnumber}`),
+  
   create: (data: any) => api.post('/employees', data),
   
   update: (id: string, data: any) => api.put(`/employees/${id}`, data),
