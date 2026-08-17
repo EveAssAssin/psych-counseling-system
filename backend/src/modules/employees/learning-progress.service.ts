@@ -42,4 +42,33 @@ export class LearningProgressService {
       return { available: false, reason: 'error' };
     }
   }
+
+  /**
+   * 依 ERP 員工編號（employeeerpid）取得教育訓練明細：
+   * 課程清單（含完成狀態/完成日期）與層級考試成績。
+   */
+  async getEmployeeTraining(erpid: string) {
+    if (!erpid) {
+      return { available: false, reason: 'no_erpid' };
+    }
+    if (!this.lmsApiKey) {
+      this.logger.warn('LMS_API_KEY 未設定，略過教育訓練明細查詢');
+      return { available: false, reason: 'not_configured' };
+    }
+
+    try {
+      const res = await axios.get(`${this.lmsBaseUrl}/external/employee-training`, {
+        params: { erpid },
+        headers: { 'x-api-key': this.lmsApiKey },
+        timeout: 10000,
+      });
+      return { available: true, ...res.data };
+    } catch (err: any) {
+      const status = err?.response?.status;
+      this.logger.error(
+        `LMS 教育訓練明細查詢失敗 (erpid=${erpid}, status=${status ?? 'n/a'}): ${err?.message}`,
+      );
+      return { available: false, reason: 'error' };
+    }
+  }
 }

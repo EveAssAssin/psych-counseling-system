@@ -106,6 +106,8 @@ export const employeesApi = {
   
   getLearningProgress: (appnumber: string) => api.get(`/employees/learning-progress/${appnumber}`),
   
+  getEmployeeTraining: (erpid: string) => api.get(`/employees/employee-training/${erpid}`),
+  
   create: (data: any) => api.post('/employees', data),
   
   update: (id: string, data: any) => api.put(`/employees/${id}`, data),

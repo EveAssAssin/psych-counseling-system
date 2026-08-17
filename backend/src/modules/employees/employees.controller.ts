@@ -93,6 +93,14 @@ export class EmployeesController {
     return this.learningProgressService.getByAppNumber(appnumber);
   }
 
+  @Get('employee-training/:erpid')
+  @ApiOperation({ summary: '取得員工教育訓練明細（課程與考試成績，代理 LMS）' })
+  @ApiParam({ name: 'erpid', description: 'ERP 員工編號' })
+  @ApiResponse({ status: 200, description: '課程明細與層級考試成績' })
+  async getEmployeeTraining(@Param('erpid') erpid: string) {
+    return this.learningProgressService.getEmployeeTraining(erpid);
+  }
+
   @Put(':id')
   @ApiOperation({ summary: '更新員工' })
   @ApiParam({ name: 'id', description: '員工 ID' })
