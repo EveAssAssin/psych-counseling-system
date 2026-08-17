@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeftIcon, ChatBubbleLeftRightIcon, TicketIcon, SparklesIcon, StarIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ChatBubbleLeftRightIcon, TicketIcon, SparklesIcon, StarIcon } from '@heroicons/react/24/outline';
 import { employeesApi, conversationsApi, analysisApi, officialChannelApi, achievementsApi } from '../services/api';
 import { EmployeeInsightTab } from '../components/EmployeeInsightTab';
 import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel';
-import TrainingProgressTab from '../components/TrainingProgressTab';
 import toast from 'react-hot-toast';
 
 const JOB_TAGS = ['店長', '副店長', '正職', '新人'];
@@ -41,7 +40,7 @@ export default function EmployeeDetailPage() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [latestAnalysis, setLatestAnalysis] = useState<any>(null);
   const [officialMessages, setOfficialMessages] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'insight' | 'conversations' | 'achievements' | 'official' | 'training'>('insight');
+  const [activeTab, setActiveTab] = useState<'insight' | 'conversations' | 'achievements' | 'official'>('insight');
   const [achievements, setAchievements] = useState<any[]>([]);
   const [showAchForm, setShowAchForm] = useState(false);
   const [achForm, setAchForm] = useState({ record_type: '事實', title: '', content: '', record_date: todayStr(), category: '' });
@@ -368,7 +367,7 @@ export default function EmployeeDetailPage() {
 
       {/* 本月出勤 / 休假摘要 */}
       {employee.employeeappnumber && (
-        <EmployeeAttendancePanel appNumber={employee.employeeappnumber} />
+        <EmployeeAttendancePanel appNumber={employee.employeeappnumber} defaultExpanded />
       )}
 
       {/* Tab 切換 */}
@@ -418,17 +417,6 @@ export default function EmployeeDetailPage() {
             >
               <TicketIcon className="h-4 w-4 inline mr-2" />
               官方頻道訊息 ({officialMessages.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('training')}
-              className={`px-6 py-3 text-sm font-medium border-b-2 ${
-                activeTab === 'training'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <AcademicCapIcon className="h-4 w-4 inline mr-2" />
-              教育訓練
             </button>
           </nav>
         </div>
@@ -587,13 +575,6 @@ export default function EmployeeDetailPage() {
               </ul>
             )}
           </>
-        )}
-
-        {/* 教育訓練 Tab */}
-        {activeTab === 'training' && (
-          <div className="p-6">
-            <TrainingProgressTab appNumber={employee.employeeappnumber} />
-          </div>
         )}
 
         {/* 官方頻道訊息 Tab */}

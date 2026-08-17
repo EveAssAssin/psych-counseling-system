@@ -14,6 +14,7 @@ interface Day {
 
 interface Props {
   appNumber: string;
+  defaultExpanded?: boolean;
 }
 
 interface MonthSummary {
@@ -54,11 +55,11 @@ function fmtHM(min: number): string {
  * 員工出勤 / 休假：以「月份」為單位的統計摘要。
  * 資料來自左手 HRM API #28（含 排休/上班/各類假別/加班）。
  */
-export default function EmployeeAttendancePanel({ appNumber }: Props) {
+export default function EmployeeAttendancePanel({ appNumber, defaultExpanded = false }: Props) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   useEffect(() => {
     if (!appNumber) return;
