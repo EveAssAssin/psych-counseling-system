@@ -3,12 +3,14 @@ import axios from 'axios';
 
 /**
  * 教育訓練學習進度服務
- * 代理呼叫 LMS（lohas-lms-backend）的對外 API，依 app_number 取得該員工
- * 目前的學習層級（current_tier）與進度。LMS 金鑰只留在後端，不外露給前端。
+ * 代理呼叫 LMS（lohas-lms-backend）的對外 API。LMS 金鑰只留在後端。
  *
  * 環境變數：
  *   LMS_API_BASE_URL  LMS 後端 base url（預設正式站）
- *   LMS_API_KEY       LMS learning-progress 端點的 x-api-key
+ *   LMS_API_KEY       LMS external 端點的 x-api-key
+ *
+ * 註：LMS 部署在 Render 免費方案，閒置會休眠，冷啟動可能需 30~60 秒，
+ *     故逾時拉長並保留錯誤細節，方便前端/日誌判斷失敗原因。
  */
 @Injectable()
 export class LearningProgressService {
@@ -17,58 +19,51 @@ export class LearningProgressService {
   private readonly lmsBaseUrl =
     process.env.LMS_API_BASE_URL ?? 'https://lohas-lms-backend.onrender.com';
   private readonly lmsApiKey = process.env.LMS_API_KEY ?? '';
+  private readonly timeoutMs = Number(process.env.LMS_API_TIMEOUT_MS ?? '40000');
+
+  private async call(path: string, params: Record<string, any>) {
+    const url = `${this.lmsBaseUrl}${path}`;
+    // 冷啟動保護：第一次失敗（逾時/5xx）再重試一次
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await axios.get(url, {
+          params,
+          headers: { 'x-api-key': this.lmsApiKey },
+          timeout: this.timeoutMs,
+          validateStatus: (s) => s >= 200 && s < 500, // 4xx 也拿回來看內容
+        });
+        if (res.status >= 400) {
+          this.logger.warn(`LMS ${path} 回應 ${res.status}`);
+          return { available: false, reason: 'error', status: res.status, detail: `HTTP ${res.status}` };
+        }
+        return { available: true, ...res.data };
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const detail = err?.code === 'ECONNABORTED' ? 'timeout' : (err?.message || 'network');
+        this.logger.error(`LMS ${path} 失敗 (attempt ${attempt}, status=${status ?? 'n/a'}): ${detail}`);
+        if (attempt === 2) {
+          return { available: false, reason: 'error', status: status ?? null, detail };
+        }
+      }
+    }
+    return { available: false, reason: 'error', detail: 'unknown' };
+  }
 
   async getByAppNumber(appNumber: string) {
-    if (!appNumber) {
-      return { available: false, reason: 'no_app_number' };
-    }
+    if (!appNumber) return { available: false, reason: 'no_app_number' };
     if (!this.lmsApiKey) {
       this.logger.warn('LMS_API_KEY 未設定，略過學習進度查詢');
       return { available: false, reason: 'not_configured' };
     }
-
-    try {
-      const res = await axios.get(`${this.lmsBaseUrl}/external/learning-progress`, {
-        params: { app_number: appNumber },
-        headers: { 'x-api-key': this.lmsApiKey },
-        timeout: 10000,
-      });
-      return { available: true, ...res.data };
-    } catch (err: any) {
-      const status = err?.response?.status;
-      this.logger.error(
-        `LMS 學習進度查詢失敗 (app_number=${appNumber}, status=${status ?? 'n/a'}): ${err?.message}`,
-      );
-      return { available: false, reason: 'error' };
-    }
+    return this.call('/external/learning-progress', { app_number: appNumber });
   }
 
-  /**
-   * 依 ERP 員工編號（employeeerpid）取得教育訓練明細：
-   * 課程清單（含完成狀態/完成日期）與層級考試成績。
-   */
   async getEmployeeTraining(erpid: string) {
-    if (!erpid) {
-      return { available: false, reason: 'no_erpid' };
-    }
+    if (!erpid) return { available: false, reason: 'no_erpid' };
     if (!this.lmsApiKey) {
       this.logger.warn('LMS_API_KEY 未設定，略過教育訓練明細查詢');
       return { available: false, reason: 'not_configured' };
     }
-
-    try {
-      const res = await axios.get(`${this.lmsBaseUrl}/external/employee-training`, {
-        params: { erpid },
-        headers: { 'x-api-key': this.lmsApiKey },
-        timeout: 10000,
-      });
-      return { available: true, ...res.data };
-    } catch (err: any) {
-      const status = err?.response?.status;
-      this.logger.error(
-        `LMS 教育訓練明細查詢失敗 (erpid=${erpid}, status=${status ?? 'n/a'}): ${err?.message}`,
-      );
-      return { available: false, reason: 'error' };
-    }
+    return this.call('/external/employee-training', { erpid });
   }
 }

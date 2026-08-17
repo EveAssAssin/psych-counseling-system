@@ -68,10 +68,11 @@ export default function TrainingProgressTab({ appNumber, erpid }: Props) {
   if (!summary) return <p className="text-sm text-gray-500">無法取得教育訓練資料。</p>;
 
   if (!summary.available) {
+    const detail = summary.status ? `（${summary.status}）` : summary.detail ? `（${summary.detail}）` : '';
     const msg =
       summary.reason === 'not_configured'
         ? '教育訓練系統尚未完成串接設定。'
-        : '目前無法連線教育訓練系統。';
+        : `目前無法連線教育訓練系統。${detail}`;
     return <p className="text-sm text-gray-500">{msg}</p>;
   }
   if (summary.found === false) {
